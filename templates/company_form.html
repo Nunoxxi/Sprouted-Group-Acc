@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="card narrow">
+    <h1>Add Company</h1>
+    <form method="post">
+        <label>Company name</label>
+        <input type="text" name="name" required>
+
+        <label>Type</label>
+        <select name="company_type">
+            <option value="charity">Charity</option>
+            <option value="llc">LLC</option>
+        </select>
+
+        <label>Code</label>
+        <input type="text" name="code" maxlength="10" required>
+
+        <button type="submit">Save company</button>
+    </form>
+</div>
+{% endblock %}

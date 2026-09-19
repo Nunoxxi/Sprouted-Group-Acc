@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Reports</h1>
+        <p class="muted-small">Group financial overview</p>
+    </div>
+</div>
+
+<div class="kpi-grid narrow-grid">
+    <div class="kpi-card">
+        <span class="kpi-label">Group income</span>
+        <strong>£{{ '%.2f' % (summary | sum(attribute='income')) }}</strong>
+    </div>
+    <div class="kpi-card">
+        <span class="kpi-label">Group expense</span>
+        <strong>£{{ '%.2f' % (summary | sum(attribute='expense')) }}</strong>
+    </div>
+    <div class="kpi-card success">
+        <span class="kpi-label">Group net</span>
+        <strong>£{{ '%.2f' % (summary | sum(attribute='net')) }}</strong>
+    </div>
+</div>
+
+<div class="company-grid">
+    {% for item in summary %}
+    <div class="company-card report-card">
+        <div class="company-topline">
+            <div>
+                <h3>{{ item.company['name'] }}</h3>
+                <span class="company-type">{{ item.company['company_type']|upper }}</span>
+            </div>
+            <span class="company-code">{{ item.company['code'] }}</span>
+        </div>
+
+        <div class="metric-row">
+            <span>Income</span>
+            <strong>£{{ '%.2f' % item.income }}</strong>
+        </div>
+        <div class="metric-row">
+            <span>Expense</span>
+            <strong>£{{ '%.2f' % item.expense }}</strong>
+        </div>
+        <div class="metric-row net-row">
+            <span>Net</span>
+            <strong>£{{ '%.2f' % item.net }}</strong>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

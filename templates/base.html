@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sprouted Accounting Portal</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="topbar">
+        <div class="brand">Sprouted Group</div>
+        <div class="nav-links">
+            {% if session.get('user_id') %}
+                <a href="{{ url_for('dashboard') }}">Overview</a>
+                <a href="{{ url_for('companies') }}">Companies</a>
+                <a href="{{ url_for('reports') }}">Reports</a>
+                {% if session.get('role') in ['admin', 'accountant'] %}
+                    <a href="{{ url_for('transactions') }}">Transactions</a>
+                {% endif %}
+                {% if session.get('role') == 'admin' %}
+                    <a href="{{ url_for('users') }}">Users</a>
+                {% endif %}
+                <a href="{{ url_for('logout') }}">Logout</a>
+            {% endif %}
+        </div>
+    </nav>
+
+    {% if session.get('user_id') %}
+    <div class="app-shell">
+        <aside class="sidebar">
+            <div class="sidebar-brand">Sprouted</div>
+            <div class="sidebar-user">{{ session.get('username', 'User') }}<span>{{ session.get('role', 'user')|title }}</span></div>
+            <nav class="sidebar-nav">
+                <a href="{{ url_for('dashboard') }}">Dashboard</a>
+                <a href="{{ url_for('companies') }}">Companies</a>
+                <a href="{{ url_for('reports') }}">Reports</a>
+                {% if session.get('role') in ['admin', 'accountant'] %}
+                    <a href="{{ url_for('transactions') }}">Transactions</a>
+                {% endif %}
+                {% if session.get('role') == 'admin' %}
+                    <a href="{{ url_for('users') }}">Users</a>
+                {% endif %}
+                <a href="{{ url_for('logout') }}">Logout</a>
+            </nav>
+        </aside>
+
+        <main class="content-area">
+            <div class="container">
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ category }}">{{ message }}</div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+    {% else %}
+        <div class="container">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }}">{{ message }}</div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+    {% endif %}
+
+                {% block content %}{% endblock %}
+
+    {% if session.get('user_id') %}
+            </div>
+        </main>
+    </div>
+    {% else %}
+        </div>
+    {% endif %}
+</body>
+</html>

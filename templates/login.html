@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="card narrow">
+    <div class="login-brand">◌</div>
+    <div class="login-heading">
+        <h1>Login</h1>
+        <p>Sprouted Group Accounting Portal</p>
+    </div>
+
+    <form method="post">
+        <div>
+            <label for="username">Username</label>
+            <input id="username" type="text" name="username" required>
+        </div>
+
+        <div>
+            <label for="password">Password</label>
+            <input id="password" type="password" name="password" required>
+        </div>
+
+        <button type="submit">Login</button>
+    </form>
+
+    <div class="demo-box">
+        <strong>Demo users:</strong>
+        <ul>
+            <li>admin / admin123</li>
+            <li>accountant / accountant123</li>
+            <li>manager / manager123</li>
+            <li>viewer / viewer123</li>
+        </ul>
+    </div>
+</div>
+{% endblock %}
