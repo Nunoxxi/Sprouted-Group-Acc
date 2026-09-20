@@ -1,5 +1,6 @@
 'use client';
 
+import { ledgerLines, reportAccounts, type AccountClass, type CashflowClass, type LedgerLine, type ReportFund } from '@/lib/report-data';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -12,6 +13,7 @@ const navigationItems = [
   'Purchases',
   'Bank',
   'Intercompany',
+  'Tax',
   'Inventory',
   'Reports',
   'Settings',
@@ -241,6 +243,112 @@ type IntercompanyMatrixCell = {
   mismatch: boolean;
 };
 
+type TaxBucket = 'output' | 'input' | 'nhil' | 'getfund' | 'net';
+
+type TaxTransaction = {
+  id: string;
+  entityId: string;
+  date: string;
+  document: string;
+  contactName: string;
+  contactTin: string;
+  kind: 'sale' | 'purchase';
+  base: number;
+  vat: number;
+  nhil: number;
+  getFund: number;
+  whtRate: 0 | 0.05 | 0.1;
+  whtAmount: number;
+};
+
+function periodKeyOf(date: string) {
+  return date.slice(0, 7);
+}
+
+function periodLabelOf(key: string) {
+  const [year, month] = key.split('-').map(Number);
+  return new Date(year, month - 1, 1).toLocaleDateString('en-GH', { month: 'long', year: 'numeric' });
+}
+
+function makeTaxEntry(entry: {
+  id: string;
+  entityId: string;
+  date: string;
+  document: string;
+  contactName: string;
+  contactTin: string;
+  kind: 'sale' | 'purchase';
+  base: number;
+  whtRate?: 0 | 0.05 | 0.1;
+}): TaxTransaction {
+  const vat = Math.round(entry.base * 0.15);
+  const nhil = Math.round(entry.base * 0.025);
+  const getFund = Math.round(entry.base * 0.025);
+  const whtRate = entry.whtRate ?? 0;
+  const whtAmount = entry.kind === 'purchase' ? Math.round((entry.base + vat + nhil + getFund) * whtRate) : 0;
+
+  return { ...entry, vat, nhil, getFund, whtRate, whtAmount };
+}
+
+const taxTransactions: TaxTransaction[] = [
+  makeTaxEntry({ id: 'tax-r-01', entityId: 'sprouted-roots', date: '2026-08-05', document: 'INV-0998', contactName: 'Cocoa Partners Limited', contactTin: 'GH-0204-CPL', kind: 'sale', base: 2000000 }),
+  makeTaxEntry({ id: 'tax-r-02', entityId: 'sprouted-roots', date: '2026-08-12', document: 'BILL-3110', contactName: 'Nana Akua Farms', contactTin: 'GH-0101-NAF', kind: 'purchase', base: 1200000, whtRate: 0.05 }),
+  makeTaxEntry({ id: 'tax-r-03', entityId: 'sprouted-roots', date: '2026-08-22', document: 'BILL-3118', contactName: 'Accra Packaging Co', contactTin: 'GH-0456-APC', kind: 'purchase', base: 350000, whtRate: 0.05 }),
+  makeTaxEntry({ id: 'tax-r-04', entityId: 'sprouted-roots', date: '2026-09-02', document: 'INV-1042', contactName: 'Cocoa Partners Limited', contactTin: 'GH-0204-CPL', kind: 'sale', base: 1500000 }),
+  makeTaxEntry({ id: 'tax-r-05', entityId: 'sprouted-roots', date: '2026-09-08', document: 'BILL-3155', contactName: 'Accra Packaging Co', contactTin: 'GH-0456-APC', kind: 'purchase', base: 400000, whtRate: 0.05 }),
+  makeTaxEntry({ id: 'tax-r-06', entityId: 'sprouted-roots', date: '2026-09-15', document: 'BILL-3161', contactName: 'Nana Akua Farms', contactTin: 'GH-0101-NAF', kind: 'purchase', base: 800000, whtRate: 0.05 }),
+  makeTaxEntry({ id: 'tax-c-01', entityId: 'sprouted-crafts', date: '2026-08-03', document: 'INV-2081', contactName: 'Cocoa Partners Limited', contactTin: 'GH-0204-CPL', kind: 'sale', base: 3000000 }),
+  makeTaxEntry({ id: 'tax-c-02', entityId: 'sprouted-crafts', date: '2026-08-20', document: 'BILL-2190', contactName: 'Sprouted Roots', contactTin: 'GH-0001-ROOTS', kind: 'purchase', base: 1284000, whtRate: 0.05 }),
+  makeTaxEntry({ id: 'tax-c-03', entityId: 'sprouted-crafts', date: '2026-09-05', document: 'INV-2102', contactName: 'Cocoa Partners Limited', contactTin: 'GH-0204-CPL', kind: 'sale', base: 2200000 }),
+  makeTaxEntry({ id: 'tax-c-04', entityId: 'sprouted-crafts', date: '2026-09-10', document: 'BILL-2201', contactName: 'Akwasi Logistics', contactTin: 'GH-0311-AKL', kind: 'purchase', base: 456000, whtRate: 0.05 }),
+  makeTaxEntry({ id: 'tax-c-05', entityId: 'sprouted-crafts', date: '2026-09-18', document: 'BILL-2210', contactName: 'Sprouted Roots', contactTin: 'GH-0001-ROOTS', kind: 'purchase', base: 1000000, whtRate: 0.05 }),
+  makeTaxEntry({ id: 'tax-o-01', entityId: 'oikazi', date: '2026-08-08', document: 'INV-3011', contactName: 'Cocoa Partners Limited', contactTin: 'GH-0204-CPL', kind: 'sale', base: 1800000 }),
+  makeTaxEntry({ id: 'tax-o-02', entityId: 'oikazi', date: '2026-08-25', document: 'BILL-4102', contactName: 'Tema Haulage', contactTin: 'GH-0522-THL', kind: 'purchase', base: 600000, whtRate: 0.1 }),
+  makeTaxEntry({ id: 'tax-o-03', entityId: 'oikazi', date: '2026-09-04', document: 'INV-3026', contactName: 'Cocoa Partners Limited', contactTin: 'GH-0204-CPL', kind: 'sale', base: 2450000 }),
+  makeTaxEntry({ id: 'tax-o-04', entityId: 'oikazi', date: '2026-09-11', document: 'BILL-4118', contactName: 'Tema Haulage', contactTin: 'GH-0522-THL', kind: 'purchase', base: 680000, whtRate: 0.1 }),
+  makeTaxEntry({ id: 'tax-o-05', entityId: 'oikazi', date: '2026-09-19', document: 'BILL-4122', contactName: 'Accra Packaging Co', contactTin: 'GH-0456-APC', kind: 'purchase', base: 240000 }),
+];
+
+type ReportRange = { start: string; end: string };
+
+type ReportRowData = {
+  id: string;
+  label: string;
+  current: number;
+  prior: number;
+  kind: 'header' | 'line' | 'total';
+  accountCodes?: string[];
+  creditCurrent?: number;
+  creditPrior?: number;
+};
+
+function codesOfType(type: AccountClass) {
+  return Object.keys(reportAccounts).filter((code) => reportAccounts[code].type === type);
+}
+
+function codesOfCashflow(cashflow: CashflowClass) {
+  return Object.keys(reportAccounts).filter((code) => reportAccounts[code].cashflow === cashflow);
+}
+
+function priorRangeOf(range: ReportRange): ReportRange {
+  const start = new Date(`${range.start}T00:00:00`);
+  const end = new Date(`${range.end}T00:00:00`);
+  const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1);
+  const priorEnd = new Date(start);
+  priorEnd.setDate(priorEnd.getDate() - 1);
+  const priorStart = new Date(priorEnd);
+  priorStart.setDate(priorStart.getDate() - days + 1);
+  return { start: priorStart.toISOString().slice(0, 10), end: priorEnd.toISOString().slice(0, 10) };
+}
+
+function pesewasToGhs(value: number) {
+  return (value / 100).toFixed(2);
+}
+
+function csvEscape(value: string) {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
 function slugify(value: string) {
   return value
     .trim()
@@ -268,6 +376,9 @@ type DocumentFormState = {
   dueDate: string;
   status: DocumentStatus;
   lines: DocumentLine[];
+  evatClearanceNumber: string;
+  evatQrCode: string;
+  evatTimestamp: string;
 };
 
 type JournalEntry = {
@@ -337,6 +448,9 @@ function makeDocument(kind: 'invoice' | 'bill'): DocumentFormState {
     dueDate: today,
     status: 'draft',
     lines: [makeLine()],
+    evatClearanceNumber: '',
+    evatQrCode: '',
+    evatTimestamp: '',
   };
 }
 
@@ -599,6 +713,71 @@ export function AppShell() {
     description: 'Raw material supply',
   });
 
+  const [filedPeriods, setFiledPeriods] = useState<Record<string, string[]>>(() => {
+    if (typeof window === 'undefined') {
+      return {};
+    }
+
+    try {
+      const raw = window.localStorage.getItem('sprouted-vat-filed-periods');
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
+  const [selectedTaxPeriod, setSelectedTaxPeriod] = useState('2026-09');
+  const [taxDrilldown, setTaxDrilldown] = useState<TaxBucket | null>(null);
+
+  type ReportType =
+    | 'trial-balance'
+    | 'profit-loss'
+    | 'balance-sheet'
+    | 'cash-flow'
+    | 'aged-receivables'
+    | 'aged-payables'
+    | 'fund-report'
+    | 'group-view';
+
+  const [reportType, setReportType] = useState<ReportType>('trial-balance');
+  const [reportStart, setReportStart] = useState('2026-09-01');
+  const [reportEnd, setReportEnd] = useState('2026-09-30');
+  const [reportDrilldown, setReportDrilldown] = useState<{
+    title: string;
+    entityId: string;
+    accountCodes: string[];
+    range: ReportRange;
+    cumulative: boolean;
+    contactName?: string;
+    fund?: ReportFund;
+  } | null>(null);
+
+  type BackupRunView = {
+    id: string;
+    fileName: string;
+    sizeBytes: number;
+    status: 'SUCCESS' | 'FAILED';
+    checksum: string;
+    createdAt: string;
+    error: string | null;
+  };
+
+  type AuditEventView = {
+    id: string;
+    entityId: string;
+    userName: string;
+    action: string;
+    resourceType: string;
+    resourceRef: string;
+    summary: string;
+    createdAt: string;
+  };
+
+  const [backupRuns, setBackupRuns] = useState<BackupRunView[]>([]);
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [auditEvents, setAuditEvents] = useState<AuditEventView[]>([]);
+  const [auditChainIntact, setAuditChainIntact] = useState<boolean | null>(null);
+  const currentUserName = 'Edem Agblevor';
+
   const selectedEntity = useMemo(
     () => entities.find((entity) => entity.id === selectedEntityId) ?? entities[0],
     [entities, selectedEntityId],
@@ -628,6 +807,453 @@ export function AppShell() {
   const activeTotals = buildTotals(activeDocument.lines, isPurchaseView ? activeContact.withholdingTaxStatus : undefined);
   const journalEntries = buildJournalEntries(activeDocument, isPurchaseView, activeContact);
   const groupEntityOptions = entities;
+
+  const documentPeriodLocked = (filedPeriods[selectedEntity.id] ?? []).includes(periodKeyOf(activeDocument.date));
+  const filedPeriodKeys = filedPeriods[selectedEntity.id] ?? [];
+  const isSelectedPeriodFiled = filedPeriodKeys.includes(selectedTaxPeriod);
+
+  const entityTaxTransactions = useMemo(
+    () => taxTransactions.filter((transaction) => transaction.entityId === selectedEntity.id),
+    [selectedEntity.id],
+  );
+
+  const availableTaxPeriods = useMemo(
+    () => Array.from(new Set(entityTaxTransactions.map((transaction) => periodKeyOf(transaction.date)))).sort().reverse(),
+    [entityTaxTransactions],
+  );
+
+  const periodTransactions = useMemo(
+    () => entityTaxTransactions.filter((transaction) => periodKeyOf(transaction.date) === selectedTaxPeriod),
+    [entityTaxTransactions, selectedTaxPeriod],
+  );
+
+  const vatFigures = useMemo(() => {
+    const sales = periodTransactions.filter((transaction) => transaction.kind === 'sale');
+    const purchases = periodTransactions.filter((transaction) => transaction.kind === 'purchase');
+    const sum = (rows: TaxTransaction[], field: 'vat' | 'nhil' | 'getFund') =>
+      rows.reduce((total, transaction) => total + transaction[field], 0);
+
+    const outputVat = sum(sales, 'vat');
+    const outputNhil = sum(sales, 'nhil');
+    const outputGetFund = sum(sales, 'getFund');
+    const inputVat = sum(purchases, 'vat');
+    const inputNhil = sum(purchases, 'nhil');
+    const inputGetFund = sum(purchases, 'getFund');
+
+    return {
+      outputVat,
+      outputNhil,
+      outputGetFund,
+      inputVat,
+      inputNhil,
+      inputGetFund,
+      nhilNet: outputNhil - inputNhil,
+      getFundNet: outputGetFund - inputGetFund,
+      net: outputVat + outputNhil + outputGetFund - inputVat - inputNhil - inputGetFund,
+    };
+  }, [periodTransactions]);
+
+  const drilldownRows = useMemo(() => {
+    if (!taxDrilldown) {
+      return [];
+    }
+    if (taxDrilldown === 'output') {
+      return periodTransactions.filter((transaction) => transaction.kind === 'sale');
+    }
+    if (taxDrilldown === 'input') {
+      return periodTransactions.filter((transaction) => transaction.kind === 'purchase');
+    }
+    return periodTransactions;
+  }, [taxDrilldown, periodTransactions]);
+
+  const whtRows = useMemo(() => {
+    const byContact = new Map<
+      string,
+      { name: string; tin: string; rate: number; gross: number; withheld: number; documents: number }
+    >();
+
+    periodTransactions
+      .filter((transaction) => transaction.kind === 'purchase' && transaction.whtAmount > 0)
+      .forEach((transaction) => {
+        const existing = byContact.get(transaction.contactName) ?? {
+          name: transaction.contactName,
+          tin: transaction.contactTin,
+          rate: transaction.whtRate,
+          gross: 0,
+          withheld: 0,
+          documents: 0,
+        };
+        existing.gross += transaction.base + transaction.vat + transaction.nhil + transaction.getFund;
+        existing.withheld += transaction.whtAmount;
+        existing.documents += 1;
+        byContact.set(transaction.contactName, existing);
+      });
+
+    return Array.from(byContact.values());
+  }, [periodTransactions]);
+
+  const taxBucketLabels: Record<TaxBucket, string> = {
+    output: 'Output VAT — sales in the period',
+    input: 'Input VAT — purchases in the period',
+    nhil: 'NHIL — all transactions in the period',
+    getfund: 'GETFund — all transactions in the period',
+    net: 'Net position — all transactions in the period',
+  };
+
+  const reportRange: ReportRange = { start: reportStart, end: reportEnd };
+  const priorReportRange = useMemo(() => priorRangeOf(reportRange), [reportStart, reportEnd]);
+
+  function accountSum(entityId: string, codes: string[], range: ReportRange, cumulative = false) {
+    const codeSet = new Set(codes);
+    return ledgerLines
+      .filter(
+        (line) =>
+          line.entityId === entityId &&
+          codeSet.has(line.accountCode) &&
+          (cumulative ? line.date <= range.end : line.date >= range.start && line.date <= range.end),
+      )
+      .reduce((total, line) => total + line.amount, 0);
+  }
+
+  const standardReport = useMemo<{ title: string; subtitle: string; columns: string[]; rows: ReportRowData[]; trialBalance?: boolean }>(() => {
+    const entityId = selectedEntity.id;
+    const range = reportRange;
+    const prior = priorReportRange;
+    const incomeCodes = codesOfType('INCOME');
+    const cosCodes = codesOfType('COST_OF_SALES');
+    const expenseCodes = codesOfType('EXPENSE');
+
+    if (reportType === 'trial-balance') {
+      const rows: ReportRowData[] = [];
+      let debitCurrent = 0;
+      let creditCurrent = 0;
+      let debitPrior = 0;
+      let creditPrior = 0;
+
+      Object.keys(reportAccounts).forEach((code) => {
+        const current = accountSum(entityId, [code], range, true);
+        const priorSum = accountSum(entityId, [code], prior, true);
+        if (current === 0 && priorSum === 0) {
+          return;
+        }
+        debitCurrent += Math.max(current, 0);
+        creditCurrent += Math.max(-current, 0);
+        debitPrior += Math.max(priorSum, 0);
+        creditPrior += Math.max(-priorSum, 0);
+        rows.push({
+          id: code,
+          label: `${code} · ${reportAccounts[code].name}`,
+          current,
+          prior: priorSum,
+          kind: 'line',
+          accountCodes: [code],
+        });
+      });
+
+      return {
+        title: `Trial balance as at ${range.end}`,
+        subtitle: `Debit balances positive · cumulative to report date · prior period ${prior.start} → ${prior.end}`,
+        columns: ['Current debit', 'Current credit', 'Prior debit', 'Prior credit'],
+        trialBalance: true,
+        rows: [
+          ...rows,
+          { id: 'tb-total', label: 'Totals', current: debitCurrent, prior: debitPrior, creditCurrent, creditPrior, kind: 'total' },
+        ],
+      };
+    }
+
+    if (reportType === 'profit-loss') {
+      const rows: ReportRowData[] = [{ id: 'pl-h1', label: 'Income', current: 0, prior: 0, kind: 'header' }];
+      incomeCodes.forEach((code) => {
+        const current = -accountSum(entityId, [code], range);
+        const priorSum = -accountSum(entityId, [code], prior);
+        if (current === 0 && priorSum === 0) return;
+        rows.push({ id: `pl-${code}`, label: `${code} · ${reportAccounts[code].name}`, current, prior: priorSum, kind: 'line', accountCodes: [code] });
+      });
+      const totalIncome = -accountSum(entityId, incomeCodes, range);
+      const totalIncomePrior = -accountSum(entityId, incomeCodes, prior);
+      rows.push({ id: 'pl-ti', label: 'Total income', current: totalIncome, prior: totalIncomePrior, kind: 'total', accountCodes: incomeCodes });
+
+      rows.push({ id: 'pl-h2', label: 'Cost of sales', current: 0, prior: 0, kind: 'header' });
+      cosCodes.forEach((code) => {
+        const current = accountSum(entityId, [code], range);
+        const priorSum = accountSum(entityId, [code], prior);
+        if (current === 0 && priorSum === 0) return;
+        rows.push({ id: `pl-${code}`, label: `${code} · ${reportAccounts[code].name}`, current, prior: priorSum, kind: 'line', accountCodes: [code] });
+      });
+      const totalCos = accountSum(entityId, cosCodes, range);
+      const totalCosPrior = accountSum(entityId, cosCodes, prior);
+      rows.push({ id: 'pl-tc', label: 'Total cost of sales', current: totalCos, prior: totalCosPrior, kind: 'total', accountCodes: cosCodes });
+      rows.push({ id: 'pl-gp', label: 'Gross profit', current: totalIncome - totalCos, prior: totalIncomePrior - totalCosPrior, kind: 'total' });
+
+      rows.push({ id: 'pl-h3', label: 'Expenses', current: 0, prior: 0, kind: 'header' });
+      expenseCodes.forEach((code) => {
+        const current = accountSum(entityId, [code], range);
+        const priorSum = accountSum(entityId, [code], prior);
+        if (current === 0 && priorSum === 0) return;
+        rows.push({ id: `pl-${code}`, label: `${code} · ${reportAccounts[code].name}`, current, prior: priorSum, kind: 'line', accountCodes: [code] });
+      });
+      const totalExpenses = accountSum(entityId, expenseCodes, range);
+      const totalExpensesPrior = accountSum(entityId, expenseCodes, prior);
+      rows.push({ id: 'pl-te', label: 'Total expenses', current: totalExpenses, prior: totalExpensesPrior, kind: 'total', accountCodes: expenseCodes });
+      rows.push({ id: 'pl-net', label: 'Net surplus / (deficit)', current: totalIncome - totalCos - totalExpenses, prior: totalIncomePrior - totalCosPrior - totalExpensesPrior, kind: 'total' });
+
+      return {
+        title: `Profit & loss — ${range.start} → ${range.end}`,
+        subtitle: `Compared with prior period ${prior.start} → ${prior.end}`,
+        columns: ['Current period', 'Prior period', 'Variance'],
+        rows,
+      };
+    }
+
+    if (reportType === 'balance-sheet') {
+      const assetCurrent = codesOfType('ASSET').filter((code) => code !== '1501');
+      const rows: ReportRowData[] = [{ id: 'bs-h1', label: 'Current assets', current: 0, prior: 0, kind: 'header' }];
+      assetCurrent.forEach((code) => {
+        const current = accountSum(entityId, [code], range, true);
+        const priorSum = accountSum(entityId, [code], prior, true);
+        if (current === 0 && priorSum === 0) return;
+        rows.push({ id: `bs-${code}`, label: `${code} · ${reportAccounts[code].name}`, current, prior: priorSum, kind: 'line', accountCodes: [code] });
+      });
+      rows.push({ id: 'bs-h2', label: 'Non-current assets', current: 0, prior: 0, kind: 'header' });
+      ['1501'].forEach((code) => {
+        const current = accountSum(entityId, [code], range, true);
+        const priorSum = accountSum(entityId, [code], prior, true);
+        if (current === 0 && priorSum === 0) return;
+        rows.push({ id: `bs-${code}`, label: `${code} · ${reportAccounts[code].name}`, current, prior: priorSum, kind: 'line', accountCodes: [code] });
+      });
+      const totalAssets = accountSum(entityId, codesOfType('ASSET'), range, true);
+      const totalAssetsPrior = accountSum(entityId, codesOfType('ASSET'), prior, true);
+      rows.push({ id: 'bs-ta', label: 'Total assets', current: totalAssets, prior: totalAssetsPrior, kind: 'total', accountCodes: codesOfType('ASSET') });
+
+      rows.push({ id: 'bs-h3', label: 'Liabilities', current: 0, prior: 0, kind: 'header' });
+      codesOfType('LIABILITY').forEach((code) => {
+        const current = -accountSum(entityId, [code], range, true);
+        const priorSum = -accountSum(entityId, [code], prior, true);
+        if (current === 0 && priorSum === 0) return;
+        rows.push({ id: `bs-${code}`, label: `${code} · ${reportAccounts[code].name}`, current, prior: priorSum, kind: 'line', accountCodes: [code] });
+      });
+      const totalLiabilities = -accountSum(entityId, codesOfType('LIABILITY'), range, true);
+      const totalLiabilitiesPrior = -accountSum(entityId, codesOfType('LIABILITY'), prior, true);
+      rows.push({ id: 'bs-tl', label: 'Total liabilities', current: totalLiabilities, prior: totalLiabilitiesPrior, kind: 'total', accountCodes: codesOfType('LIABILITY') });
+
+      rows.push({ id: 'bs-h4', label: 'Equity', current: 0, prior: 0, kind: 'header' });
+      codesOfType('EQUITY').forEach((code) => {
+        const current = -accountSum(entityId, [code], range, true);
+        const priorSum = -accountSum(entityId, [code], prior, true);
+        if (current === 0 && priorSum === 0) return;
+        rows.push({ id: `bs-${code}`, label: `${code} · ${reportAccounts[code].name}`, current, prior: priorSum, kind: 'line', accountCodes: [code] });
+      });
+      const plCodes = [...incomeCodes, ...cosCodes, ...expenseCodes];
+      const accumulated = -accountSum(entityId, plCodes, range, true);
+      const accumulatedPrior = -accountSum(entityId, plCodes, prior, true);
+      rows.push({ id: 'bs-result', label: 'Accumulated result', current: accumulated, prior: accumulatedPrior, kind: 'line', accountCodes: plCodes });
+      const totalEquity = -accountSum(entityId, codesOfType('EQUITY'), range, true) + accumulated;
+      const totalEquityPrior = -accountSum(entityId, codesOfType('EQUITY'), prior, true) + accumulatedPrior;
+      rows.push({ id: 'bs-te', label: 'Total equity', current: totalEquity, prior: totalEquityPrior, kind: 'total', accountCodes: [...codesOfType('EQUITY'), ...plCodes] });
+      rows.push({ id: 'bs-check', label: 'Check — assets less liabilities and equity (should be nil)', current: totalAssets - totalLiabilities - totalEquity, prior: totalAssetsPrior - totalLiabilitiesPrior - totalEquityPrior, kind: 'total' });
+
+      return {
+        title: `Balance sheet as at ${range.end}`,
+        subtitle: `Cumulative balances · prior position as at ${prior.end}`,
+        columns: [`As at ${range.end}`, `As at ${prior.end}`, 'Movement'],
+        rows,
+      };
+    }
+
+    // cash flow
+    const cashCodes = codesOfCashflow('cash');
+    const sections: { id: string; label: string; codes: string[] }[] = [
+      { id: 'operating', label: 'Operating activities', codes: codesOfCashflow('operating') },
+      { id: 'investing', label: 'Investing activities', codes: codesOfCashflow('investing') },
+      { id: 'financing', label: 'Financing activities', codes: codesOfCashflow('financing') },
+    ];
+    const rows: ReportRowData[] = [];
+    let netMovement = 0;
+    let netMovementPrior = 0;
+
+    sections.forEach((section) => {
+      const current = -accountSum(entityId, section.codes, range);
+      const priorSum = -accountSum(entityId, section.codes, prior);
+      netMovement += current;
+      netMovementPrior += priorSum;
+      rows.push({
+        id: `cf-${section.id}`,
+        label: `Net cash from ${section.label.toLowerCase()}`,
+        current,
+        prior: priorSum,
+        kind: 'line',
+        accountCodes: section.codes,
+      });
+    });
+
+    const opening = accountSum(entityId, cashCodes, { start: '1900-01-01', end: range.start }, false);
+    const openingPrior = accountSum(entityId, cashCodes, { start: '1900-01-01', end: prior.start }, false);
+    rows.push({ id: 'cf-net', label: 'Net cash movement', current: netMovement, prior: netMovementPrior, kind: 'total' });
+    rows.push({ id: 'cf-open', label: 'Opening cash', current: opening, prior: openingPrior, kind: 'line', accountCodes: cashCodes });
+    rows.push({ id: 'cf-close', label: 'Closing cash', current: opening + netMovement, prior: openingPrior + netMovementPrior, kind: 'total', accountCodes: cashCodes });
+
+    return {
+      title: `Cash flow — ${range.start} → ${range.end}`,
+      subtitle: `Derived from account movements · prior period ${prior.start} → ${prior.end}`,
+      columns: ['Current period', 'Prior period', 'Variance'],
+      rows,
+    };
+  }, [reportType, selectedEntity.id, reportStart, reportEnd, priorReportRange]);
+
+  type AgingRow = {
+    contactName: string;
+    buckets: [number, number, number, number, number];
+    total: number;
+    priorTotal: number;
+    lines: LedgerLine[];
+  };
+
+  const agingRows = useMemo<AgingRow[]>(() => {
+    if (reportType !== 'aged-receivables' && reportType !== 'aged-payables') {
+      return [];
+    }
+
+    const isReceivable = reportType === 'aged-receivables';
+    const accountCode = isReceivable ? '1010' : '2001';
+    const asOf = new Date(`${reportEnd}T00:00:00`);
+    const priorAsOf = new Date(`${priorReportRange.end}T00:00:00`);
+    const byContact = new Map<string, AgingRow>();
+
+    ledgerLines
+      .filter(
+        (line) =>
+          line.entityId === selectedEntity.id &&
+          line.accountCode === accountCode &&
+          line.date <= reportEnd &&
+          line.dueDate &&
+          (isReceivable ? line.amount > 0 : line.amount < 0),
+      )
+      .forEach((line) => {
+        const existing = byContact.get(line.contactName) ?? {
+          contactName: line.contactName,
+          buckets: [0, 0, 0, 0, 0] as [number, number, number, number, number],
+          total: 0,
+          priorTotal: 0,
+          lines: [],
+        };
+
+        const displayAmount = isReceivable ? line.amount : -line.amount;
+        const daysOverdue = Math.floor((asOf.getTime() - new Date(`${line.dueDate as string}T00:00:00`).getTime()) / 86400000);
+        const bucketIndex = daysOverdue < 0 ? 0 : daysOverdue <= 30 ? 1 : daysOverdue <= 60 ? 2 : daysOverdue <= 90 ? 3 : 4;
+        existing.buckets[bucketIndex] += displayAmount;
+        existing.total += displayAmount;
+        if (line.date <= priorReportRange.end) {
+          const priorDays = Math.floor((priorAsOf.getTime() - new Date(`${line.dueDate as string}T00:00:00`).getTime()) / 86400000);
+          if (priorDays < 0 || priorDays <= 90) {
+            existing.priorTotal += displayAmount;
+          }
+        }
+        existing.lines.push(line);
+        byContact.set(line.contactName, existing);
+      });
+
+    return Array.from(byContact.values()).sort((left, right) => right.total - left.total);
+  }, [reportType, selectedEntity.id, reportEnd, priorReportRange]);
+
+  const fundReport = useMemo(() => {
+    const funds: ReportFund[] = ['restricted', 'unrestricted'];
+    const isIncome = (line: LedgerLine) => reportAccounts[line.accountCode]?.type === 'INCOME';
+    const isExpenditure = (line: LedgerLine) => ['COST_OF_SALES', 'EXPENSE'].includes(reportAccounts[line.accountCode]?.type ?? '');
+
+    return funds.map((fund) => {
+      const fundLines = ledgerLines.filter((line) => line.entityId === 'sprouted-roots' && line.fund === fund);
+      const beforeStart = fundLines.filter((line) => line.date < reportStart);
+      const inRange = fundLines.filter((line) => line.date >= reportStart && line.date <= reportEnd);
+
+      // Fund balance = cumulative income less expenditure (bank legs excluded — they net to zero within each entry)
+      const opening = -beforeStart.filter(isIncome).reduce((total, line) => total + line.amount, 0)
+        - beforeStart.filter(isExpenditure).reduce((total, line) => total + line.amount, 0);
+      const income = -inRange.filter(isIncome).reduce((total, line) => total + line.amount, 0);
+      const expenditure = inRange.filter(isExpenditure).reduce((total, line) => total + line.amount, 0);
+      const closing = opening + income - expenditure;
+      return { fund, opening, income, expenditure, closing };
+    });
+  }, [reportStart, reportEnd]);
+
+  const groupReport = useMemo(() => {
+    const sections = [
+      { id: 'income', label: 'Income', codes: codesOfType('INCOME'), sign: -1 },
+      { id: 'cos', label: 'Cost of sales', codes: codesOfType('COST_OF_SALES'), sign: 1 },
+      { id: 'gross', label: 'Gross profit', codes: [] as string[], sign: 1 },
+      { id: 'expenses', label: 'Expenses', codes: codesOfType('EXPENSE'), sign: 1 },
+      { id: 'net', label: 'Net surplus / (deficit)', codes: [] as string[], sign: 1 },
+    ];
+
+    const incomeValues = entities.map((entity) => -accountSum(entity.id, codesOfType('INCOME'), reportRange));
+    const cosValues = entities.map((entity) => accountSum(entity.id, codesOfType('COST_OF_SALES'), reportRange));
+    const expenseValues = entities.map((entity) => accountSum(entity.id, codesOfType('EXPENSE'), reportRange));
+
+    const priorIncome = entities.reduce((total, entity) => total + (-accountSum(entity.id, codesOfType('INCOME'), priorReportRange)), 0);
+    const priorCos = entities.reduce((total, entity) => total + accountSum(entity.id, codesOfType('COST_OF_SALES'), priorReportRange), 0);
+    const priorExpenses = entities.reduce((total, entity) => total + accountSum(entity.id, codesOfType('EXPENSE'), priorReportRange), 0);
+
+    return sections.map((section) => {
+      const values =
+        section.id === 'income'
+          ? incomeValues
+          : section.id === 'cos'
+            ? cosValues
+            : section.id === 'expenses'
+              ? expenseValues
+              : section.id === 'gross'
+                ? incomeValues.map((value, index) => value - cosValues[index])
+                : incomeValues.map((value, index) => value - cosValues[index] - expenseValues[index]);
+      const total = values.reduce((sum, value) => sum + value, 0);
+      const priorTotal =
+        section.id === 'income'
+          ? priorIncome
+          : section.id === 'cos'
+            ? priorCos
+            : section.id === 'expenses'
+              ? priorExpenses
+              : section.id === 'gross'
+                ? priorIncome - priorCos
+                : priorIncome - priorCos - priorExpenses;
+      return { ...section, values, total, priorTotal };
+    });
+  }, [entities, reportStart, reportEnd, priorReportRange]);
+
+  const reportDrilldownRows = useMemo(() => {
+    if (!reportDrilldown) {
+      return [];
+    }
+    const codeSet = new Set(reportDrilldown.accountCodes);
+    return ledgerLines.filter(
+      (line) =>
+        line.entityId === reportDrilldown.entityId &&
+        codeSet.has(line.accountCode) &&
+        (!reportDrilldown.contactName || line.contactName === reportDrilldown.contactName) &&
+        (!reportDrilldown.fund || line.fund === reportDrilldown.fund) &&
+        (reportDrilldown.cumulative
+          ? line.date <= reportDrilldown.range.end
+          : line.date >= reportDrilldown.range.start && line.date <= reportDrilldown.range.end),
+    );
+  }, [reportDrilldown]);
+
+  const reportTabs: { id: ReportType; label: string }[] = [
+    { id: 'trial-balance', label: 'Trial balance' },
+    { id: 'profit-loss', label: 'Profit & loss' },
+    { id: 'balance-sheet', label: 'Balance sheet' },
+    { id: 'cash-flow', label: 'Cash flow' },
+    { id: 'aged-receivables', label: 'Aged receivables' },
+    { id: 'aged-payables', label: 'Aged payables' },
+    { id: 'fund-report', label: 'Fund report' },
+    { id: 'group-view', label: 'Group view' },
+  ];
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    window.localStorage.setItem('sprouted-vat-filed-periods', JSON.stringify(filedPeriods));
+  }, [filedPeriods]);
 
   const intercompanyBalances = useMemo(() => {
     const matrix = new Map<string, IntercompanyMatrixCell>();
@@ -835,6 +1461,24 @@ export function AppShell() {
   }
 
   function updateCurrentDocument(patch: Partial<DocumentFormState>) {
+    if (patch.status && patch.status !== activeDocument.status) {
+      const kind = isPurchaseView ? 'bill' : 'invoice';
+      const action =
+        patch.status === 'voided'
+          ? 'VOID'
+          : patch.status === 'awaiting-payment' || patch.status === 'paid'
+            ? 'POST'
+            : 'EDIT';
+      void auditEvent({
+        entityId: selectedEntity.id,
+        action,
+        resourceType: kind,
+        resourceRef: activeDocument.docNumber,
+        summary: `${kind === 'bill' ? 'Bill' : 'Invoice'} ${activeDocument.docNumber} moved from ${activeDocument.status} to ${patch.status}`,
+        metadata: { total: activeTotals.total, contact: activeContact?.name },
+      });
+    }
+
     if (activeNav === 'Sales') {
       setSalesDocument((current) => ({ ...current, ...patch }));
       return;
@@ -909,6 +1553,13 @@ export function AppShell() {
     };
 
     setIntercompanyTransactions((current) => [nextTransaction, ...current]);
+    void auditEvent({
+      entityId: fromEntity.id,
+      action: 'POST',
+      resourceType: 'intercompany',
+      resourceRef: reference,
+      summary: `Intercompany ${reference}: ${fromEntity.name} → ${toEntity.name}, GHS ${(amount / 100).toFixed(2)} (mirrored to ${toEntity.name})`,
+    });
     setIntercompanyForm((current) => ({
       ...current,
       reference: `IC-${Date.now().toString().slice(-4)}`,
@@ -916,6 +1567,198 @@ export function AppShell() {
       description: 'Raw material supply',
     }));
   }
+
+  function fileSelectedTaxPeriod() {
+    if (isSelectedPeriodFiled) {
+      return;
+    }
+
+    setFiledPeriods((current) => ({
+      ...current,
+      [selectedEntity.id]: [...(current[selectedEntity.id] ?? []), selectedTaxPeriod],
+    }));
+    void auditEvent({
+      entityId: selectedEntity.id,
+      action: 'FILE_PERIOD',
+      resourceType: 'vat-period',
+      resourceRef: selectedTaxPeriod,
+      summary: `VAT period ${selectedTaxPeriod} filed and locked for ${selectedEntity.name}`,
+    });
+  }
+
+  function downloadWhtCsv() {
+    if (whtRows.length === 0) {
+      return;
+    }
+
+    const header = 'Supplier,TIN,WHT rate,Documents,Gross (GHS),WHT withheld (GHS)';
+    const rows = whtRows.map((row) =>
+      [
+        `"${row.name.replace(/"/g, '""')}"`,
+        row.tin,
+        `${Math.round(row.rate * 100)}%`,
+        row.documents,
+        (row.gross / 100).toFixed(2),
+        (row.withheld / 100).toFixed(2),
+      ].join(','),
+    );
+
+    const blob = new Blob([[header, ...rows].join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `wht-${selectedEntity.id}-${selectedTaxPeriod}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function downloadCsvFile(filename: string, rows: string[]) {
+    const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function openReportDrilldown(
+    title: string,
+    accountCodes: string[],
+    range: ReportRange,
+    cumulative: boolean,
+    entityId?: string,
+    contactName?: string,
+    fund?: ReportFund,
+  ) {
+    setReportDrilldown({
+      title,
+      entityId: entityId ?? selectedEntity.id,
+      accountCodes,
+      range,
+      cumulative,
+      contactName,
+      fund,
+    });
+  }
+
+  function exportReportCsv() {
+    const fileStem = `${reportType}-${selectedEntity.id}-${reportStart}-${reportEnd}`;
+
+    if (reportType === 'aged-receivables' || reportType === 'aged-payables') {
+      const label = reportType === 'aged-receivables' ? 'Aged receivables' : 'Aged payables';
+      const header = `${csvEscape(label)} ${csvEscape(selectedEntity.name)} as at ${reportEnd},Current,1-30 days,31-60 days,61-90 days,90+ days,Total,Prior period total`;
+      const rows = agingRows.map((row) =>
+        [
+          csvEscape(row.contactName),
+          '',
+          ...row.buckets.map(pesewasToGhs),
+          pesewasToGhs(row.total),
+          pesewasToGhs(row.priorTotal),
+        ].join(','),
+      );
+      downloadCsvFile(`${fileStem}.csv`, [header, ...rows]);
+      return;
+    }
+
+    if (reportType === 'fund-report') {
+      const header = `Fund report Sprouted Roots ${reportStart} to ${reportEnd},Restricted,Unrestricted,Total`;
+      const metricRow = (label: string, pick: (fund: (typeof fundReport)[number]) => number) =>
+        [csvEscape(label), ...fundReport.map((fund) => pesewasToGhs(pick(fund))), pesewasToGhs(fundReport.reduce((sum, fund) => sum + pick(fund), 0))].join(',');
+      downloadCsvFile(`${fileStem}.csv`, [
+        header,
+        metricRow('Opening balance', (fund) => fund.opening),
+        metricRow('Income', (fund) => fund.income),
+        metricRow('Expenditure', (fund) => fund.expenditure),
+        metricRow('Closing balance', (fund) => fund.closing),
+      ]);
+      return;
+    }
+
+    if (reportType === 'group-view') {
+      const header = ['Line', ...entities.map((entity) => csvEscape(entity.name)), 'Group total', 'Prior period total'].join(',');
+      const rows = groupReport.map((section) =>
+        [csvEscape(section.label), ...section.values.map(pesewasToGhs), pesewasToGhs(section.total), pesewasToGhs(section.priorTotal)].join(','),
+      );
+      downloadCsvFile(`${fileStem}.csv`, ['"MANAGEMENT SUMMARY ONLY - NOT STATUTORY CONSOLIDATED ACCOUNTS. No intercompany eliminations applied."', header, ...rows]);
+      return;
+    }
+
+    const header = `${csvEscape(standardReport.title)},${standardReport.columns.join(',')}${standardReport.trialBalance ? '' : ',Variance'}`;
+    const rows = standardReport.rows
+      .filter((row) => row.kind !== 'header')
+      .map((row) => {
+        if (standardReport.trialBalance) {
+          return [
+            csvEscape(row.label),
+            pesewasToGhs(Math.max(row.current, 0)),
+            pesewasToGhs(row.creditCurrent ?? Math.max(-row.current, 0)),
+            pesewasToGhs(Math.max(row.prior, 0)),
+            pesewasToGhs(row.creditPrior ?? Math.max(-row.prior, 0)),
+          ].join(',');
+        }
+        return [csvEscape(row.label), pesewasToGhs(row.current), pesewasToGhs(row.prior), pesewasToGhs(row.current - row.prior)].join(',');
+      });
+    downloadCsvFile(`${fileStem}.csv`, [header, ...rows]);
+  }
+
+  async function auditEvent(event: {
+    entityId: string;
+    action: 'POST' | 'EDIT' | 'VOID' | 'MATCH' | 'BACKUP' | 'FILE_PERIOD';
+    resourceType: string;
+    resourceRef: string;
+    summary: string;
+    metadata?: Record<string, unknown>;
+  }) {
+    try {
+      await fetch('/api/audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...event, userName: currentUserName }),
+      });
+    } catch {
+      // The audit API is best-effort while the app runs in demo mode without a live server session.
+    }
+  }
+
+  async function loadSettingsData() {
+    try {
+      const [backupResponse, auditResponse] = await Promise.all([
+        fetch('/api/backups'),
+        fetch(`/api/audit?entityId=${selectedEntity.id}`),
+      ]);
+
+      if (backupResponse.ok) {
+        const payload = (await backupResponse.json()) as { runs: BackupRunView[] };
+        setBackupRuns(payload.runs);
+      }
+
+      if (auditResponse.ok) {
+        const payload = (await auditResponse.json()) as { events: AuditEventView[]; chainIntact: boolean };
+        setAuditEvents(payload.events);
+        setAuditChainIntact(payload.chainIntact);
+      }
+    } catch {
+      // Settings data is read-only; ignore transient failures in demo mode.
+    }
+  }
+
+  async function triggerManualBackup() {
+    setBackupBusy(true);
+    try {
+      await fetch('/api/backups', { method: 'POST' });
+      await loadSettingsData();
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    if (activeNav === 'Settings') {
+      void loadSettingsData();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeNav, selectedEntity.id]);
 
   const documentTitle = isPurchaseView ? 'Purchase bill' : 'Sales invoice';
 
@@ -1215,6 +2058,7 @@ export function AppShell() {
   }, [bankLines.length, selectedBankLine, selectedSuggestions]);
 
   function applyBankMatch(lineId: string, suggestion: BankSuggestion) {
+    const line = bankLines.find((entry) => entry.id === lineId);
     setBankLines((current) =>
       current.map((line) =>
         line.id === lineId
@@ -1229,9 +2073,19 @@ export function AppShell() {
           : line,
       ),
     );
+    if (line) {
+      void auditEvent({
+        entityId: selectedEntity.id,
+        action: 'MATCH',
+        resourceType: 'bank-line',
+        resourceRef: line.reference,
+        summary: `Bank line ${line.reference} matched to ${suggestion.label} (${suggestion.contactName})`,
+      });
+    }
   }
 
   function undoBankMatch(lineId: string) {
+    const line = bankLines.find((entry) => entry.id === lineId);
     setBankLines((current) =>
       current.map((line) =>
         line.id === lineId
@@ -1246,10 +2100,20 @@ export function AppShell() {
           : line,
       ),
     );
+    if (line) {
+      void auditEvent({
+        entityId: selectedEntity.id,
+        action: 'EDIT',
+        resourceType: 'bank-line',
+        resourceRef: line.reference,
+        summary: `Bank line ${line.reference} match undone (was ${line.matchedDocumentLabel ?? 'unmatched'})`,
+      });
+    }
   }
 
   function codeBankLineToAccount(lineId: string, accountCode: string) {
     const account = bankAccountOptions.find((entry) => entry.code === accountCode) ?? bankAccountOptions[0];
+    const line = bankLines.find((entry) => entry.id === lineId);
 
     setBankLines((current) =>
       current.map((line) =>
@@ -1263,6 +2127,15 @@ export function AppShell() {
           : line,
       ),
     );
+    if (line) {
+      void auditEvent({
+        entityId: selectedEntity.id,
+        action: 'POST',
+        resourceType: 'bank-line',
+        resourceRef: line.reference,
+        summary: `Bank line ${line.reference} coded to ${account.code} · ${account.name}`,
+      });
+    }
   }
 
   function applyRepeatedIdenticalMatch() {
@@ -1937,6 +2810,192 @@ export function AppShell() {
                 </div>
               ) : null}
             </div>
+          ) : activeNav === 'Tax' ? (
+            <div className="space-y-6">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{selectedEntity.name}</p>
+                  <h2 className="mt-1 text-2xl font-semibold text-slate-900">VAT return</h2>
+                </div>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={selectedTaxPeriod}
+                    onChange={(event) => {
+                      setSelectedTaxPeriod(event.target.value);
+                      setTaxDrilldown(null);
+                    }}
+                    className="min-h-[44px] rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100"
+                  >
+                    {availableTaxPeriods.length === 0 ? (
+                      <option value={selectedTaxPeriod}>{periodLabelOf(selectedTaxPeriod)}</option>
+                    ) : (
+                      availableTaxPeriods.map((period) => (
+                        <option key={period} value={period}>{periodLabelOf(period)}</option>
+                      ))
+                    )}
+                  </select>
+                  {isSelectedPeriodFiled ? (
+                    <span className="rounded-full bg-emerald-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700">
+                      Filed — locked
+                    </span>
+                  ) : (
+                    <Button size="sm" onClick={fileSelectedTaxPeriod}>File this period</Button>
+                  )}
+                </div>
+              </div>
+
+              {isSelectedPeriodFiled ? (
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+                  {periodLabelOf(selectedTaxPeriod)} has been filed and is locked for {selectedEntity.name}. Nothing can be posted into this period — later corrections must be entered as an adjustment dated in the current open period.
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                  {periodLabelOf(selectedTaxPeriod)} is still open. Filing locks the period; after that, corrections must go through an adjustment in the current period.
+                </div>
+              )}
+
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                {([
+                  { bucket: 'output' as TaxBucket, label: 'Output VAT', value: vatFigures.outputVat, helper: '15% on sales' },
+                  { bucket: 'input' as TaxBucket, label: 'Input VAT', value: vatFigures.inputVat, helper: 'Recoverable on purchases' },
+                  { bucket: 'nhil' as TaxBucket, label: 'NHIL', value: vatFigures.nhilNet, helper: `Out ${(vatFigures.outputNhil / 100).toFixed(2)} − In ${(vatFigures.inputNhil / 100).toFixed(2)}` },
+                  { bucket: 'getfund' as TaxBucket, label: 'GETFund', value: vatFigures.getFundNet, helper: `Out ${(vatFigures.outputGetFund / 100).toFixed(2)} − In ${(vatFigures.inputGetFund / 100).toFixed(2)}` },
+                  { bucket: 'net' as TaxBucket, label: 'Net position', value: vatFigures.net, helper: vatFigures.net >= 0 ? 'Payable to GRA' : 'Refund due' },
+                ]).map((card) => (
+                  <button
+                    key={card.bucket}
+                    type="button"
+                    onClick={() => setTaxDrilldown(card.bucket)}
+                    className="text-left"
+                  >
+                    <Card
+                      className={[
+                        'h-full rounded-2xl transition-colors duration-150 ease-out',
+                        taxDrilldown === card.bucket
+                          ? 'border-brand-200 bg-brand-50 ring-2 ring-brand-500'
+                          : 'hover:border-brand-200 hover:bg-brand-50/40',
+                      ].join(' ')}
+                    >
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{card.label}</p>
+                      <div className={[
+                        'mt-3 font-mono text-2xl tabular-nums',
+                        card.bucket === 'net' ? (card.value >= 0 ? 'text-red-700' : 'text-emerald-700') : 'text-slate-900',
+                      ].join(' ')}>
+                        <Money value={card.value} />
+                      </div>
+                      <p className="mt-2 text-xs text-slate-500">{card.helper}</p>
+                      <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-brand-700">Click to drill down</p>
+                    </Card>
+                  </button>
+                ))}
+              </div>
+
+              {taxDrilldown ? (
+                <Card className="rounded-2xl">
+                  <div className="flex items-center justify-between gap-4 pb-4">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{periodLabelOf(selectedTaxPeriod)}</p>
+                      <h3 className="mt-1 text-xl font-semibold text-slate-900">{taxBucketLabels[taxDrilldown]}</h3>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setTaxDrilldown(null)}
+                      className="text-xl text-slate-500 hover:text-slate-700"
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <div className="overflow-hidden rounded-xl border border-slate-200">
+                    <div className="grid grid-cols-[0.8fr_0.9fr_1.2fr_0.9fr_0.8fr_0.8fr_0.8fr] gap-3 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                      <span>Date</span>
+                      <span>Document</span>
+                      <span>Contact</span>
+                      <span className="text-right">Base</span>
+                      <span className="text-right">VAT</span>
+                      <span className="text-right">NHIL</span>
+                      <span className="text-right">GETFund</span>
+                    </div>
+
+                    {drilldownRows.map((row) => (
+                      <div
+                        key={row.id}
+                        className="grid grid-cols-[0.8fr_0.9fr_1.2fr_0.9fr_0.8fr_0.8fr_0.8fr] gap-3 border-t border-slate-200 px-4 py-3 text-sm text-slate-700"
+                      >
+                        <span>{row.date}</span>
+                        <span className="font-medium text-slate-900">{row.document}</span>
+                        <span>{row.contactName}</span>
+                        <span className="text-right"><Money value={row.base} /></span>
+                        <span className="text-right"><Money value={row.vat} /></span>
+                        <span className="text-right"><Money value={row.nhil} /></span>
+                        <span className="text-right"><Money value={row.getFund} /></span>
+                      </div>
+                    ))}
+
+                    {drilldownRows.length === 0 ? (
+                      <div className="border-t border-slate-200 px-4 py-6 text-sm text-slate-500">
+                        No transactions in this bucket for {periodLabelOf(selectedTaxPeriod)}.
+                      </div>
+                    ) : null}
+                  </div>
+                </Card>
+              ) : null}
+
+              <Card className="rounded-2xl">
+                <div className="flex items-center justify-between gap-4 pb-4">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Withholding tax</p>
+                    <h3 className="mt-1 text-xl font-semibold text-slate-900">{periodLabelOf(selectedTaxPeriod)} — per supplier</h3>
+                  </div>
+                  <Button variant="secondary" size="sm" onClick={downloadWhtCsv} disabled={whtRows.length === 0}>
+                    Download CSV
+                  </Button>
+                </div>
+                <p className="pb-4 text-sm text-slate-600">
+                  Amounts withheld per supplier with their TINs — ready for GRA submission.
+                </p>
+
+                <div className="overflow-hidden rounded-xl border border-slate-200">
+                  <div className="grid grid-cols-[1.4fr_1fr_0.6fr_0.7fr_1fr_1fr] gap-3 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    <span>Supplier</span>
+                    <span>TIN</span>
+                    <span>Rate</span>
+                    <span>Documents</span>
+                    <span className="text-right">Gross</span>
+                    <span className="text-right">WHT withheld</span>
+                  </div>
+
+                  {whtRows.map((row) => (
+                    <div
+                      key={row.name}
+                      className="grid grid-cols-[1.4fr_1fr_0.6fr_0.7fr_1fr_1fr] gap-3 border-t border-slate-200 px-4 py-3 text-sm text-slate-700"
+                    >
+                      <span className="font-medium text-slate-900">{row.name}</span>
+                      <span className="font-mono text-slate-600">{row.tin}</span>
+                      <span>{Math.round(row.rate * 100)}%</span>
+                      <span>{row.documents}</span>
+                      <span className="text-right"><Money value={row.gross} /></span>
+                      <span className="text-right font-semibold"><Money value={row.withheld} /></span>
+                    </div>
+                  ))}
+
+                  {whtRows.length > 0 ? (
+                    <div className="grid grid-cols-[1.4fr_1fr_0.6fr_0.7fr_1fr_1fr] gap-3 border-t-2 border-slate-300 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900">
+                      <span>Total</span>
+                      <span />
+                      <span />
+                      <span>{whtRows.reduce((total, row) => total + row.documents, 0)}</span>
+                      <span className="text-right"><Money value={whtRows.reduce((total, row) => total + row.gross, 0)} /></span>
+                      <span className="text-right"><Money value={whtRows.reduce((total, row) => total + row.withheld, 0)} /></span>
+                    </div>
+                  ) : (
+                    <div className="border-t border-slate-200 px-4 py-6 text-sm text-slate-500">
+                      No withholding tax withheld in {periodLabelOf(selectedTaxPeriod)} for {selectedEntity.name}.
+                    </div>
+                  )}
+                </div>
+              </Card>
+            </div>
           ) : activeNav === 'Intercompany' ? (
             <div className="space-y-6">
               <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
@@ -2183,6 +3242,587 @@ export function AppShell() {
                 </div>
               </div>
             </div>
+          ) : activeNav === 'Reports' ? (
+            <div className="space-y-6">
+              <div className="no-print flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    {reportType === 'group-view' ? 'All entities' : selectedEntity.name}
+                  </p>
+                  <h2 className="mt-1 text-2xl font-semibold text-slate-900">Reports</h2>
+                </div>
+                <div className="flex flex-wrap items-end gap-2">
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-slate-600">From</label>
+                    <Input
+                      type="date"
+                      value={reportStart}
+                      onChange={(event) => {
+                        setReportStart(event.target.value);
+                        setReportDrilldown(null);
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-slate-600">To</label>
+                    <Input
+                      type="date"
+                      value={reportEnd}
+                      onChange={(event) => {
+                        setReportEnd(event.target.value);
+                        setReportDrilldown(null);
+                      }}
+                    />
+                  </div>
+                  <Button variant="secondary" size="sm" onClick={exportReportCsv}>Export Excel</Button>
+                  <Button variant="secondary" size="sm" onClick={() => window.print()}>Export PDF</Button>
+                </div>
+              </div>
+
+              <div className="no-print flex flex-wrap gap-2">
+                {reportTabs.map((tab) => {
+                  const active = reportType === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => {
+                        setReportType(tab.id);
+                        setReportDrilldown(null);
+                      }}
+                      className={[
+                        'rounded-full px-3 py-2 text-sm font-medium transition-colors duration-150 ease-out',
+                        active
+                          ? 'bg-brand-700 text-white'
+                          : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50 hover:text-slate-900',
+                      ].join(' ')}
+                    >
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {['trial-balance', 'profit-loss', 'balance-sheet', 'cash-flow'].includes(reportType) ? (
+                <Card className="rounded-2xl">
+                  <div className="flex flex-col gap-1 pb-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{selectedEntity.name}</p>
+                    <h3 className="text-xl font-semibold text-slate-900">{standardReport.title}</h3>
+                    <p className="text-xs text-slate-500">{standardReport.subtitle}</p>
+                  </div>
+
+                  {standardReport.trialBalance ? (
+                    <div className="overflow-hidden rounded-xl border border-slate-200">
+                      <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr] gap-3 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        <span>Account</span>
+                        {standardReport.columns.map((column) => (
+                          <span key={column} className="text-right">{column}</span>
+                        ))}
+                      </div>
+                      {standardReport.rows.map((row) => {
+                        const debitCurrent = Math.max(row.current, 0);
+                        const creditCurrent = row.creditCurrent ?? Math.max(-row.current, 0);
+                        const debitPrior = Math.max(row.prior, 0);
+                        const creditPrior = row.creditPrior ?? Math.max(-row.prior, 0);
+                        const isTotal = row.kind === 'total';
+                        const cellClass = isTotal
+                          ? 'grid grid-cols-[2fr_1fr_1fr_1fr_1fr] gap-3 border-t-2 border-slate-300 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900'
+                          : 'grid grid-cols-[2fr_1fr_1fr_1fr_1fr] gap-3 border-t border-slate-200 px-4 py-3 text-sm text-slate-700';
+
+                        return (
+                          <div key={row.id} className={cellClass}>
+                            <span>{row.label}</span>
+                            {row.accountCodes && !isTotal ? (
+                              <button type="button" className="text-right font-mono text-brand-700 hover:underline" onClick={() => openReportDrilldown(row.label, row.accountCodes as string[], reportRange, true)}>
+                                {debitCurrent !== 0 ? <Money value={debitCurrent} /> : '—'}
+                              </button>
+                            ) : (
+                              <span className="text-right font-mono">{debitCurrent !== 0 ? <Money value={debitCurrent} /> : '—'}</span>
+                            )}
+                            <span className="text-right font-mono">{creditCurrent !== 0 ? <Money value={creditCurrent} /> : '—'}</span>
+                            {row.accountCodes && !isTotal ? (
+                              <button type="button" className="text-right font-mono text-brand-700 hover:underline" onClick={() => openReportDrilldown(`${row.label} — prior period`, row.accountCodes as string[], priorReportRange, true)}>
+                                {debitPrior !== 0 ? <Money value={debitPrior} /> : '—'}
+                              </button>
+                            ) : (
+                              <span className="text-right font-mono">{debitPrior !== 0 ? <Money value={debitPrior} /> : '—'}</span>
+                            )}
+                            <span className="text-right font-mono">{creditPrior !== 0 ? <Money value={creditPrior} /> : '—'}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="overflow-hidden rounded-xl border border-slate-200">
+                      <div className="grid grid-cols-[2fr_1fr_1fr_1fr] gap-3 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        <span>Line</span>
+                        {standardReport.columns.map((column) => (
+                          <span key={column} className="text-right">{column}</span>
+                        ))}
+                      </div>
+                      {standardReport.rows.map((row) => {
+                        if (row.kind === 'header') {
+                          return (
+                            <div key={row.id} className="border-t border-slate-200 bg-slate-50 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">
+                              {row.label}
+                            </div>
+                          );
+                        }
+
+                        const variance = row.current - row.prior;
+                        const isTotal = row.kind === 'total';
+
+                        return (
+                          <div
+                            key={row.id}
+                            className={[
+                              'grid grid-cols-[2fr_1fr_1fr_1fr] gap-3 px-4 py-3 text-sm',
+                              isTotal ? 'border-t-2 border-slate-300 bg-slate-50 font-semibold text-slate-900' : 'border-t border-slate-200 text-slate-700',
+                            ].join(' ')}
+                          >
+                            <span>{row.label}</span>
+                            {row.accountCodes ? (
+                              <button
+                                type="button"
+                                className="text-right font-mono text-brand-700 hover:underline"
+                                onClick={() =>
+                                  openReportDrilldown(
+                                    row.label,
+                                    row.accountCodes as string[],
+                                    reportRange,
+                                    reportType === 'balance-sheet',
+                                  )
+                                }
+                              >
+                                <Money value={row.current} />
+                              </button>
+                            ) : (
+                              <span className="text-right font-mono"><Money value={row.current} /></span>
+                            )}
+                            {row.accountCodes ? (
+                              <button
+                                type="button"
+                                className="text-right font-mono text-brand-700 hover:underline"
+                                onClick={() =>
+                                  openReportDrilldown(
+                                    `${row.label} — prior period`,
+                                    row.accountCodes as string[],
+                                    priorReportRange,
+                                    reportType === 'balance-sheet',
+                                  )
+                                }
+                              >
+                                <Money value={row.prior} />
+                              </button>
+                            ) : (
+                              <span className="text-right font-mono"><Money value={row.prior} /></span>
+                            )}
+                            <span className={['text-right font-mono', variance >= 0 ? 'text-slate-700' : 'text-red-700'].join(' ')}>
+                              <Money value={variance} />
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </Card>
+              ) : null}
+
+              {reportType === 'aged-receivables' || reportType === 'aged-payables' ? (
+                <Card className="rounded-2xl">
+                  <div className="flex flex-col gap-1 pb-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{selectedEntity.name}</p>
+                    <h3 className="text-xl font-semibold text-slate-900">
+                      {reportType === 'aged-receivables' ? 'Aged receivables' : 'Aged payables'} as at {reportEnd}
+                    </h3>
+                    <p className="text-xs text-slate-500">Open items by days overdue · prior column shows the position as at {priorReportRange.end}</p>
+                  </div>
+
+                  <div className="overflow-hidden rounded-xl border border-slate-200">
+                    <div className="grid grid-cols-[1.6fr_repeat(7,minmax(0,1fr))] gap-3 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                      <span>{reportType === 'aged-receivables' ? 'Customer' : 'Supplier'}</span>
+                      <span className="text-right">Not due</span>
+                      <span className="text-right">1–30</span>
+                      <span className="text-right">31–60</span>
+                      <span className="text-right">61–90</span>
+                      <span className="text-right">90+</span>
+                      <span className="text-right">Total</span>
+                      <span className="text-right">Prior</span>
+                    </div>
+
+                    {agingRows.map((row) => (
+                      <div key={row.contactName} className="grid grid-cols-[1.6fr_repeat(7,minmax(0,1fr))] gap-3 border-t border-slate-200 px-4 py-3 text-sm text-slate-700">
+                        <span className="font-medium text-slate-900">{row.contactName}</span>
+                        {row.buckets.map((bucket, index) => (
+                          <span key={index} className="text-right font-mono">{bucket !== 0 ? <Money value={bucket} /> : '—'}</span>
+                        ))}
+                        <button
+                          type="button"
+                          className="text-right font-mono font-semibold text-brand-700 hover:underline"
+                          onClick={() =>
+                            openReportDrilldown(
+                              `${row.contactName} — open items`,
+                              [reportType === 'aged-receivables' ? '1010' : '2001'],
+                              { start: '1900-01-01', end: reportEnd },
+                              true,
+                              selectedEntity.id,
+                              row.contactName,
+                            )
+                          }
+                        >
+                          <Money value={row.total} />
+                        </button>
+                        <span className="text-right font-mono text-slate-500">{row.priorTotal !== 0 ? <Money value={row.priorTotal} /> : '—'}</span>
+                      </div>
+                    ))}
+
+                    <div className="grid grid-cols-[1.6fr_repeat(7,minmax(0,1fr))] gap-3 border-t-2 border-slate-300 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900">
+                      <span>Total</span>
+                      {[0, 1, 2, 3, 4].map((bucketIndex) => (
+                        <span key={bucketIndex} className="text-right font-mono">
+                          <Money value={agingRows.reduce((total, row) => total + row.buckets[bucketIndex], 0)} />
+                        </span>
+                      ))}
+                      <span className="text-right font-mono"><Money value={agingRows.reduce((total, row) => total + row.total, 0)} /></span>
+                      <span className="text-right font-mono"><Money value={agingRows.reduce((total, row) => total + row.priorTotal, 0)} /></span>
+                    </div>
+                  </div>
+                </Card>
+              ) : null}
+
+              {reportType === 'fund-report' ? (
+                selectedEntity.id === 'sprouted-roots' ? (
+                  <Card className="rounded-2xl">
+                    <div className="flex flex-col gap-1 pb-4">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Sprouted Roots</p>
+                      <h3 className="text-xl font-semibold text-slate-900">Fund report — {reportStart} → {reportEnd}</h3>
+                      <p className="text-xs text-slate-500">Income and expenditure split by restricted and unrestricted funds, with a closing balance per fund</p>
+                    </div>
+
+                    <div className="overflow-hidden rounded-xl border border-slate-200">
+                      <div className="grid grid-cols-[2fr_1fr_1fr_1fr] gap-3 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        <span>Fund movement</span>
+                        <span className="text-right">Restricted</span>
+                        <span className="text-right">Unrestricted</span>
+                        <span className="text-right">Total</span>
+                      </div>
+                      {([
+                        { id: 'opening', label: 'Opening balance', pick: (fund: (typeof fundReport)[number]) => fund.opening, drill: undefined as string[] | undefined },
+                        { id: 'income', label: 'Income', pick: (fund: (typeof fundReport)[number]) => fund.income, drill: codesOfType('INCOME') },
+                        { id: 'expenditure', label: 'Expenditure', pick: (fund: (typeof fundReport)[number]) => fund.expenditure, drill: [...codesOfType('COST_OF_SALES'), ...codesOfType('EXPENSE')] },
+                        { id: 'closing', label: 'Closing balance', pick: (fund: (typeof fundReport)[number]) => fund.closing, drill: undefined },
+                      ]).map((metric) => (
+                        <div
+                          key={metric.id}
+                          className={[
+                            'grid grid-cols-[2fr_1fr_1fr_1fr] gap-3 px-4 py-3 text-sm',
+                            metric.id === 'closing' ? 'border-t-2 border-slate-300 bg-slate-50 font-semibold text-slate-900' : 'border-t border-slate-200 text-slate-700',
+                          ].join(' ')}
+                        >
+                          <span>{metric.label}</span>
+                          {fundReport.map((fund) => (
+                            metric.drill ? (
+                              <button
+                                key={fund.fund}
+                                type="button"
+                                className="text-right font-mono text-brand-700 hover:underline"
+                                onClick={() =>
+                                  openReportDrilldown(
+                                    `${metric.label} — ${fund.fund} fund`,
+                                    metric.drill as string[],
+                                    reportRange,
+                                    false,
+                                    'sprouted-roots',
+                                    undefined,
+                                    fund.fund,
+                                  )
+                                }
+                              >
+                                <Money value={metric.pick(fund)} />
+                              </button>
+                            ) : (
+                              <span key={fund.fund} className="text-right font-mono"><Money value={metric.pick(fund)} /></span>
+                            )
+                          ))}
+                          <span className="text-right font-mono">
+                            <Money value={fundReport.reduce((total, fund) => total + metric.pick(fund), 0)} />
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                ) : (
+                  <Card className="rounded-2xl">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">
+                      Fund reporting applies to <span className="font-semibold text-slate-900">Sprouted Roots</span> only — it is the entity that manages restricted donor programmes. Switch the entity selector to Sprouted Roots to view this report.
+                    </div>
+                  </Card>
+                )
+              ) : null}
+
+              {reportType === 'group-view' ? (
+                <Card className="rounded-2xl">
+                  <div className="flex flex-col gap-1 pb-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Sprouted Group</p>
+                    <h3 className="text-xl font-semibold text-slate-900">Group management summary — {reportStart} → {reportEnd}</h3>
+                  </div>
+
+                  <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                    Management summary only — this is <span className="font-semibold">not</span> a set of statutory consolidated accounts. Intercompany balances and transactions have not been eliminated.
+                  </div>
+
+                  <div className="overflow-x-auto rounded-xl border border-slate-200">
+                    <div
+                      className="grid min-w-[720px] gap-3 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500"
+                      style={{ gridTemplateColumns: `180px repeat(${entities.length}, minmax(120px, 1fr)) 140px 140px` }}
+                    >
+                      <span>Line</span>
+                      {entities.map((entity) => (
+                        <span key={entity.id} className="text-right">{entity.name}</span>
+                      ))}
+                      <span className="text-right">Group total</span>
+                      <span className="text-right">Prior total</span>
+                    </div>
+
+                    {groupReport.map((section) => {
+                      const isComputed = section.id === 'gross' || section.id === 'net';
+                      return (
+                        <div
+                          key={section.id}
+                          className={[
+                            'grid min-w-[720px] gap-3 px-4 py-3 text-sm',
+                            isComputed ? 'border-t-2 border-slate-300 bg-slate-50 font-semibold text-slate-900' : 'border-t border-slate-200 text-slate-700',
+                          ].join(' ')}
+                          style={{ gridTemplateColumns: `180px repeat(${entities.length}, minmax(120px, 1fr)) 140px 140px` }}
+                        >
+                          <span>{section.label}</span>
+                          {section.values.map((value, index) => (
+                            isComputed || section.codes.length === 0 ? (
+                              <span key={entities[index].id} className="text-right font-mono"><Money value={value} /></span>
+                            ) : (
+                              <button
+                                key={entities[index].id}
+                                type="button"
+                                className="text-right font-mono text-brand-700 hover:underline"
+                                onClick={() =>
+                                  openReportDrilldown(
+                                    `${section.label} — ${entities[index].name}`,
+                                    section.codes,
+                                    reportRange,
+                                    false,
+                                    entities[index].id,
+                                  )
+                                }
+                              >
+                                <Money value={value} />
+                              </button>
+                            )
+                          ))}
+                          <span className="text-right font-mono font-semibold"><Money value={section.total} /></span>
+                          <span className="text-right font-mono text-slate-500"><Money value={section.priorTotal} /></span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </Card>
+              ) : null}
+
+              {reportDrilldown ? (
+                <Card className="rounded-2xl">
+                  <div className="flex items-center justify-between gap-4 pb-4">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        {reportDrilldown.cumulative ? `Cumulative to ${reportDrilldown.range.end}` : `${reportDrilldown.range.start} → ${reportDrilldown.range.end}`}
+                      </p>
+                      <h3 className="mt-1 text-xl font-semibold text-slate-900">{reportDrilldown.title}</h3>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setReportDrilldown(null)}
+                      className="text-xl text-slate-500 hover:text-slate-700"
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <div className="overflow-hidden rounded-xl border border-slate-200">
+                    <div className="grid grid-cols-[0.8fr_1fr_1.2fr_1.4fr_0.8fr_0.8fr] gap-3 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                      <span>Date</span>
+                      <span>Document</span>
+                      <span>Contact</span>
+                      <span>Account</span>
+                      <span className="text-right">Debit</span>
+                      <span className="text-right">Credit</span>
+                    </div>
+                    {reportDrilldownRows.map((line) => (
+                      <div key={line.id} className="grid grid-cols-[0.8fr_1fr_1.2fr_1.4fr_0.8fr_0.8fr] gap-3 border-t border-slate-200 px-4 py-3 text-sm text-slate-700">
+                        <span>{line.date}</span>
+                        <span className="font-medium text-slate-900">{line.document}</span>
+                        <span>{line.contactName}</span>
+                        <span>{line.accountCode} · {reportAccounts[line.accountCode]?.name ?? ''}</span>
+                        <span className="text-right font-mono">{line.amount > 0 ? <Money value={line.amount} /> : '—'}</span>
+                        <span className="text-right font-mono">{line.amount < 0 ? <Money value={-line.amount} /> : '—'}</span>
+                      </div>
+                    ))}
+                    {reportDrilldownRows.length === 0 ? (
+                      <div className="border-t border-slate-200 px-4 py-6 text-sm text-slate-500">No transactions behind this figure in the selected period.</div>
+                    ) : null}
+                  </div>
+                </Card>
+              ) : null}
+            </div>
+          ) : activeNav === 'Settings' ? (
+            <div className="space-y-6">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">System</p>
+                  <h2 className="mt-1 text-2xl font-semibold text-slate-900">Settings</h2>
+                </div>
+              </div>
+
+              <Card className="rounded-2xl">
+                <div className="flex items-start justify-between gap-4 pb-4">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Data protection</p>
+                    <h3 className="mt-1 text-xl font-semibold text-slate-900">Database backups</h3>
+                    <p className="mt-1 text-sm text-slate-600">
+                      A backup of the whole database runs automatically every night and is kept as a downloadable file. You can also run one now.
+                    </p>
+                  </div>
+                  <Button size="sm" onClick={triggerManualBackup} disabled={backupBusy}>
+                    {backupBusy ? 'Running…' : 'Run backup now'}
+                  </Button>
+                </div>
+
+                {backupRuns.length > 0 ? (
+                  <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-700">Last successful backup</p>
+                        <p className="mt-1 text-sm font-semibold text-emerald-900">
+                          {new Date(backupRuns[0].createdAt).toLocaleString('en-GH')}
+                        </p>
+                        <p className="mt-0.5 text-xs text-emerald-700">
+                          {(backupRuns[0].sizeBytes / 1024).toFixed(1)} KB · SHA-256 {backupRuns[0].checksum.slice(0, 16)}…
+                        </p>
+                      </div>
+                      <a
+                        href={`/api/backups?download=${encodeURIComponent(backupRuns[0].fileName)}`}
+                        className="inline-flex min-h-[36px] items-center justify-center rounded-lg border border-brand-200 bg-white px-3 py-2 text-sm font-medium text-brand-800 transition-colors duration-150 ease-out hover:bg-brand-50"
+                      >
+                        Download latest
+                      </a>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                    No backup has run yet. The first nightly backup runs automatically, or use "Run backup now".
+                  </div>
+                )}
+
+                <div className="overflow-hidden rounded-xl border border-slate-200">
+                  <div className="grid grid-cols-[1.4fr_1fr_0.7fr_0.8fr_0.8fr] gap-3 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    <span>File</span>
+                    <span>When</span>
+                    <span>Size</span>
+                    <span>Status</span>
+                    <span className="text-right">Download</span>
+                  </div>
+                  {backupRuns.map((run) => (
+                    <div key={run.id} className="grid grid-cols-[1.4fr_1fr_0.7fr_0.8fr_0.8fr] gap-3 border-t border-slate-200 px-4 py-3 text-sm text-slate-700">
+                      <span className="truncate font-mono text-xs">{run.fileName}</span>
+                      <span>{new Date(run.createdAt).toLocaleString('en-GH')}</span>
+                      <span>{(run.sizeBytes / 1024).toFixed(1)} KB</span>
+                      <span>
+                        <span
+                          className={[
+                            'rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]',
+                            run.status === 'SUCCESS' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700',
+                          ].join(' ')}
+                        >
+                          {run.status}
+                        </span>
+                      </span>
+                      <span className="text-right">
+                        {run.status === 'SUCCESS' ? (
+                          <a
+                            href={`/api/backups?download=${encodeURIComponent(run.fileName)}`}
+                            className="text-sm font-medium text-brand-700 hover:underline"
+                          >
+                            Download
+                          </a>
+                        ) : (
+                          <span className="text-xs text-red-600">{run.error ?? 'Failed'}</span>
+                        )}
+                      </span>
+                    </div>
+                  ))}
+                  {backupRuns.length === 0 ? (
+                    <div className="border-t border-slate-200 px-4 py-6 text-sm text-slate-500">No backups recorded yet.</div>
+                  ) : null}
+                </div>
+              </Card>
+
+              <Card className="rounded-2xl">
+                <div className="flex items-start justify-between gap-4 pb-4">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Audit log</p>
+                    <h3 className="mt-1 text-xl font-semibold text-slate-900">{selectedEntity.name}</h3>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Every posting, edit and void with user and timestamp. This log is append-only — it cannot be edited or deleted from the interface.
+                    </p>
+                  </div>
+                  {auditChainIntact === null ? null : auditChainIntact ? (
+                    <span className="rounded-full bg-emerald-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700">
+                      Chain verified
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-red-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-red-700">
+                      Tampering detected
+                    </span>
+                  )}
+                </div>
+
+                <div className="overflow-hidden rounded-xl border border-slate-200">
+                  <div className="grid grid-cols-[1fr_0.7fr_0.7fr_0.8fr_1.8fr] gap-3 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    <span>When</span>
+                    <span>User</span>
+                    <span>Action</span>
+                    <span>Reference</span>
+                    <span>Summary</span>
+                  </div>
+                  {auditEvents.map((event) => (
+                    <div key={event.id} className="grid grid-cols-[1fr_0.7fr_0.7fr_0.8fr_1.8fr] gap-3 border-t border-slate-200 px-4 py-3 text-sm text-slate-700">
+                      <span>{new Date(event.createdAt).toLocaleString('en-GH')}</span>
+                      <span>{event.userName}</span>
+                      <span>
+                        <span
+                          className={[
+                            'rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]',
+                            event.action === 'VOID'
+                              ? 'bg-red-100 text-red-700'
+                              : event.action === 'POST'
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : event.action === 'EDIT'
+                                  ? 'bg-amber-100 text-amber-700'
+                                  : 'bg-slate-100 text-slate-700',
+                          ].join(' ')}
+                        >
+                          {event.action}
+                        </span>
+                      </span>
+                      <span className="font-mono text-xs">{event.resourceRef}</span>
+                      <span>{event.summary}</span>
+                    </div>
+                  ))}
+                  {auditEvents.length === 0 ? (
+                    <div className="border-t border-slate-200 px-4 py-6 text-sm text-slate-500">
+                      No audit events recorded for {selectedEntity.name} yet. Postings, edits and voids will appear here automatically.
+                    </div>
+                  ) : null}
+                </div>
+              </Card>
+            </div>
           ) : (
             <Card className="rounded-2xl">
               <div className="border-b border-slate-200 pb-4">
@@ -2192,13 +3832,19 @@ export function AppShell() {
                     <h2 className="mt-1 text-2xl font-semibold text-slate-900">{documentTitle}</h2>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Button variant="secondary" size="sm" onClick={() => updateCurrentDocument({ status: 'draft' })}>Draft</Button>
-                    <Button variant="secondary" size="sm" onClick={() => updateCurrentDocument({ status: 'awaiting-payment' })}>Awaiting payment</Button>
-                    <Button size="sm" onClick={() => updateCurrentDocument({ status: isPurchaseView ? 'paid' : 'paid' })}>Mark paid</Button>
-                    <Button variant="danger" size="sm" onClick={() => updateCurrentDocument({ status: 'voided' })}>Void</Button>
+                    <Button variant="secondary" size="sm" disabled={documentPeriodLocked} onClick={() => updateCurrentDocument({ status: 'draft' })}>Draft</Button>
+                    <Button variant="secondary" size="sm" disabled={documentPeriodLocked} onClick={() => updateCurrentDocument({ status: 'awaiting-payment' })}>Awaiting payment</Button>
+                    <Button size="sm" disabled={documentPeriodLocked} onClick={() => updateCurrentDocument({ status: isPurchaseView ? 'paid' : 'paid' })}>Mark paid</Button>
+                    <Button variant="danger" size="sm" disabled={documentPeriodLocked} onClick={() => updateCurrentDocument({ status: 'voided' })}>Void</Button>
                   </div>
                 </div>
               </div>
+
+              {documentPeriodLocked ? (
+                <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                  The VAT period for this document date has been filed and locked for {selectedEntity.name}. This document cannot be changed — post a reversing adjustment dated in the current open period instead.
+                </div>
+              ) : null}
 
               <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                 <div>
@@ -2373,6 +4019,44 @@ export function AppShell() {
                   </div>
                 </div>
               </div>
+
+              {!isPurchaseView ? (
+                <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">GRA E-VAT — placeholder</p>
+                    <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">Integration pending</span>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Reserved for the future GRA E-VAT integration. Nothing is transmitted yet — these fields will be auto-populated with the clearance number, QR code and timestamp returned by GRA. Manual entry is allowed until then.
+                  </p>
+                  <div className="mt-3 grid gap-4 md:grid-cols-3">
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-slate-700">Clearance number</label>
+                      <Input
+                        value={activeDocument.evatClearanceNumber}
+                        onChange={(event) => updateCurrentDocument({ evatClearanceNumber: event.target.value })}
+                        placeholder="Pending GRA integration"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-slate-700">QR code</label>
+                      <Input
+                        value={activeDocument.evatQrCode}
+                        onChange={(event) => updateCurrentDocument({ evatQrCode: event.target.value })}
+                        placeholder="Pending GRA integration"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-slate-700">Timestamp</label>
+                      <Input
+                        value={activeDocument.evatTimestamp}
+                        onChange={(event) => updateCurrentDocument({ evatTimestamp: event.target.value })}
+                        placeholder="Pending GRA integration"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="mt-6 rounded-2xl border border-slate-200 bg-white">
                 <button

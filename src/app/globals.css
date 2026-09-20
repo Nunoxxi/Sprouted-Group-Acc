@@ -51,3 +51,26 @@ body {
     @apply font-mono tabular-nums;
   }
 }
+
+@media print {
+  body {
+    background: #ffffff;
+  }
+
+  aside,
+  header,
+  .no-print {
+    display: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+  }
+
+  .rounded-2xl,
+  .rounded-xl {
+    border-color: #cbd5e1 !important;
+    box-shadow: none !important;
+  }
+}
+

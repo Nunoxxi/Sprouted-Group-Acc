@@ -18,6 +18,39 @@ model Entity {
   accounts      Account[]
   journalEntries JournalEntry[]
   contactBalances ContactEntityBalance[]
+  auditEvents   AuditEvent[]
+}
+
+model AuditEvent {
+  id            String   @id @default(cuid())
+  entityId      String
+  userName      String
+  action        String   // POST | EDIT | VOID | MATCH | BACKUP | FILE_PERIOD
+  resourceType  String   // invoice | bill | bank-line | intercompany | vat-period | backup
+  resourceRef   String
+  summary       String
+  metadataJson  String?
+  hash          String
+  previousHash  String?
+  createdAt     DateTime @default(now())
+
+  entity        Entity   @relation(fields: [entityId], references: [id])
+
+  @@index([entityId, createdAt])
+  @@index([entityId, resourceType])
+}
+
+model BackupRun {
+  id          String   @id @default(cuid())
+  fileName    String
+  filePath    String
+  sizeBytes   Int
+  status      String   // SUCCESS | FAILED
+  error       String?
+  checksum    String
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 enum ContactType {
