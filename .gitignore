@@ -23,3 +23,9 @@ start_test.txt
 
 # Editor settings
 .vscode/
+
+# database backups contain the full ledger - never commit them
+/backups
+
+# typescript incremental build output
+*.tsbuildinfo

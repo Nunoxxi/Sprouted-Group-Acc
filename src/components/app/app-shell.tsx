@@ -1,11 +1,20 @@
 'use client';
 
-import { ledgerLines, reportAccounts, type AccountClass, type CashflowClass, type LedgerLine, type ReportFund } from '@/lib/report-data';
+import { ledgerLines, projects, reportAccounts, type AccountClass, type CashflowClass, type LedgerLine, type ReportFund } from '@/lib/report-data';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Money } from '@/components/ui/money';
+import {
+  leviesOnBase,
+  roundPesewas,
+  withholdingRateOf,
+  withholdingTaxOn,
+  type VATTreatment,
+  type WithholdingRate,
+  type WithholdingTaxStatus,
+} from '@/lib/ghana-tax';
 
 const navigationItems = [
   'Dashboard',
@@ -40,7 +49,6 @@ type EntityMetrics = {
 
 type ContactType = 'customer' | 'supplier' | 'both';
 type ContactCategory = 'customer' | 'supplier' | 'farmer' | 'group-entity' | 'other';
-type WithholdingTaxStatus = 'none' | '5%' | '10%' | 'exempt';
 
 type ContactRecord = {
   id: string;
@@ -257,7 +265,7 @@ type TaxTransaction = {
   vat: number;
   nhil: number;
   getFund: number;
-  whtRate: 0 | 0.05 | 0.1;
+  whtRate: WithholdingRate;
   whtAmount: number;
 };
 
@@ -279,13 +287,11 @@ function makeTaxEntry(entry: {
   contactTin: string;
   kind: 'sale' | 'purchase';
   base: number;
-  whtRate?: 0 | 0.05 | 0.1;
+  whtRate?: WithholdingRate;
 }): TaxTransaction {
-  const vat = Math.round(entry.base * 0.15);
-  const nhil = Math.round(entry.base * 0.025);
-  const getFund = Math.round(entry.base * 0.025);
+  const { vat, nhil, getFund, totalInclTax } = leviesOnBase(entry.base);
   const whtRate = entry.whtRate ?? 0;
-  const whtAmount = entry.kind === 'purchase' ? Math.round((entry.base + vat + nhil + getFund) * whtRate) : 0;
+  const whtAmount = entry.kind === 'purchase' ? withholdingTaxOn(totalInclTax, whtRate) : 0;
 
   return { ...entry, vat, nhil, getFund, whtRate, whtAmount };
 }
@@ -357,7 +363,6 @@ function slugify(value: string) {
     .replace(/^-+|-+$/g, '') || 'new-entity';
 }
 
-type VATTreatment = 'standard' | 'zero-rated' | 'exempt';
 type DocumentStatus = 'draft' | 'awaiting-payment' | 'paid' | 'voided';
 
 type DocumentLine = {
@@ -454,33 +459,60 @@ function makeDocument(kind: 'invoice' | 'bill'): DocumentFormState {
   };
 }
 
-function lineTaxBreakdown(line: DocumentLine) {
-  const base = line.quantity * line.unitPrice;
+const documentStatuses: DocumentStatus[] = ['draft', 'awaiting-payment', 'paid', 'voided'];
+const vatTreatments: VATTreatment[] = ['standard', 'zero-rated', 'exempt'];
 
-  if (line.vatTreatment === 'zero-rated' || line.vatTreatment === 'exempt') {
-    return {
-      base,
-      vat: 0,
-      nhil: 0,
-      getFund: 0,
-      totalTax: 0,
-      totalInclTax: base,
-    };
-  }
+function asText(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback;
+}
 
-  const vat = base * 0.15;
-  const nhil = base * 0.025;
-  const getFund = base * 0.025;
-  const totalTax = vat + nhil + getFund;
+function asNumber(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function normalizeLine(value: unknown): DocumentLine {
+  const line = (value ?? {}) as Partial<DocumentLine>;
+  const fresh = makeLine();
 
   return {
-    base,
-    vat,
-    nhil,
-    getFund,
-    totalTax,
-    totalInclTax: base + totalTax,
+    id: asText(line.id, fresh.id),
+    description: asText(line.description),
+    quantity: asNumber(line.quantity, fresh.quantity),
+    unitPrice: asNumber(line.unitPrice, fresh.unitPrice),
+    accountCode: asText(line.accountCode, fresh.accountCode),
+    vatTreatment: vatTreatments.includes(line.vatTreatment as VATTreatment)
+      ? (line.vatTreatment as VATTreatment)
+      : fresh.vatTreatment,
   };
+}
+
+// Saved drafts can predate any field on DocumentFormState, so fill every gap from a
+// fresh document. Without this a restored draft hands the form undefined values and
+// React flips those inputs from controlled to uncontrolled.
+function normalizeDocument(value: unknown, kind: 'invoice' | 'bill'): DocumentFormState {
+  const draft = (value ?? {}) as Partial<DocumentFormState>;
+  const fresh = makeDocument(kind);
+  const lines = Array.isArray(draft.lines) ? draft.lines.map(normalizeLine) : [];
+
+  return {
+    docNumber: asText(draft.docNumber, fresh.docNumber),
+    contactId: asText(draft.contactId, fresh.contactId),
+    date: asText(draft.date, fresh.date),
+    dueDate: asText(draft.dueDate, fresh.dueDate),
+    status: documentStatuses.includes(draft.status as DocumentStatus)
+      ? (draft.status as DocumentStatus)
+      : fresh.status,
+    lines: lines.length > 0 ? lines : fresh.lines,
+    evatClearanceNumber: asText(draft.evatClearanceNumber),
+    evatQrCode: asText(draft.evatQrCode),
+    evatTimestamp: asText(draft.evatTimestamp),
+  };
+}
+
+function lineTaxBreakdown(line: DocumentLine) {
+  // Each line is its own tax point, so levies are rounded per line and then
+  // summed — rounding the summed base instead would disagree with the invoice.
+  return leviesOnBase(roundPesewas(line.quantity * line.unitPrice), line.vatTreatment);
 }
 
 function buildTotals(lines: DocumentLine[], withholdingTaxStatus?: WithholdingTaxStatus) {
@@ -492,10 +524,8 @@ function buildTotals(lines: DocumentLine[], withholdingTaxStatus?: WithholdingTa
   const totalTax = vat + nhil + getFund;
   const total = subtotal + totalTax;
 
-  const withheldRate =
-    withholdingTaxStatus === '5%' ? 0.05 : withholdingTaxStatus === '10%' ? 0.1 : 0;
-
-  const withholdingTax = withheldRate > 0 ? total * withheldRate : 0;
+  const withheldRate = withholdingRateOf(withholdingTaxStatus);
+  const withholdingTax = withholdingTaxOn(total, withheldRate);
   const netPayable = Math.max(total - withholdingTax, 0);
 
   return {
@@ -622,6 +652,108 @@ function buildJournalEntries(documentState: DocumentFormState, isPurchase: boole
   return groupedEntries;
 }
 
+/**
+ * Money inputs: people type cedis (12.50), the ledger stores pesewas (1250).
+ * The conversion rounds, because 12.34 * 100 is 1233.9999999999998 in
+ * floating point and a ledger cannot carry that.
+ */
+function cedisInputToPesewas(raw: string): number {
+  return roundPesewas(Number(raw) * 100) || 0;
+}
+
+function pesewasToCedisInput(pesewas: number): number {
+  return pesewas / 100;
+}
+
+/** A short human-readable reference for a new intercompany entry. */
+function newIntercompanyReference(): string {
+  return `IC-${Date.now().toString().slice(-4)}`;
+}
+
+/** A unique id for a newly created intercompany transaction. */
+function newIntercompanyTransactionId(reference: string): string {
+  return `${reference.toLowerCase()}-${Date.now()}`;
+}
+
+type BankMatchStatus = 'unreconciled' | 'matched' | 'coded';
+
+type BankLine = {
+  id: string;
+  date: string;
+  amount: number;
+  description: string;
+  reference: string;
+  bank: string;
+  status: BankMatchStatus;
+  matchedDocumentId?: string;
+  matchedDocumentLabel?: string;
+  matchedDocumentType?: 'invoice' | 'bill';
+  matchedContact?: string;
+  accountCode?: string;
+  accountName?: string;
+};
+
+type CsvMapping = {
+  date: string;
+  amount: string;
+  description: string;
+  reference: string;
+  bank: string;
+};
+
+type BankSuggestion = {
+  id: string;
+  type: 'invoice' | 'bill';
+  label: string;
+  contactName: string;
+  amount: number;
+  date: string;
+  confidence: number;
+};
+
+function normalizeForMatch(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+// Demo documents the bank reconciliation matches against. Constant, so it lives
+// here rather than being rebuilt on every render of the shell.
+const bankDocuments = [
+  { id: 'INV-1042', type: 'invoice' as const, contact: 'Cocoa Partners Limited', amount: 182500, date: '2026-09-10', reference: 'INV-1042' },
+  { id: 'INV-1044', type: 'invoice' as const, contact: 'Nana Akua Farms', amount: 96000, date: '2026-09-11', reference: 'INV-1044' },
+  { id: 'BILL-2198', type: 'bill' as const, contact: 'Sprouted Roots', amount: 128400, date: '2026-09-09', reference: 'BILL-2198' },
+  { id: 'BILL-2201', type: 'bill' as const, contact: 'Akwasi Logistics', amount: 45600, date: '2026-09-12', reference: 'BILL-2201' },
+  { id: 'INV-1046', type: 'invoice' as const, contact: 'Cocoa Partners Limited', amount: 245000, date: '2026-09-13', reference: 'INV-1046' },
+];
+
+function getSuggestionsForBankLine(line: BankLine): BankSuggestion[] {
+  return bankDocuments
+    .map((document) => {
+      const amountDifference = Math.abs(line.amount - document.amount);
+      const dateDifferenceDays = Math.abs(
+        (new Date(line.date).getTime() - new Date(document.date).getTime()) / 86400000,
+      );
+      const contactMatch = normalizeForMatch(line.description).includes(normalizeForMatch(document.contact))
+        || normalizeForMatch(document.contact).includes(normalizeForMatch(line.description));
+
+      let score = 10;
+      score += Math.max(0, 40 - amountDifference / 2000);
+      score += dateDifferenceDays <= 3 ? 35 : dateDifferenceDays <= 10 ? 18 : 0;
+      score += contactMatch ? 20 : 0;
+
+      return {
+        id: document.id,
+        type: document.type,
+        label: document.reference,
+        contactName: document.contact,
+        amount: document.amount,
+        date: document.date,
+        confidence: Math.min(95, Math.max(32, Math.round(score))),
+      };
+    })
+    .sort((left, right) => right.confidence - left.confidence)
+    .slice(0, 3);
+}
+
 export function AppShell() {
   const [entities, setEntities] = useState<EntityRecord[]>(defaultEntities);
   const [selectedEntityId, setSelectedEntityId] = useState(defaultEntities[0].id);
@@ -704,14 +836,14 @@ export function AppShell() {
     },
   ]);
 
-  const [intercompanyForm, setIntercompanyForm] = useState({
-    reference: `IC-${Date.now().toString().slice(-4)}`,
+  const [intercompanyForm, setIntercompanyForm] = useState(() => ({
+    reference: newIntercompanyReference(),
     date: new Date().toISOString().slice(0, 10),
     fromEntityId: defaultEntities[0].id,
     toEntityId: defaultEntities[1].id,
     amount: 0,
     description: 'Raw material supply',
-  });
+  }));
 
   const [filedPeriods, setFiledPeriods] = useState<Record<string, string[]>>(() => {
     if (typeof window === 'undefined') {
@@ -736,6 +868,7 @@ export function AppShell() {
     | 'aged-receivables'
     | 'aged-payables'
     | 'fund-report'
+    | 'projects'
     | 'group-view';
 
   const [reportType, setReportType] = useState<ReportType>('trial-balance');
@@ -749,6 +882,7 @@ export function AppShell() {
     cumulative: boolean;
     contactName?: string;
     fund?: ReportFund;
+    projectId?: string;
   } | null>(null);
 
   type BackupRunView = {
@@ -759,6 +893,7 @@ export function AppShell() {
     checksum: string;
     createdAt: string;
     error: string | null;
+    available: boolean;
   };
 
   type AuditEventView = {
@@ -773,6 +908,9 @@ export function AppShell() {
   };
 
   const [backupRuns, setBackupRuns] = useState<BackupRunView[]>([]);
+  const [lastSuccessfulBackup, setLastSuccessfulBackup] = useState<BackupRunView | null>(null);
+  const [lastBackupFailed, setLastBackupFailed] = useState(false);
+  const [backupError, setBackupError] = useState<string | null>(null);
   const [backupBusy, setBackupBusy] = useState(false);
   const [auditEvents, setAuditEvents] = useState<AuditEventView[]>([]);
   const [auditChainIntact, setAuditChainIntact] = useState<boolean | null>(null);
@@ -900,8 +1038,8 @@ export function AppShell() {
     net: 'Net position — all transactions in the period',
   };
 
-  const reportRange: ReportRange = { start: reportStart, end: reportEnd };
-  const priorReportRange = useMemo(() => priorRangeOf(reportRange), [reportStart, reportEnd]);
+  const reportRange: ReportRange = useMemo(() => ({ start: reportStart, end: reportEnd }), [reportStart, reportEnd]);
+  const priorReportRange = useMemo(() => priorRangeOf(reportRange), [reportRange]);
 
   function accountSum(entityId: string, codes: string[], range: ReportRange, cumulative = false) {
     const codeSet = new Set(codes);
@@ -952,7 +1090,7 @@ export function AppShell() {
 
       return {
         title: `Trial balance as at ${range.end}`,
-        subtitle: `Debit balances positive · cumulative to report date · prior period ${prior.start} → ${prior.end}`,
+        subtitle: `Money in shown positive · cumulative to report date · prior period ${prior.start} → ${prior.end}`,
         columns: ['Current debit', 'Current credit', 'Prior debit', 'Prior credit'],
         trialBalance: true,
         rows: [
@@ -1099,7 +1237,7 @@ export function AppShell() {
       columns: ['Current period', 'Prior period', 'Variance'],
       rows,
     };
-  }, [reportType, selectedEntity.id, reportStart, reportEnd, priorReportRange]);
+  }, [reportType, selectedEntity.id, reportRange, priorReportRange]);
 
   type AgingRow = {
     contactName: string;
@@ -1157,7 +1295,17 @@ export function AppShell() {
   }, [reportType, selectedEntity.id, reportEnd, priorReportRange]);
 
   const fundReport = useMemo(() => {
-    const funds: ReportFund[] = ['restricted', 'unrestricted'];
+    // Funds are derived from the distinct fund tags carried on Roots journal
+    // lines (which the seeded Fund model mirrors), so the report reads from
+    // actual fund records rather than a hardcoded list.
+    const funds: ReportFund[] = Array.from(
+      new Set(
+        ledgerLines
+          .filter((line) => line.entityId === 'sprouted-roots' && line.fund)
+          .map((line) => line.fund as ReportFund),
+      ),
+    ).sort();
+
     const isIncome = (line: LedgerLine) => reportAccounts[line.accountCode]?.type === 'INCOME';
     const isExpenditure = (line: LedgerLine) => ['COST_OF_SALES', 'EXPENSE'].includes(reportAccounts[line.accountCode]?.type ?? '');
 
@@ -1217,7 +1365,31 @@ export function AppShell() {
                 : priorIncome - priorCos - priorExpenses;
       return { ...section, values, total, priorTotal };
     });
-  }, [entities, reportStart, reportEnd, priorReportRange]);
+  }, [entities, reportRange, priorReportRange]);
+
+  const projectReport = useMemo(() => {
+    const isIncome = (line: LedgerLine) => reportAccounts[line.accountCode]?.type === 'INCOME';
+    const isExpenditure = (line: LedgerLine) => ['COST_OF_SALES', 'EXPENSE'].includes(reportAccounts[line.accountCode]?.type ?? '');
+
+    return projects
+      .filter((project) => project.entityId === selectedEntity.id)
+      .map((project) => {
+        const lines = ledgerLines.filter((line) => line.entityId === project.entityId && line.projectId === project.id);
+        const beforeStart = lines.filter((line) => line.date < reportStart);
+        const inRange = lines.filter((line) => line.date >= reportStart && line.date <= reportEnd);
+        const toDate = lines.filter((line) => line.date <= reportEnd);
+
+        const opening = -beforeStart.filter(isIncome).reduce((total, line) => total + line.amount, 0)
+          - beforeStart.filter(isExpenditure).reduce((total, line) => total + line.amount, 0);
+        const received = -inRange.filter(isIncome).reduce((total, line) => total + line.amount, 0);
+        const expenses = inRange.filter(isExpenditure).reduce((total, line) => total + line.amount, 0);
+        const closing = opening + received - expenses;
+        const spentToDate = toDate.filter(isExpenditure).reduce((total, line) => total + line.amount, 0);
+        const budgetUsedPct = project.budget > 0 ? Math.round((spentToDate / project.budget) * 100) : null;
+
+        return { project, opening, received, expenses, closing, spentToDate, budgetUsedPct };
+      });
+  }, [selectedEntity.id, reportStart, reportEnd]);
 
   const reportDrilldownRows = useMemo(() => {
     if (!reportDrilldown) {
@@ -1230,6 +1402,7 @@ export function AppShell() {
         codeSet.has(line.accountCode) &&
         (!reportDrilldown.contactName || line.contactName === reportDrilldown.contactName) &&
         (!reportDrilldown.fund || line.fund === reportDrilldown.fund) &&
+        (!reportDrilldown.projectId || line.projectId === reportDrilldown.projectId) &&
         (reportDrilldown.cumulative
           ? line.date <= reportDrilldown.range.end
           : line.date >= reportDrilldown.range.start && line.date <= reportDrilldown.range.end),
@@ -1244,6 +1417,7 @@ export function AppShell() {
     { id: 'aged-receivables', label: 'Aged receivables' },
     { id: 'aged-payables', label: 'Aged payables' },
     { id: 'fund-report', label: 'Fund report' },
+    { id: 'projects', label: 'Projects' },
     { id: 'group-view', label: 'Group view' },
   ];
 
@@ -1326,12 +1500,17 @@ export function AppShell() {
     }
 
     try {
-      const parsed = JSON.parse(stringValue) as DocumentFormState;
+      const parsed: unknown = JSON.parse(stringValue);
+      // Re-hydrating from localStorage whenever the entity or module changes is
+      // a sync from an external store, which is what effects are for. The
+      // cascading-render cost is one extra render per switch.
+      /* eslint-disable react-hooks/set-state-in-effect */
       if (activeNav === 'Sales') {
-        setSalesDocument(parsed);
+        setSalesDocument(normalizeDocument(parsed, 'invoice'));
       } else if (activeNav === 'Purchases') {
-        setPurchaseDocument(parsed);
+        setPurchaseDocument(normalizeDocument(parsed, 'bill'));
       }
+      /* eslint-enable react-hooks/set-state-in-effect */
     } catch {
       // ignore invalid storage payloads and keep the fresh default form
     }
@@ -1519,12 +1698,12 @@ export function AppShell() {
       return;
     }
 
-    const reference = intercompanyForm.reference.trim() || `IC-${Date.now().toString().slice(-4)}`;
+    const reference = intercompanyForm.reference.trim() || newIntercompanyReference();
     const documentLabelFrom = `INV-${reference}`;
     const documentLabelTo = `BILL-${reference}`;
 
     const nextTransaction: IntercompanyTransaction = {
-      id: `${reference.toLowerCase()}-${Date.now()}`,
+      id: newIntercompanyTransactionId(reference),
       reference,
       date: intercompanyForm.date,
       fromEntityId: fromEntity.id,
@@ -1630,6 +1809,7 @@ export function AppShell() {
     entityId?: string,
     contactName?: string,
     fund?: ReportFund,
+    projectId?: string,
   ) {
     setReportDrilldown({
       title,
@@ -1639,6 +1819,7 @@ export function AppShell() {
       cumulative,
       contactName,
       fund,
+      projectId,
     });
   }
 
@@ -1672,6 +1853,26 @@ export function AppShell() {
         metricRow('Expenditure', (fund) => fund.expenditure),
         metricRow('Closing balance', (fund) => fund.closing),
       ]);
+      return;
+    }
+
+    if (reportType === 'projects') {
+      const header = `Project report ${csvEscape(selectedEntity.name)} ${reportStart} to ${reportEnd},Funder,Fund,Opening,Funds received,Expenses,Closing balance,Budget,Spent to date,% budget used`;
+      const rows = projectReport.map((row) =>
+        [
+          csvEscape(row.project.name),
+          csvEscape(row.project.funder),
+          row.project.fund,
+          pesewasToGhs(row.opening),
+          pesewasToGhs(row.received),
+          pesewasToGhs(row.expenses),
+          pesewasToGhs(row.closing),
+          row.project.budget > 0 ? pesewasToGhs(row.project.budget) : '',
+          pesewasToGhs(row.spentToDate),
+          row.budgetUsedPct !== null ? `${row.budgetUsedPct}%` : '',
+        ].join(','),
+      );
+      downloadCsvFile(`${fileStem}.csv`, [header, ...rows]);
       return;
     }
 
@@ -1729,8 +1930,14 @@ export function AppShell() {
       ]);
 
       if (backupResponse.ok) {
-        const payload = (await backupResponse.json()) as { runs: BackupRunView[] };
+        const payload = (await backupResponse.json()) as {
+          runs: BackupRunView[];
+          lastSuccessful: BackupRunView | null;
+          lastRunFailed: boolean;
+        };
         setBackupRuns(payload.runs);
+        setLastSuccessfulBackup(payload.lastSuccessful);
+        setLastBackupFailed(payload.lastRunFailed);
       }
 
       if (auditResponse.ok) {
@@ -1745,9 +1952,16 @@ export function AppShell() {
 
   async function triggerManualBackup() {
     setBackupBusy(true);
+    setBackupError(null);
     try {
-      await fetch('/api/backups', { method: 'POST' });
+      const response = await fetch('/api/backups', { method: 'POST' });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string | null } | null;
+        setBackupError(payload?.error ?? 'The backup did not complete. The database has not been saved.');
+      }
       await loadSettingsData();
+    } catch {
+      setBackupError('Could not reach the server to run a backup.');
     } finally {
       setBackupBusy(false);
     }
@@ -1755,48 +1969,15 @@ export function AppShell() {
 
   useEffect(() => {
     if (activeNav === 'Settings') {
+      // loadSettingsData only sets state after its fetches resolve, so this is
+      // the ordinary fetch-in-effect pattern, not a synchronous setState.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       void loadSettingsData();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeNav, selectedEntity.id]);
 
   const documentTitle = isPurchaseView ? 'Purchase bill' : 'Sales invoice';
-
-  type BankMatchStatus = 'unreconciled' | 'matched' | 'coded';
-
-  type BankLine = {
-    id: string;
-    date: string;
-    amount: number;
-    description: string;
-    reference: string;
-    bank: string;
-    status: BankMatchStatus;
-    matchedDocumentId?: string;
-    matchedDocumentLabel?: string;
-    matchedDocumentType?: 'invoice' | 'bill';
-    matchedContact?: string;
-    accountCode?: string;
-    accountName?: string;
-  };
-
-  type CsvMapping = {
-    date: string;
-    amount: string;
-    description: string;
-    reference: string;
-    bank: string;
-  };
-
-  type BankSuggestion = {
-    id: string;
-    type: 'invoice' | 'bill';
-    label: string;
-    contactName: string;
-    amount: number;
-    date: string;
-    confidence: number;
-  };
 
   const bankAccountOptions = [
     { code: '1010', name: 'Trade Receivables' },
@@ -1812,14 +1993,6 @@ export function AppShell() {
     { code: '4005', name: 'Export Sales' },
     { code: '5001', name: 'Raw Materials Used' },
     { code: '6001', name: 'Factory Utilities' },
-  ];
-
-  const bankDocuments = [
-    { id: 'INV-1042', type: 'invoice' as const, contact: 'Cocoa Partners Limited', amount: 182500, date: '2026-09-10', reference: 'INV-1042' },
-    { id: 'INV-1044', type: 'invoice' as const, contact: 'Nana Akua Farms', amount: 96000, date: '2026-09-11', reference: 'INV-1044' },
-    { id: 'BILL-2198', type: 'bill' as const, contact: 'Sprouted Roots', amount: 128400, date: '2026-09-09', reference: 'BILL-2198' },
-    { id: 'BILL-2201', type: 'bill' as const, contact: 'Akwasi Logistics', amount: 45600, date: '2026-09-12', reference: 'BILL-2201' },
-    { id: 'INV-1046', type: 'invoice' as const, contact: 'Cocoa Partners Limited', amount: 245000, date: '2026-09-13', reference: 'INV-1046' },
   ];
 
   const initialBankLines: BankLine[] = [
@@ -1879,10 +2052,6 @@ export function AppShell() {
     },
   ];
 
-  function normalizeForMatch(value: string) {
-    return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-  }
-
   function parseCsvContent(csvText: string) {
     const rows: string[][] = [];
     let row: string[] = [];
@@ -1941,35 +2110,6 @@ export function AppShell() {
     return Number.isFinite(parsed) ? parsed : 0;
   }
 
-  function getSuggestionsForBankLine(line: BankLine): BankSuggestion[] {
-    return bankDocuments
-      .map((document) => {
-        const amountDifference = Math.abs(line.amount - document.amount);
-        const dateDifferenceDays = Math.abs(
-          (new Date(line.date).getTime() - new Date(document.date).getTime()) / 86400000,
-        );
-        const contactMatch = normalizeForMatch(line.description).includes(normalizeForMatch(document.contact))
-          || normalizeForMatch(document.contact).includes(normalizeForMatch(line.description));
-
-        let score = 10;
-        score += Math.max(0, 40 - amountDifference / 2000);
-        score += dateDifferenceDays <= 3 ? 35 : dateDifferenceDays <= 10 ? 18 : 0;
-        score += contactMatch ? 20 : 0;
-
-        return {
-          id: document.id,
-          type: document.type,
-          label: document.reference,
-          contactName: document.contact,
-          amount: document.amount,
-          date: document.date,
-          confidence: Math.min(95, Math.max(32, Math.round(score))),
-        };
-      })
-      .sort((left, right) => right.confidence - left.confidence)
-      .slice(0, 3);
-  }
-
   const [bankMappings, setBankMappings] = useState<Record<string, CsvMapping>>(() => {
     if (typeof window === 'undefined') {
       return {};
@@ -1998,7 +2138,10 @@ export function AppShell() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedBankLine = bankLines[selectedBankIndex] ?? bankLines[0];
-  const selectedSuggestions = selectedBankLine ? getSuggestionsForBankLine(selectedBankLine) : [];
+  const selectedSuggestions = useMemo(
+    () => (selectedBankLine ? getSuggestionsForBankLine(selectedBankLine) : []),
+    [selectedBankLine],
+  );
   const unreconciledCount = bankLines.filter((line) => line.status === 'unreconciled').length;
 
   useEffect(() => {
@@ -2009,11 +2152,12 @@ export function AppShell() {
     window.localStorage.setItem('sprouted-bank-mappings', JSON.stringify(bankMappings));
   }, [bankMappings]);
 
-  useEffect(() => {
-    if (selectedBankIndex > bankLines.length - 1) {
-      setSelectedBankIndex(Math.max(bankLines.length - 1, 0));
-    }
-  }, [bankLines.length, selectedBankIndex]);
+  // When lines are removed the selection can point past the end. Adjusting
+  // state during render (rather than in an effect) lets React re-render
+  // immediately without committing the stale frame first.
+  if (selectedBankIndex > bankLines.length - 1) {
+    setSelectedBankIndex(Math.max(bankLines.length - 1, 0));
+  }
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -3085,13 +3229,13 @@ export function AppShell() {
                       </div>
 
                       <div>
-                        <label className="mb-1.5 block text-sm font-medium text-slate-700">Amount</label>
+                        <label className="mb-1.5 block text-sm font-medium text-slate-700">Amount (GHS)</label>
                         <Input
                           type="number"
                           min={0}
                           step="0.01"
-                          value={intercompanyForm.amount}
-                          onChange={(event) => setIntercompanyForm((current) => ({ ...current, amount: Number(event.target.value) || 0 }))}
+                          value={pesewasToCedisInput(intercompanyForm.amount)}
+                          onChange={(event) => setIntercompanyForm((current) => ({ ...current, amount: cedisInputToPesewas(event.target.value) }))}
                         />
                       </div>
                     </div>
@@ -3221,8 +3365,8 @@ export function AppShell() {
                                 <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
                                   <div className="grid grid-cols-[1.2fr_0.6fr_0.6fr] gap-3 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                                     <span>Account</span>
-                                    <span>Debit</span>
-                                    <span>Credit</span>
+                                    <span>Money in</span>
+                                    <span>Money out</span>
                                   </div>
                                   {journal.side.map((entry) => (
                                     <div key={`${journal.documentLabel}-${entry.accountCode}-${entry.type}`} className="grid grid-cols-[1.2fr_0.6fr_0.6fr] gap-3 border-t border-slate-200 px-4 py-3 text-sm text-slate-700">
@@ -3560,6 +3704,134 @@ export function AppShell() {
                 )
               ) : null}
 
+              {reportType === 'projects' ? (
+                <Card className="rounded-2xl">
+                  <div className="flex flex-col gap-1 pb-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{selectedEntity.name}</p>
+                    <h3 className="text-xl font-semibold text-slate-900">Project tracking — {reportStart} → {reportEnd}</h3>
+                    <p className="text-xs text-slate-500">Funds received and expenses per project, with budget usage and closing balance per project</p>
+                  </div>
+
+                  {projectReport.length > 0 ? (
+                    <div className="space-y-4">
+                      {projectReport.map((row) => (
+                        <div key={row.project.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                            <div>
+                              <div className="text-sm font-semibold text-slate-900">{row.project.name}</div>
+                              <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500">
+                                <span>{row.project.funder}</span>
+                                <span
+                                  className={[
+                                    'rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em]',
+                                    row.project.fund === 'restricted' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600',
+                                  ].join(' ')}
+                                >
+                                  {row.project.fund}
+                                </span>
+                              </div>
+                            </div>
+                            {row.budgetUsedPct !== null ? (
+                              <div className="min-w-[220px]">
+                                <div className="flex items-center justify-between text-[11px] text-slate-500">
+                                  <span>Budget used</span>
+                                  <span className={row.budgetUsedPct > 90 ? 'font-semibold text-red-700' : 'font-semibold text-slate-700'}>
+                                    {row.budgetUsedPct}%
+                                  </span>
+                                </div>
+                                <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-200">
+                                  <div
+                                    className={row.budgetUsedPct > 90 ? 'h-full bg-red-500' : 'h-full bg-brand-700'}
+                                    style={{ width: `${Math.min(row.budgetUsedPct, 100)}%` }}
+                                  />
+                                </div>
+                                <div className="mt-1 text-[11px] text-slate-500">
+                                  <Money value={row.spentToDate} /> of <Money value={row.project.budget} />
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+
+                          <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white">
+                            <div className="grid grid-cols-[1.2fr_1fr_1fr_1fr_1fr] gap-3 bg-slate-50 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                              <span>Movement</span>
+                              <span className="text-right">Opening</span>
+                              <span className="text-right">Funds received</span>
+                              <span className="text-right">Expenses</span>
+                              <span className="text-right">Closing balance</span>
+                            </div>
+                            <div className="grid grid-cols-[1.2fr_1fr_1fr_1fr_1fr] gap-3 border-t border-slate-200 px-4 py-3 text-sm text-slate-700">
+                              <span className="font-medium text-slate-900">{row.project.name}</span>
+                              <button
+                                type="button"
+                                className="text-right font-mono text-brand-700 hover:underline"
+                                onClick={() =>
+                                  openReportDrilldown(
+                                    `${row.project.name} — opening position`,
+                                    [...codesOfType('INCOME'), ...codesOfType('COST_OF_SALES'), ...codesOfType('EXPENSE')],
+                                    { start: '1900-01-01', end: reportStart },
+                                    true,
+                                    row.project.entityId,
+                                    undefined,
+                                    undefined,
+                                    row.project.id,
+                                  )
+                                }
+                              >
+                                <Money value={row.opening} />
+                              </button>
+                              <button
+                                type="button"
+                                className="text-right font-mono text-brand-700 hover:underline"
+                                onClick={() =>
+                                  openReportDrilldown(
+                                    `${row.project.name} — funds received`,
+                                    codesOfType('INCOME'),
+                                    reportRange,
+                                    false,
+                                    row.project.entityId,
+                                    undefined,
+                                    undefined,
+                                    row.project.id,
+                                  )
+                                }
+                              >
+                                <Money value={row.received} />
+                              </button>
+                              <button
+                                type="button"
+                                className="text-right font-mono text-brand-700 hover:underline"
+                                onClick={() =>
+                                  openReportDrilldown(
+                                    `${row.project.name} — expenses`,
+                                    [...codesOfType('COST_OF_SALES'), ...codesOfType('EXPENSE')],
+                                    reportRange,
+                                    false,
+                                    row.project.entityId,
+                                    undefined,
+                                    undefined,
+                                    row.project.id,
+                                  )
+                                }
+                              >
+                                <Money value={row.expenses} />
+                              </button>
+                              <span className="text-right font-mono font-semibold text-slate-900">
+                                <Money value={row.closing} />
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">
+                      No projects are set up for <span className="font-semibold text-slate-900">{selectedEntity.name}</span> yet. Projects track funds received and expenses per programme — they are currently defined for Sprouted Roots, the charity entity.
+                    </div>
+                  )}
+                </Card>
+              ) : null}
+
               {reportType === 'group-view' ? (
                 <Card className="rounded-2xl">
                   <div className="flex flex-col gap-1 pb-4">
@@ -3651,8 +3923,8 @@ export function AppShell() {
                       <span>Document</span>
                       <span>Contact</span>
                       <span>Account</span>
-                      <span className="text-right">Debit</span>
-                      <span className="text-right">Credit</span>
+                      <span className="text-right">Money in</span>
+                      <span className="text-right">Money out</span>
                     </div>
                     {reportDrilldownRows.map((line) => (
                       <div key={line.id} className="grid grid-cols-[0.8fr_1fr_1.2fr_1.4fr_0.8fr_0.8fr] gap-3 border-t border-slate-200 px-4 py-3 text-sm text-slate-700">
@@ -3686,7 +3958,8 @@ export function AppShell() {
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Data protection</p>
                     <h3 className="mt-1 text-xl font-semibold text-slate-900">Database backups</h3>
                     <p className="mt-1 text-sm text-slate-600">
-                      A backup of the whole database runs automatically every night and is kept as a downloadable file. You can also run one now.
+                      A backup of the whole database runs automatically every night, is checked against its SHA-256 before
+                      you download it, and the most recent 14 are kept. You can also run one now.
                     </p>
                   </div>
                   <Button size="sm" onClick={triggerManualBackup} disabled={backupBusy}>
@@ -3694,29 +3967,46 @@ export function AppShell() {
                   </Button>
                 </div>
 
-                {backupRuns.length > 0 ? (
+                {(backupError || lastBackupFailed) ? (
+                  <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-red-700">Last backup failed</p>
+                    <p className="mt-1 text-sm font-semibold text-red-900">
+                      {backupError ?? backupRuns[0]?.error ?? 'The most recent backup did not complete.'}
+                    </p>
+                    <p className="mt-0.5 text-xs text-red-700">
+                      The database has not been saved since the last successful backup shown below. Run a backup now, and
+                      check that the backup location is writable.
+                    </p>
+                  </div>
+                ) : null}
+
+                {lastSuccessfulBackup ? (
                   <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
                         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-700">Last successful backup</p>
                         <p className="mt-1 text-sm font-semibold text-emerald-900">
-                          {new Date(backupRuns[0].createdAt).toLocaleString('en-GH')}
+                          {new Date(lastSuccessfulBackup.createdAt).toLocaleString('en-GH')}
                         </p>
                         <p className="mt-0.5 text-xs text-emerald-700">
-                          {(backupRuns[0].sizeBytes / 1024).toFixed(1)} KB · SHA-256 {backupRuns[0].checksum.slice(0, 16)}…
+                          {(lastSuccessfulBackup.sizeBytes / 1024).toFixed(1)} KB · SHA-256 {lastSuccessfulBackup.checksum.slice(0, 16)}…
                         </p>
                       </div>
-                      <a
-                        href={`/api/backups?download=${encodeURIComponent(backupRuns[0].fileName)}`}
-                        className="inline-flex min-h-[36px] items-center justify-center rounded-lg border border-brand-200 bg-white px-3 py-2 text-sm font-medium text-brand-800 transition-colors duration-150 ease-out hover:bg-brand-50"
-                      >
-                        Download latest
-                      </a>
+                      {lastSuccessfulBackup.available ? (
+                        <a
+                          href={`/api/backups?download=${encodeURIComponent(lastSuccessfulBackup.fileName)}`}
+                          className="inline-flex min-h-[36px] items-center justify-center rounded-lg border border-brand-200 bg-white px-3 py-2 text-sm font-medium text-brand-800 transition-colors duration-150 ease-out hover:bg-brand-50"
+                        >
+                          Download latest
+                        </a>
+                      ) : (
+                        <span className="text-xs text-emerald-700">File no longer kept on disk</span>
+                      )}
                     </div>
                   </div>
                 ) : (
                   <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                    No backup has run yet. The first nightly backup runs automatically, or use "Run backup now".
+                    No backup has completed successfully yet. The nightly backup runs automatically, or use &ldquo;Run backup now&rdquo;.
                   </div>
                 )}
 
@@ -3744,7 +4034,9 @@ export function AppShell() {
                         </span>
                       </span>
                       <span className="text-right">
-                        {run.status === 'SUCCESS' ? (
+                        {run.status !== 'SUCCESS' ? (
+                          <span className="text-xs text-red-600">{run.error ?? 'Failed'}</span>
+                        ) : run.available ? (
                           <a
                             href={`/api/backups?download=${encodeURIComponent(run.fileName)}`}
                             className="text-sm font-medium text-brand-700 hover:underline"
@@ -3752,7 +4044,7 @@ export function AppShell() {
                             Download
                           </a>
                         ) : (
-                          <span className="text-xs text-red-600">{run.error ?? 'Failed'}</span>
+                          <span className="text-xs text-slate-400">Not kept</span>
                         )}
                       </span>
                     </div>
@@ -3905,7 +4197,7 @@ export function AppShell() {
                 <div className="grid grid-cols-[1.6fr_0.7fr_0.9fr_1fr_1.1fr_56px] gap-3 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                   <span>Description</span>
                   <span>Qty</span>
-                  <span>Unit price</span>
+                  <span>Unit price (GHS)</span>
                   <span>Account</span>
                   <span>VAT</span>
                   <span />
@@ -3929,8 +4221,8 @@ export function AppShell() {
                       type="number"
                       min={0}
                       step="0.01"
-                      value={line.unitPrice}
-                      onChange={(event) => updateLine(line.id, { unitPrice: Number(event.target.value) || 0 })}
+                      value={pesewasToCedisInput(line.unitPrice)}
+                      onChange={(event) => updateLine(line.id, { unitPrice: cedisInputToPesewas(event.target.value) })}
                     />
                     <select
                       value={line.accountCode}
@@ -4073,8 +4365,8 @@ export function AppShell() {
                     <div className="overflow-hidden rounded-xl border border-slate-200">
                       <div className="grid grid-cols-[1fr_0.7fr_0.7fr] gap-3 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                         <span>Account</span>
-                        <span>Debit</span>
-                        <span>Credit</span>
+                        <span>Money in</span>
+                        <span>Money out</span>
                       </div>
 
                       {journalEntries.map((entry) => (

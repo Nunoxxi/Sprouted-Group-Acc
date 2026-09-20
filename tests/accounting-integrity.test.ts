@@ -1,14 +1,16 @@
 import { describe, expect, it } from 'vitest';
+import { execFileSync } from 'node:child_process';
 
 import {
   balanceSheetBalances,
-  intercompanyPairsNetToZero,
+  intercompanyMirrorsMatch,
   journalEntriesBalance,
   ledgerBalancesPerEntity,
   trialBalanceNetsToZero,
   type IntercompanyTransactionLike,
 } from '@/lib/accounting-integrity';
-import { accountTypesMap, entityIds, ledgerLines } from '@/lib/report-data';
+import { accountTypesMap, entityIds, ledgerLines, projects } from '@/lib/report-data';
+import { leviesOnBase, withholdingTaxOn } from '@/lib/ghana-tax';
 
 const accountTypes = accountTypesMap();
 
@@ -17,10 +19,7 @@ const accountTypes = accountTypesMap();
  * assert each is balanced — this mirrors buildJournalEntries in the shell.
  */
 function documentJournal(base: number, kind: 'sale' | 'purchase') {
-  const vat = Math.round(base * 0.15);
-  const nhil = Math.round(base * 0.025);
-  const getFund = Math.round(base * 0.025);
-  const total = base + vat + nhil + getFund;
+  const { vat, nhil, getFund, totalInclTax: total } = leviesOnBase(base);
 
   if (kind === 'sale') {
     return {
@@ -35,7 +34,7 @@ function documentJournal(base: number, kind: 'sale' | 'purchase') {
     };
   }
 
-  const wht = Math.round(total * 0.05);
+  const wht = withholdingTaxOn(total, 0.05);
   return {
     entityId: 'sprouted-roots',
     lines: [
@@ -47,6 +46,14 @@ function documentJournal(base: number, kind: 'sale' | 'purchase') {
       { amount: wht, type: 'credit' as const },
     ],
   };
+}
+
+/** One entity's half of an intercompany posting: balanced, moving `amount`. */
+function mirroredSide(amount: number) {
+  return [
+    { amount, type: 'debit' as const },
+    { amount, type: 'credit' as const },
+  ];
 }
 
 describe('books always balance', () => {
@@ -87,17 +94,23 @@ describe('books always balance', () => {
         amount: 128400,
         fromEntityId: 'sprouted-roots',
         toEntityId: 'sprouted-crafts',
-        journalEntries: [{ entityId: 'sprouted-roots' }, { entityId: 'sprouted-crafts' }],
+        journalEntries: [
+          { entityId: 'sprouted-roots', side: mirroredSide(128400) },
+          { entityId: 'sprouted-crafts', side: mirroredSide(128400) },
+        ],
       },
       {
         reference: 'IC-2026-002',
         amount: 68000,
         fromEntityId: 'sprouted-crafts',
         toEntityId: 'oikazi',
-        journalEntries: [{ entityId: 'sprouted-crafts' }, { entityId: 'oikazi' }],
+        journalEntries: [
+          { entityId: 'sprouted-crafts', side: mirroredSide(68000) },
+          { entityId: 'oikazi', side: mirroredSide(68000) },
+        ],
       },
     ];
-    expect(intercompanyPairsNetToZero(transactions)).toBe(true);
+    expect(intercompanyMirrorsMatch(transactions)).toBe(true);
   });
 
   it('rejects an intercompany transaction missing one side', () => {
@@ -107,10 +120,26 @@ describe('books always balance', () => {
         amount: 50000,
         fromEntityId: 'sprouted-roots',
         toEntityId: 'sprouted-crafts',
-        journalEntries: [{ entityId: 'sprouted-roots' }], // mirror never posted
+        journalEntries: [{ entityId: 'sprouted-roots', side: mirroredSide(50000) }], // mirror never posted
       },
     ];
-    expect(intercompanyPairsNetToZero(broken)).toBe(false);
+    expect(intercompanyMirrorsMatch(broken)).toBe(false);
+  });
+
+  it('rejects an intercompany transaction whose two sides disagree on the amount', () => {
+    const mismatched: IntercompanyTransactionLike[] = [
+      {
+        reference: 'IC-2026-004',
+        amount: 90000,
+        fromEntityId: 'sprouted-roots',
+        toEntityId: 'sprouted-crafts',
+        journalEntries: [
+          { entityId: 'sprouted-roots', side: mirroredSide(90000) },
+          { entityId: 'sprouted-crafts', side: mirroredSide(89000) }, // buyer booked less
+        ],
+      },
+    ];
+    expect(intercompanyMirrorsMatch(mismatched)).toBe(false);
   });
 
   it('detects an out-of-balance journal entry', () => {
@@ -124,5 +153,125 @@ describe('books always balance', () => {
       },
     ];
     expect(journalEntriesBalance(bad)).toBe(false);
+  });
+});
+
+describe('project tracking (Sprouted Roots)', () => {
+  const isIncome = (code: string) => accountTypes[code] === 'INCOME';
+  const isExpenditure = (code: string) => ['COST_OF_SALES', 'EXPENSE'].includes(accountTypes[code]);
+
+  it('every project-tagged line references a known project', () => {
+    const knownIds = new Set(projects.map((project) => project.id));
+    const tagged = ledgerLines.filter((line) => line.projectId !== undefined);
+    expect(tagged.length).toBeGreaterThan(0);
+    for (const line of tagged) {
+      expect(knownIds.has(line.projectId as string), `unknown project ${line.projectId} on line ${line.id}`).toBe(true);
+    }
+  });
+
+  it('per-project closing balance equals opening plus funds received less expenses', () => {
+    for (const project of projects) {
+      const lines = ledgerLines.filter((line) => line.projectId === project.id);
+      const income = -lines.filter((line) => isIncome(line.accountCode)).reduce((total, line) => total + line.amount, 0);
+      const expenditure = lines.filter((line) => isExpenditure(line.accountCode)).reduce((total, line) => total + line.amount, 0);
+      const closing = income - expenditure;
+      expect(Number.isInteger(closing), `project ${project.id} closing not an integer`);
+      // A funded project should never end negative overall in this dataset
+      expect(closing, `project ${project.id} is overdrawn`).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('project totals reconcile to the fund totals they belong to', () => {
+    for (const fund of ['restricted', 'unrestricted'] as const) {
+      const projectIncome = projects
+        .filter((project) => project.fund === fund)
+        .flatMap((project) => ledgerLines.filter((line) => line.projectId === project.id && isIncome(line.accountCode)))
+        .reduce((total, line) => total - line.amount, 0);
+
+      const fundIncome = ledgerLines
+        .filter((line) => line.entityId === 'sprouted-roots' && line.fund === fund && isIncome(line.accountCode))
+        .reduce((total, line) => total - line.amount, 0);
+
+      expect(projectIncome, `${fund} project income does not reconcile to fund income`).toBe(fundIncome);
+    }
+  });
+
+  it('the seeded Fund model covers every fund classification the fund report uses', () => {
+    const script = `
+      const { PrismaClient } = require('@prisma/client');
+      const prisma = new PrismaClient();
+      prisma.fund.findMany({ select: { classification: true } })
+        .then((rows) => { console.log(JSON.stringify(rows.map((r) => r.classification))); })
+        .finally(() => prisma.$disconnect());
+    `;
+    const output = execFileSync(process.execPath, ['-e', script], {
+      cwd: process.cwd(),
+      env: { ...process.env, DATABASE_URL: process.env.DATABASE_URL ?? 'file:./dev.db' },
+    }).toString();
+    const dbClassifications = new Set(JSON.parse(output.trim().split('\n').pop() as string));
+
+    // The fund report groups journal lines by these two tags — both must exist in the DB.
+    const reportTags = new Set(
+      ledgerLines
+        .filter((line) => line.entityId === 'sprouted-roots' && line.fund)
+        .map((line) => (line.fund === 'restricted' ? 'RESTRICTED' : 'UNRESTRICTED')),
+    );
+
+    for (const tag of Array.from(reportTags)) {
+      expect(dbClassifications.has(tag), `fund classification ${tag} missing from the Fund model`).toBe(true);
+    }
+  });
+});
+
+describe('Ghana levies stay in whole pesewas', () => {
+  // Bases chosen to land badly on 15% and 2.5%: 1234 * 0.025 = 30.85, and
+  // 1234 * 0.15 is 185.10000000000002 in binary floating point.
+  const awkwardBases = [1, 7, 13, 99, 1234, 4567, 33333, 99999, 123457, 2000001];
+
+  it('every levy on every base is a whole number of pesewas', () => {
+    for (const base of awkwardBases) {
+      const { vat, nhil, getFund, totalTax, totalInclTax } = leviesOnBase(base);
+      for (const [label, amount] of Object.entries({ vat, nhil, getFund, totalTax, totalInclTax })) {
+        expect(Number.isInteger(amount), `${label} on base ${base} is ${amount}, not whole pesewas`).toBe(true);
+      }
+    }
+  });
+
+  it('the three levies together stay within a pesewa of the 20% effective rate', () => {
+    for (const base of awkwardBases) {
+      const { totalTax } = leviesOnBase(base);
+      expect(Math.abs(totalTax - base * 0.2), `20% drift on base ${base}`).toBeLessThanOrEqual(1.5);
+    }
+  });
+
+  it('NHIL and GETFund are charged on the same base at the same rate', () => {
+    for (const base of awkwardBases) {
+      const { nhil, getFund } = leviesOnBase(base);
+      expect(nhil, `NHIL and GETFund differ on base ${base}`).toBe(getFund);
+    }
+  });
+
+  it('zero-rated and exempt lines carry no levy but keep their base', () => {
+    for (const treatment of ['zero-rated', 'exempt'] as const) {
+      const result = leviesOnBase(4567, treatment);
+      expect(result.totalTax).toBe(0);
+      expect(result.totalInclTax).toBe(4567);
+    }
+  });
+
+  it('withholding tax is whole pesewas and charged on the tax-inclusive total', () => {
+    for (const base of awkwardBases) {
+      const { totalInclTax } = leviesOnBase(base);
+      const wht = withholdingTaxOn(totalInclTax, 0.05);
+      expect(Number.isInteger(wht), `WHT on base ${base} is ${wht}`).toBe(true);
+      expect(wht).toBe(Math.round(totalInclTax * 0.05));
+    }
+  });
+
+  it('a document journal built from these levies balances exactly', () => {
+    for (const base of awkwardBases) {
+      expect(journalEntriesBalance([documentJournal(base, 'sale')]), `sale on ${base}`).toBe(true);
+      expect(journalEntriesBalance([documentJournal(base, 'purchase')]), `purchase on ${base}`).toBe(true);
+    }
   });
 });

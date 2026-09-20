@@ -1,8 +1,9 @@
 /**
  * Accounting integrity invariants for Sprouted Group.
  *
- * These functions are pure: the app shell and the test suite share the same
- * logic so what users see is exactly what the tests prove.
+ * These functions are pure and are exercised by the test suite. The statutory
+ * tax rule they lean on lives in ghana-tax.ts, which the app shell also uses,
+ * so the figures under test are the figures users see.
  */
 
 export type AccountClass = 'ASSET' | 'LIABILITY' | 'EQUITY' | 'INCOME' | 'COST_OF_SALES' | 'EXPENSE';
@@ -23,7 +24,10 @@ export interface IntercompanyTransactionLike {
   amount: number;
   fromEntityId: string;
   toEntityId: string;
-  journalEntries: { entityId: string }[];
+  journalEntries: {
+    entityId: string;
+    side: { amount: number; type: 'debit' | 'credit' }[];
+  }[];
 }
 
 /**
@@ -89,36 +93,45 @@ export function balanceSheetBalances(
 }
 
 /**
- * Invariant 4 — every intercompany pair nets to zero.
+ * Invariant 4 — every intercompany transaction is mirrored faithfully.
  *
- * For each pair of entities, amounts owed one way minus amounts owed the other
- * way must equal zero once both sides of every mirrored transaction are posted
- * (a sale from A to B raises A's receivable and B's payable by the same amount).
- * Also verifies each transaction actually posted to both entities.
+ * A trade between two group entities is posted twice: the seller raises a
+ * receivable, the buyer raises a payable. For the group to consolidate, those
+ * two postings must describe the same trade — both entities posted, each side
+ * internally balanced, and each side moving exactly the transaction amount.
+ *
+ * Note this is deliberately NOT a check that the pair balance is zero. An
+ * unreciprocated sale from A to B is perfectly normal and leaves A owed money;
+ * what must never happen is the two sides disagreeing about how much.
  */
-export function intercompanyPairsNetToZero(
+export function intercompanyMirrorsMatch(
   transactions: IntercompanyTransactionLike[],
 ): boolean {
-  const pairNet = new Map<string, number>();
-
-  for (const transaction of transactions) {
-    const postedEntities = new Set(transaction.journalEntries.map((entry) => entry.entityId));
-    if (
-      !postedEntities.has(transaction.fromEntityId) ||
-      !postedEntities.has(transaction.toEntityId) ||
-      transaction.fromEntityId === transaction.toEntityId ||
-      transaction.amount <= 0
-    ) {
+  return transactions.every((transaction) => {
+    if (transaction.fromEntityId === transaction.toEntityId || transaction.amount <= 0) {
       return false;
     }
 
-    const key = [transaction.fromEntityId, transaction.toEntityId].sort().join('<->');
-    // Receivable direction (from -> to) is positive, the reverse is negative.
-    const sign = transaction.fromEntityId < transaction.toEntityId ? 1 : -1;
-    pairNet.set(key, (pairNet.get(key) ?? 0) + sign * transaction.amount);
-  }
+    const sides = new Map(transaction.journalEntries.map((entry) => [entry.entityId, entry.side]));
+    const sellerSide = sides.get(transaction.fromEntityId);
+    const buyerSide = sides.get(transaction.toEntityId);
 
-  return Array.from(pairNet.values()).every((net) => net % 1 === 0); // integer pesewas, no fractional drift
+    if (!sellerSide || !buyerSide || sides.size !== 2) {
+      return false;
+    }
+
+    return [sellerSide, buyerSide].every((side) => {
+      const debits = side
+        .filter((line) => line.type === 'debit')
+        .reduce((total, line) => total + line.amount, 0);
+      const credits = side
+        .filter((line) => line.type === 'credit')
+        .reduce((total, line) => total + line.amount, 0);
+
+      // Balanced in itself, and moving the amount the transaction claims.
+      return debits === credits && debits === transaction.amount;
+    });
+  });
 }
 
 /**

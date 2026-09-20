@@ -25,16 +25,25 @@ async function resolveEntityId(idOrAlias: string): Promise<string | null> {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const entityParam = searchParams.get('entityId');
-  const entityId = entityParam ? await resolveEntityId(entityParam) : null;
 
-  const where = entityId ? { entityId } : {};
+  // Reads are scoped to one entity, always. A missing or unknown entity is
+  // refused rather than widened to every entity's audit trail.
+  if (!entityParam) {
+    return NextResponse.json({ error: 'entityId is required' }, { status: 400 });
+  }
+
+  const entityId = await resolveEntityId(entityParam);
+  if (!entityId) {
+    return NextResponse.json({ error: 'unknown entity' }, { status: 404 });
+  }
+
   const events = await prisma.auditEvent.findMany({
-    where,
+    where: { entityId },
     orderBy: { createdAt: 'desc' },
     take: 500,
   });
 
-  const integrity = entityId ? await verifyAuditChain(entityId) : null;
+  const integrity = await verifyAuditChain(entityId);
 
   return NextResponse.json({
     events: events.map((event: (typeof events)[number]) => ({
