@@ -83,7 +83,7 @@ export function documentRecord(row: DocumentRow): DocumentRecord {
     id: row.id,
     entityId: row.entityId,
     kind: kindToRecord[row.kind],
-    docNumber: row.number,
+    docNumber: row.number ?? '',
     contactId: row.contactId,
     contactName: row.contact.name,
     date: isoDate(row.date),

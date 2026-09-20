@@ -325,7 +325,9 @@ model Document {
   id                  String         @id @default(cuid())
   entityId            String
   kind                DocumentKind
-  number              String
+  /// Allocated on posting. NULL while a draft: the (entityId, number) unique
+  /// index must not stop an entity holding more than one draft at a time.
+  number              String?
   contactId           String
   date                DateTime
   dueDate             DateTime

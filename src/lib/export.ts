@@ -17,7 +17,13 @@ const EXPORT_INTERVAL_MS = 24 * 60 * 60 * 1000; // nightly
  */
 const KEEP_EXPORT_FILES = 14;
 
-let schedulerStarted = false;
+/**
+ * On globalThis, not module scope: instrumentation.ts and the API routes are
+ * bundled separately and each get their own copy of this module, so a
+ * module-level flag let every bundle start its own scheduler. Same reason the
+ * Prisma client is a globalThis singleton.
+ */
+const schedulerFlag = globalThis as typeof globalThis & { __sproutedExportScheduler?: boolean };
 
 /**
  * Where export files are written. Set EXPORT_DIR to durable storage; the
@@ -25,9 +31,11 @@ let schedulerStarted = false;
  * container redeploy. Database-level backups are the database platform's job.
  */
 function exportDir(): string {
+  // `||`, not `??`: an env file with `EXPORT_DIR=` and nothing after it
+  // yields an empty string, which must mean "use the default", not mkdir('').
   return (
-    process.env.EXPORT_DIR ??
-    process.env.BACKUP_DIR ?? // one release of backwards compatibility
+    process.env.EXPORT_DIR?.trim() ||
+    process.env.BACKUP_DIR?.trim() || // one release of backwards compatibility
     path.join(/* turbopackIgnore: true */ process.cwd(), 'exports')
   );
 }
@@ -227,10 +235,10 @@ export function backupFileExists(filePath: string): boolean {
  * are the real safety net.
  */
 export function ensureExportScheduler() {
-  if (schedulerStarted) {
+  if (schedulerFlag.__sproutedExportScheduler) {
     return;
   }
-  schedulerStarted = true;
+  schedulerFlag.__sproutedExportScheduler = true;
 
   const tick = async () => {
     try {

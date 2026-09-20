@@ -20,7 +20,7 @@ These are not preferences. Breaking one is a bug, not a style disagreement.
 
 ## Stack
 
-Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 3.4 · Prisma 6 + SQLite · Vitest
+Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 3.4 · Prisma 6 + Postgres (Supabase) · Vitest
 
 > This version of Next.js has breaking changes from earlier ones. The bundled docs in `node_modules/next/dist/docs/` are the authority — check them before relying on anything remembered about Next.
 

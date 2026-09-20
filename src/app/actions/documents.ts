@@ -68,6 +68,14 @@ function documentLabel(kind: 'invoice' | 'bill', number: string): string {
   return `${kind === 'invoice' ? 'Invoice' : 'Bill'} ${number || '(draft)'}`;
 }
 
+/** A document past DRAFT always has a number; one without is corrupt, not a draft. */
+function postedNumberOf(document: { id: string; status: string; number: string | null }): string {
+  if (document.status === 'DRAFT' || !document.number) {
+    throw new Error(`Document ${document.id} has status ${document.status} but no number`);
+  }
+  return document.number;
+}
+
 // --- drafts ------------------------------------------------------------------------
 
 /**
@@ -144,7 +152,7 @@ export async function saveDocumentDraft(
       data: {
         entityId,
         kind: kindToPrisma[kind],
-        number: '',
+        number: null, // allocated on posting; NULL keeps the unique index off drafts
         contactId: form.contactId,
         date: dateOf(form.date),
         dueDate: dateOf(form.dueDate),
@@ -338,14 +346,15 @@ export async function markDocumentPaid(
     }
     const document = await tx.document.findUniqueOrThrow({ where: { id: documentId }, include: documentInclude });
     const kind = document.kind === 'BILL' ? 'bill' : 'invoice';
+    const number = postedNumberOf(document);
     await recordAuditEvent(
       {
         entityId,
         userName,
         action: 'EDIT',
         resourceType: kind,
-        resourceRef: document.number,
-        summary: `${documentLabel(kind, document.number)} marked paid`,
+        resourceRef: number,
+        summary: `${documentLabel(kind, number)} marked paid`,
       },
       tx,
     );
@@ -395,6 +404,7 @@ export async function voidDocument(
   }
 
   const kind = document.kind === 'BILL' ? 'bill' : 'invoice';
+  const number = postedNumberOf(document);
   const original = document.journalEntry;
 
   const row = await prisma.$transaction(async (tx) => {
@@ -410,8 +420,8 @@ export async function voidDocument(
       data: {
         entityId,
         kind: 'REVERSAL',
-        reference: document.number,
-        description: `Reversal of ${documentLabel(kind, document.number)} — ${document.contact.name}`,
+        reference: number,
+        description: `Reversal of ${documentLabel(kind, number)} — ${document.contact.name}`,
         postedAt: dateOf(today),
         reversalOfId: original.id,
         lines: {
@@ -437,8 +447,8 @@ export async function voidDocument(
         userName,
         action: 'VOID',
         resourceType: kind,
-        resourceRef: document.number,
-        summary: `${documentLabel(kind, document.number)} voided; reversal dated ${today}`,
+        resourceRef: number,
+        summary: `${documentLabel(kind, number)} voided; reversal dated ${today}`,
         metadata: { reversalOf: original.id, reversalEntryId: reversal.id },
       },
       tx,

@@ -137,6 +137,11 @@ async function main() {
       });
     }
     console.log(`${seedFunds.length} funds, ${seedProjects.length} projects`);
+  }, {
+    // Dozens of sequential round trips to a remote database; the default 5s
+    // interactive-transaction timeout is for request handlers, not seeds.
+    maxWait: 15_000,
+    timeout: 120_000,
   });
 
   console.log('Seed complete');
