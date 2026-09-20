@@ -31,6 +31,9 @@ export const permissions = [
   'period:unlock', // reopen one (not yet built; reserved so the matrix is complete)
   'contact:create',
   'entity:create',
+  'entity:configure', // functional currency and other per-entity settings
+  'rates:manage', // exchange rate table, bank accounts
+  'revaluation:run', // period-end FX revaluation and its reversal
   'reports:view',
   'audit:read',
   'export:run',
@@ -48,6 +51,8 @@ const matrix: Record<Role, ReadonlySet<Permission>> = {
     'document:void',
     'period:file',
     'contact:create',
+    'rates:manage',
+    'revaluation:run',
     'reports:view',
     'audit:read',
     'export:run',

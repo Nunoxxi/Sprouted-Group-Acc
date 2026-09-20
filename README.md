@@ -14,7 +14,7 @@ These are not preferences. Breaking one is a bug, not a style disagreement.
 
 - Every record carries an `entityId`, and every query is entity-scoped **by default** — failing closed, not falling back to all entities. Adding a fourth entity must require no schema change.
 - Accounting is double-entry. Every transaction posts balanced money in and money out to a journal. Nothing is hard-deleted; corrections are reversing entries.
-- Money is stored as **integer pesewas**, never floating point. Currency is Ghana cedi (GHS).
+- Money is stored as **integer minor units** (pesewas, cents), never floating point. Each entity keeps its books in its own functional currency (GHS by default); every journal line also carries its transaction currency, amount and the rate used, fixed at posting. Rates are exact decimals applied with integer arithmetic.
 - Ghana VAT is 20% effective: 15% VAT + 2.5% NHIL + 2.5% GETFund, all on the same base, all recoverable as input tax. They are assessed and recovered separately, so each is rounded independently. This rule lives in `src/lib/ghana-tax.ts` and must not be reimplemented anywhere else.
 - Users are not accountants. The interface says "money in" and "money out", never "debit" and "credit".
 
@@ -98,6 +98,7 @@ The files worth reading first in `src/lib/`:
 - **`seed-data.ts`** — the demo entities, contacts, funds and projects. The seed writes them; nothing else defines them.
 - **`report-data.ts`** — the demo ledger and account classifications that the reports currently read from.
 - **`export.ts`** — per-entity ledger export, checksum verification, retention.
+- **`fx.ts`** — multi-currency: exact rate arithmetic, rate selection, journal conversion, realised FX on settlement, period-end revaluation, intercompany across currencies. Pure and fully tested.
 - **`audit.ts`** — append-only audit log with a SHA-256 hash chain per entity; runs inside the caller's transaction when given one.
 - **`authz.ts`** — the role matrix and entity-access rules. Pure; every decision about who may do what comes from here.
 - **`dal.ts`** — turns the session into a principal and refuses anything not allowed. Every server function and route handler starts here.

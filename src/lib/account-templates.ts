@@ -27,6 +27,15 @@ export const sharedTaxAccounts: AccountTemplate[] = [
   { code: '2045', name: 'SSNIT Payable', type: 'LIABILITY', parentCode: '2000', category: 'tax' },
 ];
 
+// Foreign exchange. Realised: the difference between what a foreign document
+// was booked at and what the bank actually gave on settlement. Unrealised:
+// period-end revaluation of open foreign monetary balances at the closing
+// rate. Both are expense-type accounts where a credit balance is a net gain.
+export const sharedFxAccounts: AccountTemplate[] = [
+  { code: '7010', name: 'Realised Foreign Exchange Gain/Loss', type: 'EXPENSE', category: 'fx' },
+  { code: '7020', name: 'Unrealised Foreign Exchange Gain/Loss', type: 'EXPENSE', category: 'fx' },
+];
+
 export const manufacturingAccounts: AccountTemplate[] = [
   { code: '1001', name: 'Cash and Bank', type: 'ASSET', parentCode: '1000' },
   { code: '1005', name: 'Petty Cash', type: 'ASSET', parentCode: '1000' },
@@ -68,6 +77,7 @@ export const manufacturingAccounts: AccountTemplate[] = [
   { code: '6035', name: 'Bank Charges', type: 'EXPENSE', parentCode: '6000' },
   { code: '6040', name: 'Depreciation', type: 'EXPENSE', parentCode: '6000' },
   ...sharedTaxAccounts,
+  ...sharedFxAccounts,
 ];
 
 export const ngoAccounts: AccountTemplate[] = [
@@ -111,10 +121,12 @@ export const ngoAccounts: AccountTemplate[] = [
   { code: '6035', name: 'Audit & Compliance', type: 'EXPENSE', parentCode: '6000' },
   { code: '6040', name: 'Volunteer & Community Support', type: 'EXPENSE', parentCode: '6000' },
   ...sharedTaxAccounts,
+  ...sharedFxAccounts,
 ];
 
 export const allSeedTemplates = {
   manufacturing: manufacturingAccounts,
   ngo: ngoAccounts,
   tax: sharedTaxAccounts,
+  fx: sharedFxAccounts,
 };

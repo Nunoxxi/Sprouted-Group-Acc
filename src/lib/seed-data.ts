@@ -19,6 +19,7 @@ export const seedEntities: EntityRecord[] = [
     vatRegistered: true,
     tin: 'GH-0001-ROOTS',
     accent: accentPalette[0],
+    functionalCurrency: 'GHS',
   },
   {
     id: 'sprouted-crafts',
@@ -29,6 +30,7 @@ export const seedEntities: EntityRecord[] = [
     vatRegistered: true,
     tin: 'GH-0002-CRAFTS',
     accent: accentPalette[1],
+    functionalCurrency: 'GHS',
   },
   {
     id: 'oikazi',
@@ -39,6 +41,7 @@ export const seedEntities: EntityRecord[] = [
     vatRegistered: false,
     tin: 'GH-0003-OIKAZI',
     accent: accentPalette[2],
+    functionalCurrency: 'GHS',
   },
 ];
 

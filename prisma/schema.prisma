@@ -17,21 +17,33 @@ datasource db {
 // src/lib/data.
 // ---------------------------------------------------------------------------
 
+enum Currency {
+  GHS
+  USD
+  EUR
+}
+
 // Entity.id is the slug the UI uses ('sprouted-roots'); code is the statutory
 // short code ('SG001'). One identifier everywhere, no alias tables.
 model Entity {
-  id               String   @id
-  code             String   @unique
-  name             String
-  type             String // 'programs' | 'manufacturing'
-  financialYearEnd String?
-  vatRegistered    Boolean  @default(false)
-  tin              String?
-  accent           String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id                 String   @id
+  code               String   @unique
+  name               String
+  type               String // 'programs' | 'manufacturing'
+  financialYearEnd   String?
+  vatRegistered      Boolean  @default(false)
+  tin                String?
+  accent             String?
+  /// The currency the books are kept and reported in. Per entity, never global.
+  functionalCurrency Currency @default(GHS)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   userAccess       UserEntityAccess[]
+  exchangeRates    ExchangeRate[]
+  bankAccounts     BankAccount[]
+  payments         Payment[]
+  revaluations     Revaluation[]
   accounts         Account[]
   journalEntries   JournalEntry[]
   contactBalances  ContactEntityBalance[]
@@ -179,18 +191,22 @@ model User {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
-  invitedBy     User?              @relation("Invitations", fields: [invitedById], references: [id])
-  invitees      User[]             @relation("Invitations")
-  sessions      AuthSession[]
-  authAccounts  AuthAccount[]
-  twoFactors    TwoFactor[]
-  entityAccess  UserEntityAccess[]
-  grantedAccess UserEntityAccess[] @relation("AccessGrantedBy")
-  auditEvents   AuditEvent[]
-  postedEntries JournalEntry[]
-  createdDocs   Document[]         @relation("DocumentCreatedBy")
-  editedDocs    Document[]         @relation("DocumentEditedBy")
-  filings       TaxPeriodFiling[]
+  invitedBy            User?              @relation("Invitations", fields: [invitedById], references: [id])
+  invitees             User[]             @relation("Invitations")
+  sessions             AuthSession[]
+  authAccounts         AuthAccount[]
+  twoFactors           TwoFactor[]
+  entityAccess         UserEntityAccess[]
+  grantedAccess        UserEntityAccess[] @relation("AccessGrantedBy")
+  auditEvents          AuditEvent[]
+  postedEntries        JournalEntry[]
+  createdDocs          Document[]         @relation("DocumentCreatedBy")
+  editedDocs           Document[]         @relation("DocumentEditedBy")
+  filings              TaxPeriodFiling[]
+  exchangeRates        ExchangeRate[]
+  payments             Payment[]
+  revaluations         Revaluation[]      @relation("RevaluationRunBy")
+  reversedRevaluations Revaluation[]      @relation("RevaluationReversedBy")
 
   @@index([deactivatedAt])
 }
@@ -306,6 +322,7 @@ model Account {
   children      Account[]      @relation("AccountParent")
   journalLines  JournalLine[]
   documentLines DocumentLine[]
+  bankAccount   BankAccount?
 
   @@unique([entityId, code])
   @@index([entityId, parentId])
@@ -316,6 +333,8 @@ enum JournalKind {
   DOCUMENT
   REVERSAL
   MANUAL
+  PAYMENT
+  REVALUATION
 }
 
 // postedAt is the accounting date (a document's own date), never "now" —
@@ -333,13 +352,16 @@ model JournalEntry {
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
-  entity         Entity        @relation(fields: [entityId], references: [id])
-  postedBy       User?         @relation(fields: [postedById], references: [id])
-  lines          JournalLine[]
-  reversalOf     JournalEntry? @relation("Reversal", fields: [reversalOfId], references: [id])
-  reversedBy     JournalEntry? @relation("Reversal")
-  postedDocument Document?     @relation("DocumentPosting")
-  voidedDocument Document?     @relation("DocumentVoid")
+  entity              Entity        @relation(fields: [entityId], references: [id])
+  postedBy            User?         @relation(fields: [postedById], references: [id])
+  lines               JournalLine[]
+  reversalOf          JournalEntry? @relation("Reversal", fields: [reversalOfId], references: [id])
+  reversedBy          JournalEntry? @relation("Reversal")
+  postedDocument      Document?     @relation("DocumentPosting")
+  voidedDocument      Document?     @relation("DocumentVoid")
+  payment             Payment?
+  revaluation         Revaluation?  @relation("RevaluationEntry")
+  revaluationReversal Revaluation?  @relation("RevaluationReversal")
 
   @@index([entityId, postedAt])
   @@index([entityId, kind])
@@ -353,6 +375,12 @@ model JournalLine {
   fundId         String?
   projectId      String?
   contactId      String?
+  /// Transaction currency and amount, the rate applied, and — in amountMinor —
+  /// the functional amount that resulted. amountMinor is fixed at posting and
+  /// never recomputed from the rate: a historic rate is history.
+  txnCurrency    Currency         @default(GHS)
+  txnAmountMinor BigInt           @default(0)
+  rate           Decimal          @default(1) @db.Decimal(20, 10)
   amountMinor    BigInt
   direction      JournalDirection
   createdAt      DateTime         @default(now())
@@ -456,6 +484,15 @@ model Document {
   date                DateTime
   dueDate             DateTime
   status              DocumentStatus @default(DRAFT)
+  /// Transaction currency of every line; unit prices are in its minor units.
+  currency            Currency       @default(GHS)
+  /// The rate fixed at posting (functional per 1 unit of currency). Editable while a draft.
+  rate                Decimal?       @db.Decimal(20, 10)
+  rateDate            DateTime?
+  /// False when the rate came from an earlier date than the document, or was overridden.
+  rateExact           Boolean        @default(true)
+  /// Settled so far, in the document currency.
+  paidTxnMinor        BigInt         @default(0)
   evatClearanceNumber String?
   evatQrCode          String?
   evatTimestamp       String?
@@ -473,6 +510,7 @@ model Document {
   journalEntry JournalEntry?  @relation("DocumentPosting", fields: [journalEntryId], references: [id])
   voidEntry    JournalEntry?  @relation("DocumentVoid", fields: [voidEntryId], references: [id])
   lines        DocumentLine[]
+  payments     Payment[]
 
   @@unique([entityId, number])
   @@index([entityId, status])
@@ -529,4 +567,101 @@ model DocumentCounter {
   entity Entity @relation(fields: [entityId], references: [id])
 
   @@id([entityId, kind])
+}
+
+// ---------------------------------------------------------------------------
+// Multi-currency. Rates are per entity (actual bank rates differ), per pair,
+// per date; a transaction defaults to its date's rate or the latest prior
+// one and may be overridden. Bank accounts hold one currency and are never
+// stored converted. Payments carry the realised FX difference; Revaluations
+// carry the unrealised one and can be reversed into the next period.
+// ---------------------------------------------------------------------------
+
+model ExchangeRate {
+  id          String   @id @default(cuid())
+  entityId    String
+  base        Currency
+  quote       Currency
+  date        DateTime @db.Date
+  /// Units of quote per 1 unit of base, exact to 10 decimal places.
+  rate        Decimal  @db.Decimal(20, 10)
+  source      String?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  entity    Entity @relation(fields: [entityId], references: [id])
+  createdBy User?  @relation(fields: [createdById], references: [id])
+
+  @@unique([entityId, base, quote, date])
+  @@index([entityId, date])
+}
+
+model BankAccount {
+  id        String   @id @default(cuid())
+  entityId  String
+  name      String
+  currency  Currency
+  /// The GL account this bank posts to; one per bank account.
+  accountId String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  entity   Entity    @relation(fields: [entityId], references: [id])
+  account  Account   @relation(fields: [accountId], references: [id])
+  payments Payment[]
+
+  @@index([entityId])
+}
+
+model Payment {
+  id                  String   @id @default(cuid())
+  entityId            String
+  documentId          String
+  bankAccountId       String
+  date                DateTime
+  /// Settled amount in the document's currency.
+  txnAmountMinor      BigInt
+  /// Settlement rate: functional per 1 unit of document currency.
+  rate                Decimal  @db.Decimal(20, 10)
+  /// What hit the bank, in the bank's currency.
+  bankAmountMinor     BigInt
+  bankFunctionalMinor BigInt
+  /// Functional value of the receivable/payable cleared, at the document's rate.
+  reliefMinor         BigInt
+  /// Positive = realised gain, negative = loss, functional currency.
+  gainLossMinor       BigInt
+  journalEntryId      String   @unique
+  recordedById        String?
+  createdAt           DateTime @default(now())
+
+  entity       Entity       @relation(fields: [entityId], references: [id])
+  document     Document     @relation(fields: [documentId], references: [id])
+  bankAccount  BankAccount  @relation(fields: [bankAccountId], references: [id])
+  journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id])
+  recordedBy   User?        @relation(fields: [recordedById], references: [id])
+
+  @@index([entityId, documentId])
+  @@index([entityId, date])
+}
+
+model Revaluation {
+  id               String    @id @default(cuid())
+  entityId         String
+  period           String // YYYY-MM
+  /// The closing rates used, as entered: {"USD":"12.8","EUR":"14.1"}.
+  closingRatesJson String
+  journalEntryId   String    @unique
+  reversalEntryId  String?   @unique
+  runById          String?
+  reversedById     String?
+  createdAt        DateTime  @default(now())
+  reversedAt       DateTime?
+
+  entity        Entity        @relation(fields: [entityId], references: [id])
+  journalEntry  JournalEntry  @relation("RevaluationEntry", fields: [journalEntryId], references: [id])
+  reversalEntry JournalEntry? @relation("RevaluationReversal", fields: [reversalEntryId], references: [id])
+  runBy         User?         @relation("RevaluationRunBy", fields: [runById], references: [id])
+  reversedBy    User?         @relation("RevaluationReversedBy", fields: [reversedById], references: [id])
+
+  @@unique([entityId, period])
 }

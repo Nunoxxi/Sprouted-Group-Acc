@@ -5,6 +5,7 @@
  */
 
 import type { Permission, Role } from '../authz';
+import type { Currency } from '../fx';
 import type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus } from './enums';
 
 export type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus };
@@ -20,6 +21,8 @@ export type EntityRecord = {
   vatRegistered: boolean;
   tin: string;
   accent: string;
+  /** The currency the books are kept in. Per entity. */
+  functionalCurrency: Currency;
 };
 
 export type ContactRecord = {
@@ -90,13 +93,19 @@ export type DocumentLineRecord = {
 export type PostedJournalLine = {
   accountCode: string;
   accountName: string;
+  /** Functional amount, minor units — what the ledger balances in. */
   amount: number;
   type: 'debit' | 'credit';
+  currency: Currency;
+  /** Amount in the transaction currency, minor units. */
+  txnAmount: number;
+  /** The rate that was applied at posting; '1.0' for functional-currency lines. */
+  rate: string;
 };
 
 export type PostedJournal = {
   id: string;
-  kind: 'DOCUMENT' | 'REVERSAL' | 'MANUAL';
+  kind: 'DOCUMENT' | 'REVERSAL' | 'MANUAL' | 'PAYMENT' | 'REVALUATION';
   postedAt: string; // YYYY-MM-DD
   lines: PostedJournalLine[];
 };
@@ -112,7 +121,15 @@ export type DocumentRecord = {
   date: string;
   dueDate: string;
   status: DocumentStatus;
+  currency: Currency;
+  /** Rate fixed at posting; while a draft, the last saved default/override. Null until a rate is chosen. */
+  rate: string | null;
+  rateDate: string | null;
+  rateExact: boolean;
+  /** Settled so far, in the document currency. */
+  paidTxnMinor: number;
   lines: DocumentLineRecord[];
+  payments: PaymentRecord[];
   evatClearanceNumber: string;
   evatQrCode: string;
   evatTimestamp: string;
@@ -136,6 +153,50 @@ export type CurrentUser = {
   permissions: Permission[];
 };
 
+export type PaymentRecord = {
+  id: string;
+  date: string;
+  bankAccountId: string;
+  bankAccountName: string;
+  bankCurrency: Currency;
+  txnAmount: number;
+  rate: string;
+  bankAmount: number;
+  bankFunctionalAmount: number;
+  reliefAmount: number;
+  /** Positive = realised gain, negative = loss, functional currency. */
+  gainLoss: number;
+  journal: PostedJournal | null;
+};
+
+export type ExchangeRateRow = {
+  id: string;
+  base: Currency;
+  quote: Currency;
+  date: string;
+  rate: string;
+  source: string;
+};
+
+export type BankAccountRecord = {
+  id: string;
+  entityId: string;
+  name: string;
+  currency: Currency;
+  accountCode: string;
+  accountName: string;
+  isActive: boolean;
+};
+
+export type RevaluationRecord = {
+  id: string;
+  period: string;
+  closingRates: Partial<Record<Currency, string>>;
+  journal: PostedJournal;
+  reversalJournal: PostedJournal | null;
+  createdAt: string;
+};
+
 /** Everything the shell needs on first render, loaded once by the page. */
 export type InitialData = {
   currentUser: CurrentUser;
@@ -147,6 +208,9 @@ export type InitialData = {
   projectsByEntity: Record<string, ProjectRecord[]>;
   documentsByEntity: Record<string, DocumentRecord[]>;
   filedPeriodsByEntity: Record<string, string[]>;
+  ratesByEntity: Record<string, ExchangeRateRow[]>;
+  bankAccountsByEntity: Record<string, BankAccountRecord[]>;
+  revaluationsByEntity: Record<string, RevaluationRecord[]>;
 };
 
 export type AuditEventRecord = {

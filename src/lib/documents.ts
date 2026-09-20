@@ -6,6 +6,7 @@
  */
 
 import type { AccountRecord, ContactRecord } from './data/types';
+import { isCurrency, type Currency } from './fx';
 import {
   leviesOnBase,
   roundPesewas,
@@ -37,6 +38,14 @@ export type DocumentFormState = {
   date: string; // YYYY-MM-DD
   dueDate: string;
   status: DocumentStatus;
+  /** Transaction currency; unit prices are in its minor units. */
+  currency: Currency;
+  /** Functional units per 1 unit of currency. Defaulted from the rate table; may be overridden. Null until known. */
+  rate: string | null;
+  /** The date the default rate was taken from — earlier than `date` when no rate existed for the day. */
+  rateDate: string | null;
+  /** False when the rate is a fallback from an earlier date or a manual override. */
+  rateExact: boolean;
   lines: DocumentLine[];
   evatClearanceNumber: string;
   evatQrCode: string;
@@ -81,7 +90,7 @@ export function makeLine(kind: DocumentKind = 'invoice'): DocumentLine {
   };
 }
 
-export function makeDocument(kind: DocumentKind, contactId: string): DocumentFormState {
+export function makeDocument(kind: DocumentKind, contactId: string, currency: Currency = 'GHS'): DocumentFormState {
   const today = new Date().toISOString().slice(0, 10);
 
   return {
@@ -92,6 +101,10 @@ export function makeDocument(kind: DocumentKind, contactId: string): DocumentFor
     date: today,
     dueDate: today,
     status: 'draft',
+    currency,
+    rate: currency === 'GHS' ? '1.0' : null,
+    rateDate: null,
+    rateExact: true,
     lines: [makeLine(kind)],
     evatClearanceNumber: '',
     evatQrCode: '',
@@ -144,6 +157,10 @@ export function normalizeDocument(value: unknown, kind: DocumentKind, fallbackCo
     date: asText(draft.date, fresh.date),
     dueDate: asText(draft.dueDate, fresh.dueDate),
     status: documentStatuses.includes(draft.status as DocumentStatus) ? (draft.status as DocumentStatus) : fresh.status,
+    currency: isCurrency(draft.currency) ? draft.currency : fresh.currency,
+    rate: typeof draft.rate === 'string' && draft.rate.trim() ? draft.rate.trim() : null,
+    rateDate: typeof draft.rateDate === 'string' && draft.rateDate ? draft.rateDate : null,
+    rateExact: typeof draft.rateExact === 'boolean' ? draft.rateExact : true,
     lines: lines.length > 0 ? lines : fresh.lines,
     evatClearanceNumber: asText(draft.evatClearanceNumber),
     evatQrCode: asText(draft.evatQrCode),

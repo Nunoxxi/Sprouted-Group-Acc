@@ -34,6 +34,8 @@ const expected: Record<Role, Permission[]> = {
     'document:void',
     'period:file',
     'contact:create',
+    'rates:manage',
+    'revaluation:run',
     'reports:view',
     'audit:read',
     'export:run',
@@ -62,7 +64,7 @@ describe('role matrix', () => {
   });
 
   it('only Owners manage users, sessions and entities', () => {
-    for (const permission of ['users:manage', 'sessions:manage', 'entity:create', 'period:unlock'] as const) {
+    for (const permission of ['users:manage', 'sessions:manage', 'entity:create', 'entity:configure', 'period:unlock'] as const) {
       expect(roles.filter((role) => roleHas(role, permission))).toEqual(['owner']);
     }
   });

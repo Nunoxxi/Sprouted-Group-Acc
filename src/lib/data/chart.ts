@@ -101,3 +101,19 @@ export async function seedChartForEntity(
 
   return desired.length;
 }
+
+/**
+ * Every entity starts with one bank account in its functional currency,
+ * posting to 1001 "Cash and Bank". Further accounts (a USD account, say)
+ * are added from Settings and get their own GL account. Idempotent.
+ */
+export async function ensureDefaultBankAccount(tx: Prisma.TransactionClient, entityId: string): Promise<void> {
+  const entity = await tx.entity.findUniqueOrThrow({ where: { id: entityId }, select: { functionalCurrency: true } });
+  const cash = await tx.account.findUnique({ where: { entityId_code: { entityId, code: '1001' } }, select: { id: true } });
+  if (!cash) return;
+  const existing = await tx.bankAccount.findUnique({ where: { accountId: cash.id }, select: { id: true } });
+  if (existing) return;
+  await tx.bankAccount.create({
+    data: { entityId, name: `Main ${entity.functionalCurrency} account`, currency: entity.functionalCurrency, accountId: cash.id },
+  });
+}

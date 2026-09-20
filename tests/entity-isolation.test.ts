@@ -105,6 +105,7 @@ vi.mock('@/lib/auth', () => {
 });
 
 import * as documentActions from '@/app/actions/documents';
+import * as fxActions from '@/app/actions/fx';
 import * as userActions from '@/app/actions/users';
 import * as auditRoute from '@/app/api/audit/route';
 import * as backupsRoute from '@/app/api/backups/route';
@@ -134,13 +135,24 @@ type Call = () => Promise<unknown>;
 const documentCalls: Record<keyof typeof documentActions, Call | null> = {
   saveDocumentDraft: () => documentActions.saveDocumentDraft(FORBIDDEN_ENTITY, { kind: 'invoice' }),
   postDocument: () => documentActions.postDocument(FORBIDDEN_ENTITY, 'doc-1'),
-  markDocumentPaid: () => documentActions.markDocumentPaid(FORBIDDEN_ENTITY, 'doc-1'),
+  recordPayment: () => documentActions.recordPayment(FORBIDDEN_ENTITY, { documentId: 'doc-1', bankAccountId: 'bank-1', date: '2026-09-20', txnAmount: 100, rate: '12.5' }),
   voidDocument: () => documentActions.voidDocument(FORBIDDEN_ENTITY, 'doc-1'),
   fileTaxPeriod: () => documentActions.fileTaxPeriod(FORBIDDEN_ENTITY, '2026-08'),
   // Not entity-scoped (contacts are group-wide; entities are created by Owners);
   // covered by the role tests below instead.
   createContact: null,
   createEntity: null,
+};
+
+/** Every multi-currency Server Function, invoked against the forbidden entity. */
+const fxCalls: Record<keyof typeof fxActions, Call> = {
+  upsertExchangeRate: () => fxActions.upsertExchangeRate(FORBIDDEN_ENTITY, { base: 'USD', quote: 'GHS', date: '2026-09-20', rate: '12.5' }),
+  setFunctionalCurrency: () => fxActions.setFunctionalCurrency(FORBIDDEN_ENTITY, 'USD'),
+  createBankAccount: () => fxActions.createBankAccount(FORBIDDEN_ENTITY, { name: 'USD account', currency: 'USD' }),
+  previewRevaluation: () => fxActions.previewRevaluation(FORBIDDEN_ENTITY, '2026-09', { USD: '12.8' }),
+  runRevaluation: () => fxActions.runRevaluation(FORBIDDEN_ENTITY, '2026-09', { USD: '12.8' }),
+  reverseRevaluation: () => fxActions.reverseRevaluation(FORBIDDEN_ENTITY, '2026-09'),
+  listExchangeRates: () => fxActions.listExchangeRates(FORBIDDEN_ENTITY),
 };
 
 /** Every user-management Server Function. Owner-only, so any other role is refused. */
@@ -195,6 +207,8 @@ describe('coverage', () => {
     expect(exportedDocs.sort()).toEqual(Object.keys(documentCalls).sort());
     const exportedUsers = Object.keys(userActions).filter((k) => typeof (userActions as Record<string, unknown>)[k] === 'function');
     expect(exportedUsers.sort()).toEqual(Object.keys(userCalls).sort());
+    const exportedFx = Object.keys(fxActions).filter((k) => typeof (fxActions as Record<string, unknown>)[k] === 'function');
+    expect(exportedFx.sort()).toEqual(Object.keys(fxCalls).sort());
   });
 
   it('every Route Handler method has a case', () => {
@@ -206,7 +220,7 @@ describe('coverage', () => {
 // --- signed out --------------------------------------------------------------------
 
 describe('signed out', () => {
-  for (const [name, call] of Object.entries({ ...documentCalls, ...userCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...userCalls })) {
     if (!call) continue;
     it(`${name} is refused without touching the database`, async () => {
       expect(isRefusal(await call())).toBe(true);
@@ -226,7 +240,7 @@ describe('signed out', () => {
 describe('an Accountant on Sprouted Roots asking for Oikazi', () => {
   beforeEach(() => signIn({ role: 'accountant' }, [GRANTED_ENTITY]));
 
-  for (const [name, call] of Object.entries(documentCalls)) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls })) {
     if (!call) continue;
     it(`${name} is refused and reads nothing`, async () => {
       const result = await call();
@@ -280,6 +294,17 @@ describe('a Viewer with access to Oikazi', () => {
       onlyAccessLookup();
     });
   }
+
+  it('cannot touch rates, banks, the functional currency or revaluation, even on their own entity', async () => {
+    for (const [name, call] of Object.entries(fxCalls)) {
+      if (name === 'listExchangeRates') continue; // reading the rate table is reports:view
+      dbCalls.length = 0;
+      const result = await call();
+      expect(isRefusal(result), name).toBe(true);
+      expect(errorOf(result), name).toMatch(/cannot do that/);
+      onlyAccessLookup();
+    }
+  });
 
   it('cannot run an export or read the audit trail', async () => {
     expect((await routeCalls['GET /api/backups']()).status).toBe(403);

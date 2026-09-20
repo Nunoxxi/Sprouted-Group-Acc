@@ -11,6 +11,7 @@ import {
   accountNameMap,
   buildJournalEntries,
   buildTotals,
+  controlAccounts,
   makeDocument,
   makeLine,
   periodOf,
@@ -24,13 +25,25 @@ import {
   createContact,
   createEntity,
   fileTaxPeriod,
-  markDocumentPaid,
   postDocument,
   saveDocumentDraft,
   voidDocument,
 } from '@/app/actions/documents';
 import { SignOutButton } from '@/components/auth/sign-out-button';
+import { CurrencyProvider, ReportMoney, TranslationProvider } from '@/components/ui/money';
 import type { Permission } from '@/lib/authz';
+import { recordPayment as recordPaymentAction } from '@/app/actions/documents';
+import { createBankAccount, previewRevaluation, reverseRevaluation, runRevaluation, setFunctionalCurrency, upsertExchangeRate, type RevaluationPreview } from '@/app/actions/fx';
+import {
+  convertJournal,
+  convertMinor,
+  currencies,
+  currencyNames,
+  intercompanyPairBalances,
+  selectRate,
+  settlementFor,
+  type Currency,
+} from '@/lib/fx';
 import {
   leviesOnBase,
   roundPesewas,
@@ -126,6 +139,11 @@ type IntercompanyMatrixCell = {
   balance: number;
   mirroredBalance: number;
   mismatch: boolean;
+  balanceCurrency?: Currency;
+  mirroredCurrency?: Currency;
+  sameCurrency?: boolean;
+  translatedMirror?: number | null;
+  fxDifference?: number | null;
 };
 
 type TaxBucket = 'output' | 'input' | 'nhil' | 'getfund' | 'net';
@@ -222,10 +240,6 @@ function priorRangeOf(range: ReportRange): ReportRange {
   const priorStart = new Date(priorEnd);
   priorStart.setDate(priorStart.getDate() - days + 1);
   return { start: priorStart.toISOString().slice(0, 10), end: priorEnd.toISOString().slice(0, 10) };
-}
-
-function pesewasToGhs(value: number) {
-  return (value / 100).toFixed(2);
 }
 
 function csvEscape(value: string) {
@@ -344,6 +358,10 @@ function formFrom(record: DocumentRecord): DocumentFormState {
     date: record.date,
     dueDate: record.dueDate,
     status: record.status,
+    currency: record.currency,
+    rate: record.rate,
+    rateDate: record.rateDate,
+    rateExact: record.rateExact,
     lines: record.lines.map((line) => ({
       id: line.id,
       description: line.description,
@@ -363,7 +381,20 @@ function initialDocumentFor(data: InitialData, entityId: string, kind: DocumentK
   const draft = (data.documentsByEntity[entityId] ?? []).find((document) => document.kind === kind && document.status === 'draft');
   if (draft) return formFrom(draft);
   const contact = data.contacts.find((candidate) => candidate.balances[entityId] !== undefined) ?? data.contacts[0];
-  return makeDocument(kind, contact?.id ?? '');
+  const functional = data.entities.find((entity) => entity.id === entityId)?.functionalCurrency ?? 'GHS';
+  return makeDocument(kind, contact?.id ?? '', functional);
+}
+
+/** A foreign amount, prominent, with its functional equivalent in smaller text beneath. */
+function FxAmount({ amount, currency, functional, functionalCurrency, large }: { amount: number; currency: Currency; functional: number | null; functionalCurrency: Currency; large?: boolean }) {
+  return (
+    <span className="flex flex-col items-end">
+      <span className={['font-mono text-slate-900', large ? 'text-base font-semibold' : ''].join(' ')}><Money value={amount} currency={currency} /></span>
+      {functional !== null && currency !== functionalCurrency ? (
+        <span className="font-mono text-[11px] font-normal text-slate-500"><Money value={functional} currency={functionalCurrency} /></span>
+      ) : null}
+    </span>
+  );
 }
 
 const statusLabels: Record<DocumentStatus, string> = {
@@ -397,6 +428,18 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
   const [purchaseDocument, setPurchaseDocument] = useState<DocumentFormState>(() => initialDocumentFor(initialData, initialData.entities[0]?.id ?? '', 'bill'));
   const [journalOpen, setJournalOpen] = useState(true);
   const [documentError, setDocumentError] = useState<string | null>(null);
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  // Reports: functional by default; optionally translated to USD/EUR at a chosen closing rate.
+  const [reportCurrency, setReportCurrency] = useState<'functional' | Currency>('functional');
+  const [translationRate, setTranslationRate] = useState('');
+  // Settings: rate table, bank accounts, functional currency, revaluation.
+  const [rateForm, setRateForm] = useState({ base: 'USD' as Currency, quote: 'GHS' as Currency, date: new Date().toISOString().slice(0, 10), rate: '', source: '' });
+  const [bankForm, setBankForm] = useState({ name: '', currency: 'USD' as Currency });
+  const [revalForm, setRevalForm] = useState<{ period: string; rates: Partial<Record<Currency, string>> }>({ period: new Date().toISOString().slice(0, 7), rates: {} });
+  const [revalPreview, setRevalPreview] = useState<RevaluationPreview | null>(null);
+  const [settingsMessage, setSettingsMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  const [settingsPending, startSettingsTransition] = useTransition();
+  const [paymentForm, setPaymentForm] = useState({ bankAccountId: '', date: '', amount: '', rate: '' });
   const [documentPending, startDocumentTransition] = useTransition();
   const autosaveTimer = useRef<number | null>(null);
   const [intercompanyTransactions, setIntercompanyTransactions] = useState<IntercompanyTransaction[]>([
@@ -566,8 +609,37 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
   const entityDocuments = initialData.documentsByEntity[selectedEntity.id] ?? [];
   const activeRecord = activeDocument.id ? entityDocuments.find((document) => document.id === activeDocument.id) : undefined;
   const previewJournal: JournalLineDraft[] = buildJournalEntries(activeDocument, isPurchaseView, activeContact, accountNames);
+  const functionalCurrency: Currency = selectedEntity.functionalCurrency;
+  const entityRates = initialData.ratesByEntity[selectedEntity.id] ?? [];
+  const entityBankAccounts = initialData.bankAccountsByEntity[selectedEntity.id] ?? [];
+  const entityRevaluations = initialData.revaluationsByEntity[selectedEntity.id] ?? [];
+  // The table's default for this document's currency and date; the document may override it.
+  const documentRateQuote = selectRate(entityRates, activeDocument.currency, functionalCurrency, activeDocument.date);
+  const documentRate: string | null = activeDocument.currency === functionalCurrency ? '1.0' : (activeDocument.rate ?? documentRateQuote?.rate ?? null);
+  const documentIsForeign = activeDocument.currency !== functionalCurrency;
+  const documentRateWarning: string | null = !documentIsForeign
+    ? null
+    : activeRecord?.journal
+      ? null
+      : !documentRate
+        ? `No ${activeDocument.currency}→${functionalCurrency} rate on file on or before ${activeDocument.date}. Enter one in Settings, or type a rate here.`
+        : activeDocument.rate && !activeDocument.rateExact && activeDocument.rateDate === activeDocument.date
+          ? 'Rate overridden by hand.'
+          : documentRateQuote && !documentRateQuote.exact
+            ? `No rate for ${activeDocument.date}; using the most recent prior rate, from ${documentRateQuote.rateDate}${documentRateQuote.inverted ? ' (inverse of the reverse pair)' : ''}.`
+            : documentRateQuote?.inverted
+              ? 'Derived from the reverse pair on file.'
+              : null;
+  const toFunctional = (minor: number) => (documentRate ? convertMinor(minor, documentRate) : null);
   // Once posted, the panel shows what the ledger actually holds, not a preview.
-  const journalEntries: JournalLineDraft[] = activeRecord?.journal ? activeRecord.journal.lines : previewJournal;
+  const journalEntries: { accountCode: string; accountName: string; amount: number; type: 'debit' | 'credit'; currency: Currency; txnAmount: number; rate: string }[] =
+    activeRecord?.journal
+      ? activeRecord.journal.lines
+      : documentRate
+        ? convertJournal(previewJournal, activeDocument.currency, functionalCurrency, documentRate, isPurchaseView ? controlAccounts.payables : controlAccounts.receivables).map((line) => ({
+            accountCode: line.accountCode, accountName: line.accountName, amount: line.functionalAmount, type: line.type, currency: line.currency, txnAmount: line.txnAmount, rate: line.rate,
+          }))
+        : previewJournal.map((line) => ({ ...line, currency: activeDocument.currency, txnAmount: line.amount, rate: '?' }));
   const groupEntityOptions = entities;
 
   const documentPeriodLocked = (filedPeriods[selectedEntity.id] ?? []).includes(periodOf(activeDocument.date));
@@ -1085,31 +1157,42 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
       });
     });
 
-    intercompanyTransactions.forEach((transaction) => {
-      const forwardKey = `${transaction.fromEntityId}->${transaction.toEntityId}`;
-      const reverseKey = `${transaction.toEntityId}->${transaction.fromEntityId}`;
-      const forward = matrix.get(forwardKey);
-      const reverse = matrix.get(reverseKey);
-
-      if (!forward || !reverse) {
-        return;
-      }
-
-      if (transaction.direction === 'sale') {
-        forward.balance += transaction.amount;
-        reverse.mirroredBalance -= transaction.amount;
-      } else {
-        forward.balance -= transaction.amount;
-        reverse.mirroredBalance += transaction.amount;
-      }
-    });
-
-    matrix.forEach((cell) => {
-      cell.mismatch = Math.abs(cell.balance + cell.mirroredBalance) > 0.01;
+    // Each side is summed in its own functional currency. Two entities with
+    // the same functional currency must net to zero; two with different ones
+    // cannot, so the mirror is translated at the latest rate on file and the
+    // gap is shown as an FX difference, not flagged.
+    const pairs = intercompanyPairBalances(
+      entities.map((entity) => ({ id: entity.id, functionalCurrency: entity.functionalCurrency })),
+      intercompanyTransactions.map((transaction) => ({
+        fromEntityId: transaction.fromEntityId,
+        toEntityId: transaction.toEntityId,
+        sides: transaction.journalEntries.map((journal) => {
+          const entity = entities.find((candidate) => candidate.id === journal.entityId);
+          const receivable = journal.side.filter((line) => line.type === 'debit' && line.accountCode.startsWith('10')).reduce((sum, line) => sum + line.amount, 0);
+          const payable = journal.side.filter((line) => line.type === 'credit' && line.accountCode.startsWith('20')).reduce((sum, line) => sum + line.amount, 0);
+          return { entityId: journal.entityId, functionalCurrency: entity?.functionalCurrency ?? 'GHS', functionalMinor: receivable - payable };
+        }),
+      })),
+      (from, to) => {
+        const pool = Object.values(initialData.ratesByEntity).flat();
+        return selectRate(pool, from, to, new Date().toISOString().slice(0, 10))?.rate ?? null;
+      },
+    );
+    pairs.forEach((pair, key) => {
+      const cell = matrix.get(key);
+      if (!cell) return;
+      cell.balance = pair.balanceMinor;
+      cell.mirroredBalance = pair.mirroredMinor;
+      cell.mismatch = pair.mismatch;
+      cell.balanceCurrency = pair.balanceCurrency;
+      cell.mirroredCurrency = pair.mirroredCurrency;
+      cell.sameCurrency = pair.sameCurrency;
+      cell.translatedMirror = pair.translatedMirrorMinor;
+      cell.fxDifference = pair.fxDifferenceMinor;
     });
 
     return matrix;
-  }, [entities, intercompanyTransactions]);
+  }, [entities, intercompanyTransactions, initialData.ratesByEntity]);
 
   const intercompanyMismatchCount = useMemo(
     () => Array.from(intercompanyBalances.values()).filter((cell) => cell.mismatch).length,
@@ -1339,8 +1422,83 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
     runDocumentAction((documentId) => postDocument(selectedEntity.id, documentId));
   }
 
-  function markCurrentDocumentPaid() {
-    runDocumentAction((documentId) => markDocumentPaid(selectedEntity.id, documentId));
+  // Settling a posted document: the amount, the bank it went through, and the
+  // rate the bank actually gave. The realised FX difference is shown before
+  // it is posted.
+  const outstandingTxn = activeRecord
+    ? (activeRecord.kind === 'invoice' ? buildTotals(activeRecord.lines).total : buildTotals(activeRecord.lines, activeContact?.withholdingTaxStatus).netPayable) - activeRecord.paidTxnMinor
+    : 0;
+  const paymentRateQuote = activeRecord ? selectRate(entityRates, activeRecord.currency, functionalCurrency, paymentForm.date) : null;
+  const paymentRate = activeRecord && activeRecord.currency === functionalCurrency ? '1.0' : (paymentForm.rate || paymentRateQuote?.rate || '');
+  const paymentBank = entityBankAccounts.find((bank) => bank.id === paymentForm.bankAccountId) ?? entityBankAccounts.find((bank) => activeRecord && (bank.currency === activeRecord.currency || bank.currency === functionalCurrency));
+  const paymentAmountMinor = Math.round(Number(paymentForm.amount || '0') * 100);
+  const paymentPreview = (() => {
+    if (!activeRecord?.journal || !activeRecord.rate || !paymentBank || !paymentRate || !Number.isInteger(paymentAmountMinor) || paymentAmountMinor <= 0 || paymentAmountMinor > outstandingTxn) return null;
+    const controlCode = activeRecord.kind === 'invoice' ? controlAccounts.receivables : controlAccounts.payables;
+    const controlPosted = activeRecord.journal.lines.filter((line) => line.accountCode === controlCode).reduce((sum, line) => sum + line.amount, 0);
+    const relieved = activeRecord.payments.reduce((sum, payment) => sum + payment.reliefAmount, 0);
+    try {
+      return settlementFor({
+        kind: activeRecord.kind,
+        documentCurrency: activeRecord.currency,
+        functionalCurrency,
+        documentRate: activeRecord.rate,
+        txnAmount: paymentAmountMinor,
+        settlementRate: paymentRate,
+        bankCurrency: paymentBank.currency,
+        remainingBookMinor: controlPosted - relieved,
+        isFinal: paymentAmountMinor === outstandingTxn,
+        controlAccountCode: controlCode,
+        bankAccountCode: paymentBank.accountCode,
+        names: accountNames,
+      });
+    } catch {
+      return null;
+    }
+  })();
+
+  function runSetting(label: string, action: () => Promise<{ ok: boolean; error?: string }>) {
+    startSettingsTransition(async () => {
+      const result = await action();
+      setSettingsMessage(result.ok ? { tone: 'ok', text: label } : { tone: 'error', text: result.error ?? 'Something went wrong.' });
+    });
+  }
+  function revalClosingRates(): Partial<Record<string, string>> {
+    const lastDay = new Date(Date.UTC(Number(revalForm.period.slice(0, 4)), Number(revalForm.period.slice(5, 7)), 0)).toISOString().slice(0, 10);
+    const rates: Partial<Record<string, string>> = {};
+    for (const currency of currencies) {
+      if (currency === functionalCurrency) continue;
+      const typed = revalForm.rates[currency]?.trim();
+      rates[currency] = typed || selectRate(entityRates, currency, functionalCurrency, lastDay)?.rate || '';
+    }
+    return rates;
+  }
+
+  function openPaymentPanel() {
+    setPaymentForm({ bankAccountId: paymentBank?.id ?? '', date: new Date().toISOString().slice(0, 10), amount: (outstandingTxn / 100).toFixed(2), rate: '' });
+    setPaymentOpen(true);
+  }
+
+  function submitPayment() {
+    if (!activeRecord || !paymentBank) return;
+    cancelAutosave();
+    setDocumentError(null);
+    startDocumentTransition(async () => {
+      const result = await recordPaymentAction(selectedEntity.id, {
+        documentId: activeRecord.id,
+        bankAccountId: paymentBank.id,
+        date: paymentForm.date,
+        txnAmount: paymentAmountMinor,
+        rate: paymentRate,
+      });
+      if (!result.ok) {
+        setDocumentError(result.error);
+        return;
+      }
+      const setter = activeNav === 'Sales' ? setSalesDocument : setPurchaseDocument;
+      setter(formFrom(result.value));
+      setPaymentOpen(false);
+    });
   }
 
   function voidCurrentDocument() {
@@ -1352,7 +1510,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
     setDocumentError(null);
     const contact = entityContacts[0] ?? contacts[0];
     const setter = activeNav === 'Sales' ? setSalesDocument : setPurchaseDocument;
-    setter(makeDocument(activeKind, contact?.id ?? ''));
+    setter(makeDocument(activeKind, contact?.id ?? '', selectedEntity.functionalCurrency));
   }
 
   function openDocument(record: DocumentRecord) {
@@ -1488,7 +1646,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
     URL.revokeObjectURL(url);
   }
 
-  function downloadCsvFile(filename: string, rows: string[]) {
+  function downloadCsvFileBase(filename: string, rows: string[]) {
     const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
@@ -1519,6 +1677,23 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
       projectId,
     });
   }
+
+  // Translation for reports: the functional figures converted at one chosen
+  // rate. Presentation only — the books stay in the functional currency.
+  const reportDisplayCurrency: Currency = reportCurrency === 'functional' ? functionalCurrency : reportCurrency;
+  const translationQuote = reportCurrency === 'functional' ? null : selectRate(entityRates, functionalCurrency, reportCurrency, reportEnd);
+  const effectiveTranslationRate = reportCurrency === 'functional' ? '1.0' : (translationRate.trim() || translationQuote?.rate || '');
+  const translationActive = reportCurrency !== 'functional' && Boolean(effectiveTranslationRate);
+  const reportTranslate = (minor: number) => (translationActive ? convertMinor(minor, effectiveTranslationRate) : minor);
+  // Shadows the module helper for everything exportReportCsv writes.
+  const pesewasToGhs = (value: number) => (reportTranslate(value) / 100).toFixed(2);
+  const downloadCsvFile = (name: string, rows: string[]) =>
+    downloadCsvFileBase(name, [
+      translationActive
+        ? `Amounts in ${reportDisplayCurrency} translated from ${functionalCurrency} at ${effectiveTranslationRate} (presentation only; the books are in ${functionalCurrency})`
+        : `Amounts in ${functionalCurrency}`,
+      ...rows,
+    ]);
 
   function exportReportCsv() {
     const fileStem = `${reportType}-${selectedEntity.id}-${reportStart}-${reportEnd}`;
@@ -2096,6 +2271,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
   }
 
   return (
+    <CurrencyProvider currency={functionalCurrency}>
     <div className="flex min-h-screen bg-sand-50 text-slate-900">
       <aside className="w-[280px] border-r border-slate-200 bg-white px-4 py-5">
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
@@ -3027,12 +3203,23 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                                   ].join(' ')}
                                 >
                                   <div className="font-medium text-slate-900">
-                                    <Money value={cell?.balance ?? 0} />
+                                    <Money value={cell?.balance ?? 0} currency={cell?.balanceCurrency ?? functionalCurrency} />
                                   </div>
                                   <div className="mt-1 text-[11px] text-slate-500">
-                                    Mirror: <Money value={cell?.mirroredBalance ?? 0} />
+                                    Mirror: <Money value={cell?.mirroredBalance ?? 0} currency={cell?.mirroredCurrency ?? functionalCurrency} />
                                   </div>
-                                  {cell?.mismatch ? (
+                                  {cell && cell.sameCurrency === false ? (
+                                    <div className="mt-2 rounded-lg bg-amber-50 px-2 py-1 text-[11px] text-amber-900">
+                                      {cell.fxDifference !== null && cell.fxDifference !== undefined ? (
+                                        <>
+                                          Different functional currencies. Mirror at today&rsquo;s rate: <Money value={cell.translatedMirror ?? 0} currency={cell.balanceCurrency} />.{' '}
+                                          <span className="font-semibold">FX difference <Money value={cell.fxDifference} currency={cell.balanceCurrency} /></span> — not a mismatch.
+                                        </>
+                                      ) : (
+                                        <>Different functional currencies; no {cell.mirroredCurrency}→{cell.balanceCurrency} rate on file to show the FX difference.</>
+                                      )}
+                                    </div>
+                                  ) : cell?.mismatch ? (
                                     <div className="mt-2 rounded-full bg-red-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-red-700">
                                       Mismatch
                                     </div>
@@ -3141,11 +3328,45 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                       }}
                     />
                   </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-slate-600">Show in</label>
+                    <select
+                      value={reportCurrency}
+                      onChange={(event) => { setReportCurrency(event.target.value as 'functional' | Currency); setTranslationRate(''); }}
+                      className="min-h-[44px] rounded-lg border border-slate-200 bg-white px-3 text-sm"
+                    >
+                      <option value="functional">{functionalCurrency} (functional)</option>
+                      {currencies.filter((currency) => currency !== functionalCurrency).map((currency) => (
+                        <option key={currency} value={currency}>{currency} (translated)</option>
+                      ))}
+                    </select>
+                  </div>
+                  {reportCurrency !== 'functional' ? (
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium text-slate-600">Closing rate ({reportCurrency} per 1 {functionalCurrency})</label>
+                      <Input inputMode="decimal" className="w-40" value={translationRate || translationQuote?.rate || ''} onChange={(event) => setTranslationRate(event.target.value)} placeholder="e.g. 0.08" />
+                    </div>
+                  ) : null}
                   <Button variant="secondary" size="sm" onClick={exportReportCsv}>Export Excel</Button>
                   <Button variant="secondary" size="sm" onClick={() => window.print()}>Export PDF</Button>
                 </div>
               </div>
 
+              {reportCurrency !== 'functional' ? (
+                <div className={['rounded-2xl border p-3 text-sm', translationActive ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-red-200 bg-red-50 text-red-800'].join(' ')}>
+                  {translationActive ? (
+                    <>
+                      <strong>Translation, not the books.</strong> Every figure below is the {functionalCurrency} amount converted to {reportCurrency} at {effectiveTranslationRate}
+                      {translationQuote && !translationRate ? (translationQuote.exact ? ` (rate on file for ${reportEnd})` : ` (most recent rate on file, from ${translationQuote.rateDate})`) : ' (rate you entered)'}.
+                      The ledger is kept in {functionalCurrency}.
+                    </>
+                  ) : (
+                    <>No {functionalCurrency}→{reportCurrency} rate on file on or before {reportEnd}. Enter a closing rate above to translate.</>
+                  )}
+                </div>
+              ) : null}
+
+              <TranslationProvider currency={translationActive ? reportDisplayCurrency : functionalCurrency} rate={translationActive ? effectiveTranslationRate : '1.0'}>
               <div className="no-print flex flex-wrap gap-2">
                 {reportTabs.map((tab) => {
                   const active = reportType === tab.id;
@@ -3201,20 +3422,20 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                             <span>{row.label}</span>
                             {row.accountCodes && !isTotal ? (
                               <button type="button" className="text-right font-mono text-brand-700 hover:underline" onClick={() => openReportDrilldown(row.label, row.accountCodes as string[], reportRange, true)}>
-                                {debitCurrent !== 0 ? <Money value={debitCurrent} /> : '—'}
+                                {debitCurrent !== 0 ? <ReportMoney value={debitCurrent} /> : '—'}
                               </button>
                             ) : (
-                              <span className="text-right font-mono">{debitCurrent !== 0 ? <Money value={debitCurrent} /> : '—'}</span>
+                              <span className="text-right font-mono">{debitCurrent !== 0 ? <ReportMoney value={debitCurrent} /> : '—'}</span>
                             )}
-                            <span className="text-right font-mono">{creditCurrent !== 0 ? <Money value={creditCurrent} /> : '—'}</span>
+                            <span className="text-right font-mono">{creditCurrent !== 0 ? <ReportMoney value={creditCurrent} /> : '—'}</span>
                             {row.accountCodes && !isTotal ? (
                               <button type="button" className="text-right font-mono text-brand-700 hover:underline" onClick={() => openReportDrilldown(`${row.label} — prior period`, row.accountCodes as string[], priorReportRange, true)}>
-                                {debitPrior !== 0 ? <Money value={debitPrior} /> : '—'}
+                                {debitPrior !== 0 ? <ReportMoney value={debitPrior} /> : '—'}
                               </button>
                             ) : (
-                              <span className="text-right font-mono">{debitPrior !== 0 ? <Money value={debitPrior} /> : '—'}</span>
+                              <span className="text-right font-mono">{debitPrior !== 0 ? <ReportMoney value={debitPrior} /> : '—'}</span>
                             )}
-                            <span className="text-right font-mono">{creditPrior !== 0 ? <Money value={creditPrior} /> : '—'}</span>
+                            <span className="text-right font-mono">{creditPrior !== 0 ? <ReportMoney value={creditPrior} /> : '—'}</span>
                           </div>
                         );
                       })}
@@ -3261,10 +3482,10 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                                   )
                                 }
                               >
-                                <Money value={row.current} />
+                                <ReportMoney value={row.current} />
                               </button>
                             ) : (
-                              <span className="text-right font-mono"><Money value={row.current} /></span>
+                              <span className="text-right font-mono"><ReportMoney value={row.current} /></span>
                             )}
                             {row.accountCodes ? (
                               <button
@@ -3279,13 +3500,13 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                                   )
                                 }
                               >
-                                <Money value={row.prior} />
+                                <ReportMoney value={row.prior} />
                               </button>
                             ) : (
-                              <span className="text-right font-mono"><Money value={row.prior} /></span>
+                              <span className="text-right font-mono"><ReportMoney value={row.prior} /></span>
                             )}
                             <span className={['text-right font-mono', variance >= 0 ? 'text-slate-700' : 'text-red-700'].join(' ')}>
-                              <Money value={variance} />
+                              <ReportMoney value={variance} />
                             </span>
                           </div>
                         );
@@ -3321,7 +3542,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                       <div key={row.contactName} className="grid grid-cols-[1.6fr_repeat(7,minmax(0,1fr))] gap-3 border-t border-slate-200 px-4 py-3 text-sm text-slate-700">
                         <span className="font-medium text-slate-900">{row.contactName}</span>
                         {row.buckets.map((bucket, index) => (
-                          <span key={index} className="text-right font-mono">{bucket !== 0 ? <Money value={bucket} /> : '—'}</span>
+                          <span key={index} className="text-right font-mono">{bucket !== 0 ? <ReportMoney value={bucket} /> : '—'}</span>
                         ))}
                         <button
                           type="button"
@@ -3337,9 +3558,9 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                             )
                           }
                         >
-                          <Money value={row.total} />
+                          <ReportMoney value={row.total} />
                         </button>
-                        <span className="text-right font-mono text-slate-500">{row.priorTotal !== 0 ? <Money value={row.priorTotal} /> : '—'}</span>
+                        <span className="text-right font-mono text-slate-500">{row.priorTotal !== 0 ? <ReportMoney value={row.priorTotal} /> : '—'}</span>
                       </div>
                     ))}
 
@@ -3347,11 +3568,11 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                       <span>Total</span>
                       {[0, 1, 2, 3, 4].map((bucketIndex) => (
                         <span key={bucketIndex} className="text-right font-mono">
-                          <Money value={agingRows.reduce((total, row) => total + row.buckets[bucketIndex], 0)} />
+                          <ReportMoney value={agingRows.reduce((total, row) => total + row.buckets[bucketIndex], 0)} />
                         </span>
                       ))}
-                      <span className="text-right font-mono"><Money value={agingRows.reduce((total, row) => total + row.total, 0)} /></span>
-                      <span className="text-right font-mono"><Money value={agingRows.reduce((total, row) => total + row.priorTotal, 0)} /></span>
+                      <span className="text-right font-mono"><ReportMoney value={agingRows.reduce((total, row) => total + row.total, 0)} /></span>
+                      <span className="text-right font-mono"><ReportMoney value={agingRows.reduce((total, row) => total + row.priorTotal, 0)} /></span>
                     </div>
                   </div>
                 </Card>
@@ -3405,14 +3626,14 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                                   )
                                 }
                               >
-                                <Money value={metric.pick(fund)} />
+                                <ReportMoney value={metric.pick(fund)} />
                               </button>
                             ) : (
-                              <span key={fund.fund} className="text-right font-mono"><Money value={metric.pick(fund)} /></span>
+                              <span key={fund.fund} className="text-right font-mono"><ReportMoney value={metric.pick(fund)} /></span>
                             )
                           ))}
                           <span className="text-right font-mono">
-                            <Money value={fundReport.reduce((total, fund) => total + metric.pick(fund), 0)} />
+                            <ReportMoney value={fundReport.reduce((total, fund) => total + metric.pick(fund), 0)} />
                           </span>
                         </div>
                       ))}
@@ -3469,7 +3690,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                                   />
                                 </div>
                                 <div className="mt-1 text-[11px] text-slate-500">
-                                  <Money value={row.spentToDate} /> of <Money value={row.project.budget} />
+                                  <ReportMoney value={row.spentToDate} /> of <ReportMoney value={row.project.budget} />
                                 </div>
                               </div>
                             ) : null}
@@ -3501,7 +3722,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                                   )
                                 }
                               >
-                                <Money value={row.opening} />
+                                <ReportMoney value={row.opening} />
                               </button>
                               <button
                                 type="button"
@@ -3519,7 +3740,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                                   )
                                 }
                               >
-                                <Money value={row.received} />
+                                <ReportMoney value={row.received} />
                               </button>
                               <button
                                 type="button"
@@ -3537,10 +3758,10 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                                   )
                                 }
                               >
-                                <Money value={row.expenses} />
+                                <ReportMoney value={row.expenses} />
                               </button>
                               <span className="text-right font-mono font-semibold text-slate-900">
-                                <Money value={row.closing} />
+                                <ReportMoney value={row.closing} />
                               </span>
                             </div>
                           </div>
@@ -3593,7 +3814,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                           <span>{section.label}</span>
                           {section.values.map((value, index) => (
                             isComputed || section.codes.length === 0 ? (
-                              <span key={entities[index].id} className="text-right font-mono"><Money value={value} /></span>
+                              <span key={entities[index].id} className="text-right font-mono"><ReportMoney value={value} /></span>
                             ) : (
                               <button
                                 key={entities[index].id}
@@ -3609,12 +3830,12 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                                   )
                                 }
                               >
-                                <Money value={value} />
+                                <ReportMoney value={value} />
                               </button>
                             )
                           ))}
-                          <span className="text-right font-mono font-semibold"><Money value={section.total} /></span>
-                          <span className="text-right font-mono text-slate-500"><Money value={section.priorTotal} /></span>
+                          <span className="text-right font-mono font-semibold"><ReportMoney value={section.total} /></span>
+                          <span className="text-right font-mono text-slate-500"><ReportMoney value={section.priorTotal} /></span>
                         </div>
                       );
                     })}
@@ -3655,8 +3876,8 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                         <span className="font-medium text-slate-900">{line.document}</span>
                         <span>{line.contactName}</span>
                         <span>{line.accountCode} · {reportAccounts[line.accountCode]?.name ?? ''}</span>
-                        <span className="text-right font-mono">{line.amount > 0 ? <Money value={line.amount} /> : '—'}</span>
-                        <span className="text-right font-mono">{line.amount < 0 ? <Money value={-line.amount} /> : '—'}</span>
+                        <span className="text-right font-mono">{line.amount > 0 ? <ReportMoney value={line.amount} /> : '—'}</span>
+                        <span className="text-right font-mono">{line.amount < 0 ? <ReportMoney value={-line.amount} /> : '—'}</span>
                       </div>
                     ))}
                     {reportDrilldownRows.length === 0 ? (
@@ -3665,6 +3886,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                   </div>
                 </Card>
               ) : null}
+            </TranslationProvider>
             </div>
           ) : activeNav === 'Settings' && !allowed('export:run') ? (
             <Card className="rounded-2xl">
@@ -3682,6 +3904,190 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                   <h2 className="mt-1 text-2xl font-semibold text-slate-900">Settings</h2>
                 </div>
               </div>
+
+              {settingsMessage ? (
+                <p className={['rounded-lg border px-3 py-2 text-sm', settingsMessage.tone === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-red-200 bg-red-50 text-red-800'].join(' ')}>
+                  {settingsMessage.text}
+                </p>
+              ) : null}
+
+              <Card className="rounded-2xl">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Currency</p>
+                <h3 className="mt-1 text-xl font-semibold text-slate-900">Functional currency: {functionalCurrency} · {currencyNames[functionalCurrency]}</h3>
+                <p className="mt-1 text-sm text-slate-600">
+                  The currency {selectedEntity.name}&rsquo;s books are kept and reported in. Every journal line stores its transaction currency, the amount in it, the rate used and the {functionalCurrency} result — fixed at posting, never recalculated.
+                </p>
+                {allowed('entity:configure') ? (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {currencies.filter((currency) => currency !== functionalCurrency).map((currency) => (
+                      <Button key={currency} size="sm" variant="secondary" disabled={settingsPending} onClick={() => runSetting(`Functional currency set to ${currency}.`, () => setFunctionalCurrency(selectedEntity.id, currency))}>
+                        Switch to {currency}
+                      </Button>
+                    ))}
+                    <span className="text-xs text-slate-500">Only possible while nothing has been posted.</span>
+                  </div>
+                ) : null}
+              </Card>
+
+              <Card className="rounded-2xl">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Exchange rates</p>
+                    <h3 className="mt-1 text-xl font-semibold text-slate-900">Rate table</h3>
+                    <p className="mt-1 text-sm text-slate-600">
+                      One rate per currency pair per date, entered by hand. A document dated on a day with no rate takes the most recent earlier one and says so; you can always type over it.
+                    </p>
+                  </div>
+                </div>
+                {allowed('rates:manage') ? (
+                  <form
+                    className="mt-4 grid gap-3 md:grid-cols-6"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      runSetting(`Rate ${rateForm.base}→${rateForm.quote} for ${rateForm.date} saved.`, () => upsertExchangeRate(selectedEntity.id, rateForm));
+                    }}
+                  >
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium text-slate-600">1 unit of</label>
+                      <select value={rateForm.base} onChange={(event) => setRateForm((c) => ({ ...c, base: event.target.value as Currency }))} className="min-h-[44px] w-full rounded-lg border border-slate-200 bg-white px-3 text-sm">
+                        {currencies.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium text-slate-600">equals (in)</label>
+                      <select value={rateForm.quote} onChange={(event) => setRateForm((c) => ({ ...c, quote: event.target.value as Currency }))} className="min-h-[44px] w-full rounded-lg border border-slate-200 bg-white px-3 text-sm">
+                        {currencies.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium text-slate-600">Rate</label>
+                      <Input inputMode="decimal" required value={rateForm.rate} placeholder="12.5" onChange={(event) => setRateForm((c) => ({ ...c, rate: event.target.value }))} />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium text-slate-600">Date</label>
+                      <Input type="date" required value={rateForm.date} onChange={(event) => setRateForm((c) => ({ ...c, date: event.target.value }))} />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium text-slate-600">Source</label>
+                      <Input value={rateForm.source} placeholder="BoG, bank advice…" onChange={(event) => setRateForm((c) => ({ ...c, source: event.target.value }))} />
+                    </div>
+                    <div className="flex items-end">
+                      <Button type="submit" size="sm" disabled={settingsPending || rateForm.base === rateForm.quote}>Save rate</Button>
+                    </div>
+                  </form>
+                ) : null}
+                <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
+                  <div className="grid grid-cols-[1fr_1fr_1fr_1.5fr] gap-3 bg-slate-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    <span>Date</span><span>Pair</span><span className="text-right">Rate</span><span>Source</span>
+                  </div>
+                  {entityRates.slice(0, 20).map((rate) => (
+                    <div key={rate.id} className="grid grid-cols-[1fr_1fr_1fr_1.5fr] gap-3 border-t border-slate-200 px-4 py-2 text-sm text-slate-700">
+                      <span>{rate.date}</span><span>1 {rate.base} = {rate.quote}</span><span className="text-right font-mono">{rate.rate}</span><span className="truncate text-slate-500">{rate.source || '—'}</span>
+                    </div>
+                  ))}
+                  {entityRates.length === 0 ? <div className="border-t border-slate-200 px-4 py-4 text-sm text-slate-500">No rates yet. Foreign-currency documents cannot be posted until one exists.</div> : null}
+                </div>
+              </Card>
+
+              <Card className="rounded-2xl">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Bank accounts</p>
+                <h3 className="mt-1 text-xl font-semibold text-slate-900">One currency each</h3>
+                <p className="mt-1 text-sm text-slate-600">A USD account holds USD. Its balance is translated for reports and revalued at period end, but never stored converted.</p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {entityBankAccounts.map((bank) => (
+                    <span key={bank.id} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                      <span className="font-medium text-slate-900">{bank.name}</span> <span className="text-slate-500">· {bank.currency} · {bank.accountCode}</span>
+                    </span>
+                  ))}
+                </div>
+                {allowed('rates:manage') ? (
+                  <form
+                    className="mt-4 flex flex-wrap items-end gap-3"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      runSetting(`Bank account "${bankForm.name}" added.`, () => createBankAccount(selectedEntity.id, bankForm));
+                      setBankForm({ name: '', currency: 'USD' });
+                    }}
+                  >
+                    <div className="min-w-[220px]">
+                      <label className="mb-1.5 block text-xs font-medium text-slate-600">Name</label>
+                      <Input required value={bankForm.name} placeholder="Stanbic USD account" onChange={(event) => setBankForm((c) => ({ ...c, name: event.target.value }))} />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium text-slate-600">Currency</label>
+                      <select value={bankForm.currency} onChange={(event) => setBankForm((c) => ({ ...c, currency: event.target.value as Currency }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-white px-3 text-sm">
+                        {currencies.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
+                      </select>
+                    </div>
+                    <Button type="submit" size="sm" disabled={settingsPending}>Add bank account</Button>
+                  </form>
+                ) : null}
+              </Card>
+
+              {allowed('revaluation:run') ? (
+                <Card className="rounded-2xl">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Period end</p>
+                  <h3 className="mt-1 text-xl font-semibold text-slate-900">Unrealised FX revaluation</h3>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Revalues every foreign-currency monetary balance — bank accounts, receivables, payables — at the closing rate and posts the difference to 7020. Inventory and fixed assets are never touched. Reverse it on the first day of the next period.
+                  </p>
+                  <div className="mt-4 flex flex-wrap items-end gap-3">
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium text-slate-600">Period</label>
+                      <Input type="month" value={revalForm.period} onChange={(event) => { setRevalForm((c) => ({ ...c, period: event.target.value })); setRevalPreview(null); }} />
+                    </div>
+                    {currencies.filter((currency) => currency !== functionalCurrency).map((currency) => {
+                      const closing = selectRate(entityRates, currency, functionalCurrency, `${revalForm.period}-${new Date(Date.UTC(Number(revalForm.period.slice(0, 4)), Number(revalForm.period.slice(5, 7)), 0)).getUTCDate()}`);
+                      return (
+                        <div key={currency}>
+                          <label className="mb-1.5 block text-xs font-medium text-slate-600">{currency} closing rate</label>
+                          <Input inputMode="decimal" className="w-36" value={revalForm.rates[currency] ?? closing?.rate ?? ''} placeholder="none on file" onChange={(event) => { setRevalForm((c) => ({ ...c, rates: { ...c.rates, [currency]: event.target.value } })); setRevalPreview(null); }} />
+                          {closing && !revalForm.rates[currency] ? <p className="mt-1 text-[11px] text-slate-500">{closing.exact ? 'On file for period end' : `From ${closing.rateDate}`}</p> : null}
+                        </div>
+                      );
+                    })}
+                    <Button size="sm" variant="secondary" disabled={settingsPending} onClick={() => startSettingsTransition(async () => {
+                      const result = await previewRevaluation(selectedEntity.id, revalForm.period, revalClosingRates());
+                      if (result.ok) { setRevalPreview(result.value); setSettingsMessage(null); } else { setSettingsMessage({ tone: 'error', text: result.error }); }
+                    })}>Preview</Button>
+                    <Button size="sm" disabled={settingsPending || !revalPreview || revalPreview.adjustments.length === 0} onClick={() => runSetting(`Revaluation ${revalForm.period} posted.`, async () => { const r = await runRevaluation(selectedEntity.id, revalForm.period, revalClosingRates()); if (r.ok) setRevalPreview(null); return r; })}>Post revaluation</Button>
+                  </div>
+                  {revalPreview ? (
+                    <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
+                      <div className="grid grid-cols-[1.4fr_0.6fr_1fr_1fr_0.7fr_1fr_1fr] gap-3 bg-slate-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        <span>Account</span><span>Ccy</span><span className="text-right">Foreign balance</span><span className="text-right">Book ({revalPreview.functionalCurrency})</span><span className="text-right">Closing</span><span className="text-right">Revalued</span><span className="text-right">Gain / (loss)</span>
+                      </div>
+                      {revalPreview.adjustments.map((a) => (
+                        <div key={a.accountCode + a.currency} className="grid grid-cols-[1.4fr_0.6fr_1fr_1fr_0.7fr_1fr_1fr] gap-3 border-t border-slate-200 px-4 py-2 text-sm text-slate-700">
+                          <span>{a.accountCode} · {a.accountName}</span><span>{a.currency}</span>
+                          <span className="text-right font-mono"><Money value={a.foreignMinor} currency={a.currency} /></span>
+                          <span className="text-right font-mono"><Money value={a.bookMinor} /></span>
+                          <span className="text-right font-mono text-xs">{a.closingRate}</span>
+                          <span className="text-right font-mono"><Money value={a.revaluedMinor} /></span>
+                          <span className={['text-right font-mono', a.differenceMinor >= 0 ? 'text-emerald-700' : 'text-red-700'].join(' ')}><Money value={a.differenceMinor} /></span>
+                        </div>
+                      ))}
+                      {revalPreview.adjustments.length === 0 ? <div className="border-t border-slate-200 px-4 py-3 text-sm text-slate-500">Nothing to revalue for {revalPreview.period}.</div> : null}
+                      <div className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-right text-sm font-semibold">Net unrealised {revalPreview.totalMinor >= 0 ? 'gain' : 'loss'}: <Money value={Math.abs(revalPreview.totalMinor)} /> · dated {revalPreview.closingDate}</div>
+                    </div>
+                  ) : null}
+                  {entityRevaluations.length > 0 ? (
+                    <div className="mt-4 space-y-2">
+                      {entityRevaluations.map((revaluation) => (
+                        <div key={revaluation.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 px-4 py-2 text-sm">
+                          <span>
+                            <span className="font-medium text-slate-900">{revaluation.period}</span> · posted {revaluation.journal.postedAt} at {Object.entries(revaluation.closingRates).map(([c, r]) => `${c} ${r}`).join(', ')}
+                            {revaluation.reversalJournal ? <span className="text-slate-500"> · reversed {revaluation.reversalJournal.postedAt}</span> : null}
+                          </span>
+                          {!revaluation.reversalJournal ? (
+                            <Button size="sm" variant="secondary" disabled={settingsPending} onClick={() => runSetting(`Revaluation ${revaluation.period} reversed.`, () => reverseRevaluation(selectedEntity.id, revaluation.period))}>Reverse into next period</Button>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </Card>
+              ) : null}
 
               <Card className="rounded-2xl">
                 <div className="flex items-start justify-between gap-4 pb-4">
@@ -3882,7 +4288,9 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                       </Button>
                     ) : null}
                     {activeDocument.status === 'awaiting-payment' && allowed('document:mark-paid') ? (
-                      <Button size="sm" disabled={documentPending} onClick={markCurrentDocumentPaid}>Mark paid</Button>
+                      <Button size="sm" disabled={documentPending} onClick={() => (paymentOpen ? setPaymentOpen(false) : openPaymentPanel())}>
+                        {paymentOpen ? 'Cancel payment' : 'Record payment'}
+                      </Button>
                     ) : null}
                     {(activeDocument.status === 'awaiting-payment' || activeDocument.status === 'paid') && allowed('document:void') ? (
                       <Button variant="danger" size="sm" disabled={documentPending} onClick={voidCurrentDocument}>Void</Button>
@@ -3933,7 +4341,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                         <span className="truncate">{document.contactName}</span>
                         <span>{document.date}</span>
                         <span>{statusLabels[document.status]}</span>
-                        <span className="text-right font-mono"><Money value={buildTotals(document.lines).total} /></span>
+                        <span className="text-right font-mono"><Money value={buildTotals(document.lines).total} currency={document.currency} /></span>
                       </button>
                     ))}
                 </div>
@@ -3968,7 +4376,12 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                     type="date"
                     value={activeDocument.date}
                     disabled={documentReadOnly}
-                    onChange={(event) => updateCurrentDocument({ date: event.target.value })}
+                    onChange={(event) => {
+                      const date = event.target.value;
+                      const quote = selectRate(entityRates, activeDocument.currency, functionalCurrency, date);
+                      // A new date takes the table's rate for that date; type over it again to override.
+                      updateCurrentDocument({ date, rate: quote?.rate ?? null, rateDate: quote?.rateDate ?? null, rateExact: quote ? quote.exact && !quote.inverted : true });
+                    }}
                   />
                 </div>
 
@@ -3983,9 +4396,45 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                 </div>
 
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">Status</label>
-                  <Input value={statusLabels[activeDocument.status]} readOnly disabled />
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">Currency</label>
+                  <select
+                    value={activeDocument.currency}
+                    disabled={documentReadOnly}
+                    onChange={(event) => {
+                      const currency = event.target.value as Currency;
+                      const quote = selectRate(entityRates, currency, functionalCurrency, activeDocument.date);
+                      updateCurrentDocument({ currency, rate: quote?.rate ?? null, rateDate: quote?.rateDate ?? null, rateExact: quote ? quote.exact && !quote.inverted : true });
+                    }}
+                    className="min-h-[44px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50"
+                  >
+                    {currencies.map((currency) => (
+                      <option key={currency} value={currency}>{currency} · {currencyNames[currency]}</option>
+                    ))}
+                  </select>
                 </div>
+
+                {documentIsForeign ? (
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">Rate ({functionalCurrency} per 1 {activeDocument.currency})</label>
+                    <Input
+                      inputMode="decimal"
+                      value={documentReadOnly ? (activeDocument.rate ?? documentRate ?? '') : (activeDocument.rate ?? documentRate ?? '')}
+                      disabled={documentReadOnly}
+                      placeholder="e.g. 12.5"
+                      onChange={(event) => updateCurrentDocument({ rate: event.target.value || null, rateDate: activeDocument.date, rateExact: false })}
+                    />
+                    {documentRateWarning ? (
+                      <p className={['mt-1 text-xs', documentRateWarning.startsWith('No ') ? 'font-medium text-amber-700' : 'text-slate-500'].join(' ')}>{documentRateWarning}</p>
+                    ) : (
+                      <p className="mt-1 text-xs text-slate-500">Rate on file for {activeDocument.date}. Type over it if the bank&rsquo;s rate differs.</p>
+                    )}
+                  </div>
+                ) : (
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">Status</label>
+                    <Input value={statusLabels[activeDocument.status]} readOnly disabled />
+                  </div>
+                )}
               </div>
 
               <div className="mt-6 rounded-2xl border border-slate-200 overflow-hidden">
@@ -4081,37 +4530,37 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
 
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <div className="space-y-2 text-sm text-slate-700">
-                    <div className="flex items-center justify-between">
-                      <span>Subtotal</span>
-                      <span className="font-mono text-slate-900"><Money value={activeTotals.subtotal} /></span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span>VAT (15%)</span>
-                      <span className="font-mono text-slate-900"><Money value={activeTotals.vat} /></span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span>NHIL (2.5%)</span>
-                      <span className="font-mono text-slate-900"><Money value={activeTotals.nhil} /></span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span>GETFund (2.5%)</span>
-                      <span className="font-mono text-slate-900"><Money value={activeTotals.getFund} /></span>
-                    </div>
-                    <div className="flex items-center justify-between border-t border-slate-200 pt-2 text-base font-semibold text-slate-900">
+                    {[
+                      ['Subtotal', activeTotals.subtotal],
+                      ['VAT (15%)', activeTotals.vat],
+                      ['NHIL (2.5%)', activeTotals.nhil],
+                      ['GETFund (2.5%)', activeTotals.getFund],
+                    ].map(([label, amount]) => (
+                      <div key={label as string} className="flex items-start justify-between">
+                        <span>{label}</span>
+                        <FxAmount amount={amount as number} currency={activeDocument.currency} functional={documentIsForeign ? toFunctional(amount as number) : null} functionalCurrency={functionalCurrency} />
+                      </div>
+                    ))}
+                    <div className="flex items-start justify-between border-t border-slate-200 pt-2 text-base font-semibold text-slate-900">
                       <span>Total</span>
-                      <span className="font-mono"><Money value={activeTotals.total} /></span>
+                      <FxAmount amount={activeTotals.total} currency={activeDocument.currency} functional={documentIsForeign ? toFunctional(activeTotals.total) : null} functionalCurrency={functionalCurrency} large />
                     </div>
                     {isPurchaseView ? (
                       <>
-                        <div className="flex items-center justify-between border-t border-slate-200 pt-2">
+                        <div className="flex items-start justify-between border-t border-slate-200 pt-2">
                           <span>Withholding tax</span>
-                          <span className="font-mono text-slate-900"><Money value={activeTotals.withholdingTax} /></span>
+                          <FxAmount amount={activeTotals.withholdingTax} currency={activeDocument.currency} functional={documentIsForeign ? toFunctional(activeTotals.withholdingTax) : null} functionalCurrency={functionalCurrency} />
                         </div>
-                        <div className="flex items-center justify-between text-base font-semibold text-slate-900">
+                        <div className="flex items-start justify-between text-base font-semibold text-slate-900">
                           <span>Net payable</span>
-                          <span className="font-mono"><Money value={activeTotals.netPayable} /></span>
+                          <FxAmount amount={activeTotals.netPayable} currency={activeDocument.currency} functional={documentIsForeign ? toFunctional(activeTotals.netPayable) : null} functionalCurrency={functionalCurrency} large />
                         </div>
                       </>
+                    ) : null}
+                    {documentIsForeign ? (
+                      <p className="pt-1 text-[11px] text-slate-500">
+                        {documentRate ? `Functional amounts at ${documentRate} ${functionalCurrency} per ${activeDocument.currency}${activeRecord?.journal ? ' — fixed at posting' : ''}.` : 'Functional amounts need a rate.'}
+                      </p>
                     ) : null}
                   </div>
                 </div>
@@ -4155,6 +4604,115 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                 </div>
               ) : null}
 
+              {paymentOpen && activeRecord && activeRecord.status === 'awaiting-payment' ? (
+                <div className="mt-6 rounded-2xl border border-brand-200 bg-brand-50/40 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Record payment</p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Outstanding: <Money value={outstandingTxn} currency={activeRecord.currency} />
+                    {activeRecord.currency !== functionalCurrency && activeRecord.rate ? <> · booked at {activeRecord.rate} on {activeRecord.rateDate ?? activeRecord.date}</> : null}
+                  </p>
+                  <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-slate-700">Bank account</label>
+                      <select
+                        value={paymentBank?.id ?? ''}
+                        onChange={(event) => setPaymentForm((current) => ({ ...current, bankAccountId: event.target.value }))}
+                        className="min-h-[44px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900"
+                      >
+                        {entityBankAccounts
+                          .filter((bank) => bank.currency === activeRecord.currency || bank.currency === functionalCurrency)
+                          .map((bank) => (
+                            <option key={bank.id} value={bank.id}>{bank.name} · {bank.currency}</option>
+                          ))}
+                      </select>
+                      <p className="mt-1 text-xs text-slate-500">Only accounts in {activeRecord.currency}{activeRecord.currency !== functionalCurrency ? ` or ${functionalCurrency}` : ''} can settle this document.</p>
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-slate-700">Date</label>
+                      <Input type="date" value={paymentForm.date} onChange={(event) => setPaymentForm((current) => ({ ...current, date: event.target.value, rate: '' }))} />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-slate-700">Amount ({activeRecord.currency})</label>
+                      <Input inputMode="decimal" value={paymentForm.amount} onChange={(event) => setPaymentForm((current) => ({ ...current, amount: event.target.value }))} />
+                    </div>
+                    {activeRecord.currency !== functionalCurrency ? (
+                      <div>
+                        <label className="mb-1.5 block text-sm font-medium text-slate-700">Bank rate ({functionalCurrency} per 1 {activeRecord.currency})</label>
+                        <Input inputMode="decimal" value={paymentForm.rate || paymentRateQuote?.rate || ''} onChange={(event) => setPaymentForm((current) => ({ ...current, rate: event.target.value }))} />
+                        <p className={['mt-1 text-xs', !paymentRateQuote ? 'font-medium text-amber-700' : 'text-slate-500'].join(' ')}>
+                          {paymentForm.rate
+                            ? 'Overridden — use the rate on the bank credit or debit advice.'
+                            : paymentRateQuote
+                              ? paymentRateQuote.exact
+                                ? `Rate on file for ${paymentForm.date}. Type over it with the bank&apos;s actual rate.`
+                                : `No rate for ${paymentForm.date}; using ${paymentRateQuote.rateDate}. Type the bank's actual rate.`
+                              : 'No rate on file. Type the rate the bank applied.'}
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {paymentPreview ? (
+                    <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4 text-sm">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">The calculation</p>
+                      <div className="mt-2 grid gap-2 md:grid-cols-3">
+                        <div>
+                          <p className="text-xs text-slate-500">{activeRecord.kind === 'invoice' ? 'Receivable cleared' : 'Payable cleared'} (at {activeRecord.rate})</p>
+                          <p className="font-mono text-slate-900"><Money value={paymentAmountMinor} currency={activeRecord.currency} /> → <Money value={paymentPreview.reliefMinor} currency={functionalCurrency} /></p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-500">Bank {activeRecord.kind === 'invoice' ? 'received' : 'paid'} (at {paymentRate})</p>
+                          <p className="font-mono text-slate-900"><Money value={paymentPreview.bankAmountMinor} currency={paymentBank?.currency} /> = <Money value={paymentPreview.bankFunctionalMinor} currency={functionalCurrency} /></p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-500">Realised FX {paymentPreview.gainLossMinor >= 0 ? 'gain' : 'loss'}</p>
+                          <p className={['font-mono font-semibold', paymentPreview.gainLossMinor >= 0 ? 'text-emerald-700' : 'text-red-700'].join(' ')}>
+                            <Money value={Math.abs(paymentPreview.gainLossMinor)} currency={functionalCurrency} />
+                            {paymentPreview.gainLossMinor === 0 ? ' (none)' : ''}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="mt-3 overflow-hidden rounded-lg border border-slate-200">
+                        {paymentPreview.lines.map((line) => (
+                          <div key={line.accountCode + line.type} className="grid grid-cols-[1fr_0.8fr_0.8fr] gap-3 border-t border-slate-100 px-3 py-2 text-xs first:border-t-0">
+                            <span>{line.accountName}</span>
+                            <span className="font-mono">{line.type === 'debit' ? <Money value={line.functionalAmount} currency={functionalCurrency} /> : '—'}</span>
+                            <span className="font-mono">{line.type === 'credit' ? <Money value={line.functionalAmount} currency={functionalCurrency} /> : '—'}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-xs text-amber-700">Enter an amount up to the outstanding balance{activeRecord.currency !== functionalCurrency ? ' and a rate' : ''} to see the calculation.</p>
+                  )}
+                  <div className="mt-4">
+                    <Button size="sm" disabled={documentPending || !paymentPreview} onClick={submitPayment}>
+                      {documentPending ? 'Posting…' : 'Post payment'}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+
+              {activeRecord && activeRecord.payments.length > 0 ? (
+                <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200">
+                  <div className="grid grid-cols-[1fr_1.2fr_1fr_0.7fr_1fr_1fr] gap-3 bg-slate-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    <span>Paid on</span><span>Bank</span><span className="text-right">Amount</span><span className="text-right">Rate</span><span className="text-right">In {functionalCurrency}</span><span className="text-right">Realised FX</span>
+                  </div>
+                  {activeRecord.payments.map((payment) => (
+                    <div key={payment.id} className="grid grid-cols-[1fr_1.2fr_1fr_0.7fr_1fr_1fr] gap-3 border-t border-slate-200 px-4 py-2 text-sm text-slate-700">
+                      <span>{payment.date}</span>
+                      <span className="truncate">{payment.bankAccountName}</span>
+                      <span className="text-right font-mono"><Money value={payment.txnAmount} currency={activeRecord.currency} /></span>
+                      <span className="text-right font-mono text-xs">{payment.rate}</span>
+                      <span className="text-right font-mono"><Money value={payment.bankFunctionalAmount} currency={functionalCurrency} /></span>
+                      <span className={['text-right font-mono', payment.gainLoss > 0 ? 'text-emerald-700' : payment.gainLoss < 0 ? 'text-red-700' : ''].join(' ')}>
+                        {payment.gainLoss === 0 ? '—' : <Money value={payment.gainLoss} currency={functionalCurrency} />}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
               <div className="mt-6 rounded-2xl border border-slate-200 bg-white">
                 <button
                   type="button"
@@ -4168,17 +4726,21 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                 {journalOpen ? (
                   <div className="border-t border-slate-200 p-4">
                     <div className="overflow-hidden rounded-xl border border-slate-200">
-                      <div className="grid grid-cols-[1fr_0.7fr_0.7fr] gap-3 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                      <div className="grid grid-cols-[1fr_0.8fr_0.5fr_0.7fr_0.7fr] gap-3 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                         <span>Account</span>
-                        <span>Money in</span>
-                        <span>Money out</span>
+                        <span className="text-right">Transaction</span>
+                        <span className="text-right">Rate</span>
+                        <span className="text-right">Money in ({functionalCurrency})</span>
+                        <span className="text-right">Money out ({functionalCurrency})</span>
                       </div>
 
                       {journalEntries.map((entry) => (
-                        <div key={`${entry.accountCode}-${entry.type}`} className="grid grid-cols-[1fr_0.7fr_0.7fr] gap-3 border-t border-slate-200 px-4 py-3 text-sm text-slate-700">
+                        <div key={`${entry.accountCode}-${entry.type}`} className="grid grid-cols-[1fr_0.8fr_0.5fr_0.7fr_0.7fr] gap-3 border-t border-slate-200 px-4 py-3 text-sm text-slate-700">
                           <div>{entry.accountName}</div>
-                          <div className="font-mono text-slate-900">{entry.type === 'debit' ? <Money value={entry.amount} /> : '—'}</div>
-                          <div className="font-mono text-slate-900">{entry.type === 'credit' ? <Money value={entry.amount} /> : '—'}</div>
+                          <div className="text-right font-mono text-slate-600">{entry.currency === functionalCurrency && entry.txnAmount === entry.amount ? '—' : <Money value={entry.txnAmount} currency={entry.currency} />}</div>
+                          <div className="text-right font-mono text-xs text-slate-500">{entry.rate === '1.0' ? '—' : entry.rate}</div>
+                          <div className="text-right font-mono text-slate-900">{entry.type === 'debit' ? <Money value={entry.amount} currency={functionalCurrency} /> : '—'}</div>
+                          <div className="text-right font-mono text-slate-900">{entry.type === 'credit' ? <Money value={entry.amount} currency={functionalCurrency} /> : '—'}</div>
                         </div>
                       ))}
                     </div>
@@ -4451,5 +5013,6 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
         </div>
       ) : null}
     </div>
+    </CurrencyProvider>
   );
 }

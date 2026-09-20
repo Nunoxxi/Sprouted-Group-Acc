@@ -16,6 +16,7 @@ import {
   whtToPrisma,
   whtToRecord,
 } from './enums';
+import { normalizeRate } from '../fx';
 import { toMinor } from './money';
 import type {
   AccountRecord,
@@ -48,7 +49,14 @@ export function entityRecord(row: Entity): EntityRecord {
     vatRegistered: row.vatRegistered,
     tin: row.tin ?? '',
     accent: row.accent ?? '',
+    functionalCurrency: row.functionalCurrency,
   };
+}
+
+/** Prisma Decimal → the canonical rate string the app uses everywhere. */
+export function rateText(value: { toString(): string } | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  return normalizeRate(value.toString());
 }
 
 export function contactRecord(row: Contact & { balances: ContactEntityBalance[] }): ContactRecord {

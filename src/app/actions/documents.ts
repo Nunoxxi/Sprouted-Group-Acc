@@ -25,18 +25,22 @@ import { journalEntriesBalance } from '@/lib/accounting-integrity';
 import { recordAuditEvent } from '@/lib/audit';
 import type { Permission, Principal } from '@/lib/authz';
 import { authorizationFailure, requireEntityAccess, requirePermission } from '@/lib/dal';
-import { seedChartForEntity } from '@/lib/data/chart.ts';
+import { ensureDefaultBankAccount, seedChartForEntity } from '@/lib/data/chart.ts';
 import { documentInclude, documentRecord, kindToPrisma, vatToPrisma } from '@/lib/data/documents';
-import { contactRecord, entityRecord, toPrismaEnum } from '@/lib/data/mappers';
-import { fromMinor } from '@/lib/data/money';
+import { contactRecord, entityRecord, rateText, toPrismaEnum } from '@/lib/data/mappers';
+import { fromMinor, toMinor } from '@/lib/data/money';
 import type { ContactRecord, DocumentRecord, EntityRecord, EntityType } from '@/lib/data/types';
 import {
   accountNameMap,
+  buildTotals,
+  controlAccounts,
   journalLinesFor,
   normalizeDocument,
   periodOf,
   type DocumentFormState,
 } from '@/lib/documents';
+import { convertJournal, normalizeRate, selectRate, settlementFor, type Currency, type FxJournalLine } from '@/lib/fx';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { accentPalette } from '@/lib/seed-data';
 
@@ -82,7 +86,7 @@ async function withPermission<T>(permission: Permission, run: (principal: Princi
 }
 
 async function requireEntity(entityId: string) {
-  const entity = await prisma.entity.findUnique({ where: { id: entityId }, select: { id: true, name: true } });
+  const entity = await prisma.entity.findUnique({ where: { id: entityId }, select: { id: true, name: true, functionalCurrency: true } });
   if (!entity) {
     throw new Error(`Unknown entity ${entityId}`);
   }
@@ -99,6 +103,46 @@ function dateOf(value: string): Date {
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+function decimalOf(rate: string): Prisma.Decimal {
+  return new Prisma.Decimal(normalizeRate(rate));
+}
+
+/** The stored shape of a converted journal line: both currencies, the rate, the direction. */
+function lineData(entityId: string, line: FxJournalLine, accountId: string, contactId: string | null) {
+  return {
+    entityId,
+    accountId,
+    contactId,
+    txnCurrency: line.currency,
+    txnAmountMinor: fromMinor(line.txnAmount),
+    rate: decimalOf(line.rate),
+    amountMinor: fromMinor(line.functionalAmount),
+    direction: line.type === 'debit' ? ('MONEY_IN' as const) : ('MONEY_OUT' as const),
+  };
+}
+
+/** The rate a draft will post at: its saved rate, else the table's default for its date. */
+async function rateForDraft(entityId: string, form: DocumentFormState, functionalCurrency: Currency) {
+  if (form.currency === functionalCurrency) {
+    return { rate: '1.0', rateDate: form.date, rateExact: true };
+  }
+  if (form.rate) {
+    try {
+      return { rate: normalizeRate(form.rate), rateDate: form.rateDate ?? form.date, rateExact: form.rateExact };
+    } catch {
+      return null;
+    }
+  }
+  const rows = await prisma.exchangeRate.findMany({ where: { entityId }, select: { base: true, quote: true, date: true, rate: true } });
+  const quote = selectRate(
+    rows.map((row) => ({ base: row.base, quote: row.quote, date: row.date.toISOString().slice(0, 10), rate: rateText(row.rate) ?? '1.0' })),
+    form.currency,
+    functionalCurrency,
+    form.date,
+  );
+  return quote ? { rate: quote.rate, rateDate: quote.rateDate, rateExact: quote.exact && !quote.inverted } : null;
 }
 
 function documentLabel(kind: 'invoice' | 'bill', number: string): string {
@@ -125,7 +169,7 @@ export async function saveDocumentDraft(entityId: string, input: unknown): Promi
 }
 
 async function saveDraft(entityId: string, input: unknown, principal: Principal): Promise<ActionResult<DocumentRecord>> {
-  await requireEntity(entityId);
+  const entity = await requireEntity(entityId);
 
   const kind = (input as { kind?: string } | null)?.kind === 'bill' ? 'bill' : 'invoice';
   const fallbackContact = await prisma.contact.findFirst({ where: { isActive: true }, select: { id: true }, orderBy: { name: 'asc' } });
@@ -134,6 +178,17 @@ async function saveDraft(entityId: string, input: unknown, principal: Principal)
   if (!form.contactId) {
     return fail('Choose a contact before saving.');
   }
+  if (form.rate !== null) {
+    try {
+      normalizeRate(form.rate);
+    } catch {
+      return fail('The exchange rate must be a positive decimal number.');
+    }
+  }
+  const rateFields =
+    form.currency === entity.functionalCurrency
+      ? { currency: form.currency, rate: decimalOf('1.0'), rateDate: dateOf(form.date), rateExact: true }
+      : { currency: form.currency, rate: form.rate ? decimalOf(form.rate) : null, rateDate: form.rateDate ? dateOf(form.rateDate) : null, rateExact: form.rateExact };
 
   const accounts = await prisma.account.findMany({ where: { entityId, isActive: true }, select: { id: true, code: true } });
   const accountIdOf = new Map(accounts.map((account) => [account.code, account.id]));
@@ -189,6 +244,7 @@ async function saveDraft(entityId: string, input: unknown, principal: Principal)
           evatClearanceNumber: form.evatClearanceNumber || null,
           evatQrCode: form.evatQrCode || null,
           evatTimestamp: form.evatTimestamp || null,
+          ...rateFields,
           lastEditedById: principal.userId,
           lines: { create: linesData },
         },
@@ -208,6 +264,7 @@ async function saveDraft(entityId: string, input: unknown, principal: Principal)
         evatClearanceNumber: form.evatClearanceNumber || null,
         evatQrCode: form.evatQrCode || null,
         evatTimestamp: form.evatTimestamp || null,
+        ...rateFields,
         createdById: principal.userId,
         lastEditedById: principal.userId,
         lines: { create: linesData },
@@ -236,7 +293,7 @@ export async function postDocument(entityId: string, documentId: string): Promis
 }
 
 async function post(entityId: string, documentId: string, principal: Principal): Promise<ActionResult<DocumentRecord>> {
-  await requireEntity(entityId);
+  const entity = await requireEntity(entityId);
 
   const document = await prisma.document.findFirst({
     where: { id: documentId, entityId },
@@ -265,12 +322,24 @@ async function post(entityId: string, documentId: string, principal: Principal):
   const isPurchase = document.kind === 'BILL';
   const contact = contactRecord({ ...document.contact, balances: [] });
   const form = documentRecordToForm(documentRecord(document));
-  const lines = journalLinesFor(form, isPurchase, contact, names);
+  const txnLines = journalLinesFor(form, isPurchase, contact, names);
 
-  if (!journalEntriesBalance([{ entityId, lines }])) {
+  if (!journalEntriesBalance([{ entityId, lines: txnLines }])) {
     // Cannot happen if the builder is correct; refuse loudly rather than
     // write an unbalanced entry.
     throw new Error('Journal does not balance; refusing to post');
+  }
+
+  // The rate is fixed here, at posting, and stored on the document and every
+  // line. Rounding differences land on the control account so the functional
+  // journal balances exactly too.
+  const rateInfo = await rateForDraft(entityId, form, entity.functionalCurrency);
+  if (!rateInfo) {
+    return fail(`No ${form.currency}→${entity.functionalCurrency} exchange rate is on file on or before ${form.date}. Enter one under Settings, or type a rate on the document.`);
+  }
+  const lines = convertJournal(txnLines, form.currency, entity.functionalCurrency, rateInfo.rate, isPurchase ? controlAccounts.payables : controlAccounts.receivables);
+  if (!journalEntriesBalance([{ entityId, lines: lines.map((line) => ({ ...line, amount: line.functionalAmount })) }])) {
+    throw new Error('Converted journal does not balance; refusing to post');
   }
 
   for (const line of lines) {
@@ -308,13 +377,7 @@ async function post(entityId: string, documentId: string, principal: Principal):
           postedAt: document.date,
           postedById: principal.userId,
           lines: {
-            create: lines.map((line) => ({
-              entityId,
-              accountId: accountIdOf.get(line.accountCode) as string,
-              contactId: document.contactId,
-              amountMinor: fromMinor(line.amount),
-              direction: line.type === 'debit' ? 'MONEY_IN' : 'MONEY_OUT',
-            })),
+            create: lines.map((line) => lineData(entityId, line, accountIdOf.get(line.accountCode) as string, document.contactId)),
           },
         },
         select: { id: true },
@@ -322,7 +385,13 @@ async function post(entityId: string, documentId: string, principal: Principal):
 
       await tx.document.update({
         where: { id: documentId },
-        data: { number, journalEntryId: entry.id },
+        data: {
+          number,
+          journalEntryId: entry.id,
+          rate: decimalOf(rateInfo.rate),
+          rateDate: dateOf(rateInfo.rateDate),
+          rateExact: rateInfo.rateExact,
+        },
       });
 
       await recordAuditEvent(
@@ -334,7 +403,13 @@ async function post(entityId: string, documentId: string, principal: Principal):
           resourceType: kind,
           resourceRef: number,
           summary: `${documentLabel(kind, number)} posted for ${document.contact.name}`,
-          metadata: { journalEntryId: entry.id, lines: lines.length, total: lines.filter((l) => l.type === 'debit').reduce((s, l) => s + l.amount, 0) },
+          metadata: {
+            journalEntryId: entry.id,
+            lines: lines.length,
+            currency: form.currency,
+            rate: rateInfo.rate,
+            total: lines.filter((l) => l.type === 'debit').reduce((s, l) => s + l.functionalAmount, 0),
+          },
         },
         tx,
       );
@@ -362,6 +437,10 @@ function documentRecordToForm(record: DocumentRecord): DocumentFormState {
     date: record.date,
     dueDate: record.dueDate,
     status: record.status,
+    currency: record.currency,
+    rate: record.rate,
+    rateDate: record.rateDate,
+    rateExact: record.rateExact,
     lines: record.lines.map((line) => ({
       id: line.id,
       description: line.description,
@@ -376,30 +455,150 @@ function documentRecordToForm(record: DocumentRecord): DocumentFormState {
   };
 }
 
-// --- paid --------------------------------------------------------------------------
+// --- payments: settlement with realised FX ------------------------------------------
+
+export type PaymentInput = {
+  documentId: string;
+  bankAccountId: string;
+  /** YYYY-MM-DD */
+  date: string;
+  /** Amount settled, in the document's currency, minor units. */
+  txnAmount: number;
+  /** Settlement rate: functional per 1 unit of document currency. Ignored for functional-currency documents. */
+  rate: string;
+};
 
 /**
- * Status and audit only. Posting the cash movement belongs to bank
- * reconciliation, which is not persisted yet — recorded as a known gap.
+ * Record a payment against a posted document and post its journal: the bank
+ * at the settlement rate, the receivable or payable relieved at the
+ * document's historic rate, and the difference to realised FX gain/loss.
+ * The document's functional amount is never touched — the gain or loss is
+ * a new fact, booked on the payment date.
  */
-export async function markDocumentPaid(entityId: string, documentId: string): Promise<ActionResult<DocumentRecord>> {
-  return withEntityAccess(entityId, 'document:mark-paid', (principal) => markPaid(entityId, documentId, principal));
+export async function recordPayment(entityId: string, input: PaymentInput): Promise<ActionResult<DocumentRecord>> {
+  return withEntityAccess(entityId, 'document:mark-paid', (principal) => settle(entityId, input, principal));
 }
 
-async function markPaid(entityId: string, documentId: string, principal: Principal): Promise<ActionResult<DocumentRecord>> {
-  await requireEntity(entityId);
+async function settle(entityId: string, input: PaymentInput, principal: Principal): Promise<ActionResult<DocumentRecord>> {
+  const entity = await requireEntity(entityId);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) return fail('Payment date must be YYYY-MM-DD.');
+  if (!Number.isInteger(input.txnAmount) || input.txnAmount <= 0) return fail('Enter a payment amount greater than zero.');
 
-  const row = await prisma.$transaction(async (tx) => {
-    const claimed = await tx.document.updateMany({
-      where: { id: documentId, entityId, status: 'AWAITING_PAYMENT' },
-      data: { status: 'PAID' },
+  const period = periodOf(input.date);
+  if (await prisma.taxPeriodFiling.findUnique({ where: { entityId_period: { entityId, period } } })) {
+    return fail(`Period ${period} has been filed. Date the payment in an open period.`);
+  }
+
+  const document = await prisma.document.findFirst({
+    where: { id: input.documentId, entityId },
+    include: { ...documentInclude, contact: true },
+  });
+  if (!document) return fail('Document not found.');
+  if (document.status !== 'AWAITING_PAYMENT') return fail('Only a posted, unpaid document can be settled.');
+  if (!document.journalEntry || !document.rate) return fail('This document has no posted journal to settle.');
+
+  const bank = await prisma.bankAccount.findFirst({ where: { id: input.bankAccountId, entityId, isActive: true }, include: { account: true } });
+  if (!bank) return fail('Choose a bank account belonging to this entity.');
+
+  const kind = document.kind === 'BILL' ? 'bill' : 'invoice';
+  const form = documentRecordToForm(documentRecord(document));
+  const contact = contactRecord({ ...document.contact, balances: [] });
+  const totals = buildTotals(form.lines, kind === 'bill' ? contact.withholdingTaxStatus : undefined);
+  const owedTxn = kind === 'invoice' ? totals.total : totals.netPayable;
+  const paidSoFar = toMinor(document.paidTxnMinor);
+  const outstanding = owedTxn - paidSoFar;
+  if (input.txnAmount > outstanding) {
+    return fail(`That is more than the ${outstanding / 100} ${document.currency} still outstanding.`);
+  }
+  const isFinal = input.txnAmount === outstanding;
+
+  let settlementRate: string;
+  try {
+    settlementRate = document.currency === entity.functionalCurrency ? '1.0' : normalizeRate(input.rate);
+  } catch {
+    return fail('The settlement rate must be a positive decimal number.');
+  }
+
+  // Functional book value of this document's control-account balance still open:
+  // what was posted, less what earlier payments relieved.
+  const controlCode = kind === 'invoice' ? controlAccounts.receivables : controlAccounts.payables;
+  const controlPosted = document.journalEntry.lines
+    .filter((line) => line.account.code === controlCode)
+    .reduce((sum, line) => sum + toMinor(line.amountMinor), 0);
+  const relievedSoFar = document.payments.reduce((sum, payment) => sum + toMinor(payment.reliefMinor), 0);
+  const remainingBookMinor = controlPosted - relievedSoFar;
+
+  const accounts = await prisma.account.findMany({ where: { entityId, isActive: true }, select: { id: true, code: true, name: true } });
+  const accountIdOf = new Map(accounts.map((account) => [account.code, account.id]));
+  const names = accountNameMap(accounts);
+
+  let settlement;
+  try {
+    settlement = settlementFor({
+      kind,
+      documentCurrency: document.currency,
+      functionalCurrency: entity.functionalCurrency,
+      documentRate: rateText(document.rate) ?? '1.0',
+      txnAmount: input.txnAmount,
+      settlementRate,
+      bankCurrency: bank.currency,
+      remainingBookMinor,
+      isFinal,
+      controlAccountCode: controlCode,
+      bankAccountCode: bank.account.code,
+      names,
     });
-    if (claimed.count !== 1) {
-      return null;
-    }
-    const document = await tx.document.findUniqueOrThrow({ where: { id: documentId }, include: documentInclude });
-    const kind = document.kind === 'BILL' ? 'bill' : 'invoice';
-    const number = postedNumberOf(document);
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : 'Could not compute the settlement.');
+  }
+  for (const line of settlement.lines) {
+    if (!accountIdOf.has(line.accountCode)) return fail(`Account ${line.accountCode} is not in this entity's chart.`);
+  }
+
+  const number = postedNumberOf(document);
+  const row = await prisma.$transaction(async (tx) => {
+    // Claim the outstanding amount atomically: two concurrent settlements of
+    // the same balance cannot both succeed.
+    const claimed = await tx.document.updateMany({
+      where: { id: document.id, entityId, status: 'AWAITING_PAYMENT', paidTxnMinor: document.paidTxnMinor },
+      data: { paidTxnMinor: { increment: fromMinor(input.txnAmount) }, ...(isFinal ? { status: 'PAID' as const } : {}) },
+    });
+    if (claimed.count !== 1) throw new AlreadyPostedError();
+
+    const entry = await tx.journalEntry.create({
+      data: {
+        entityId,
+        kind: 'PAYMENT',
+        reference: number,
+        description: `Payment ${kind === 'invoice' ? 'received for' : 'made for'} ${documentLabel(kind, number)} — ${document.contact.name}`,
+        postedAt: dateOf(input.date),
+        postedById: principal.userId,
+        lines: { create: settlement.lines.map((line) => lineData(entityId, line, accountIdOf.get(line.accountCode) as string, document.contactId)) },
+      },
+      select: { id: true },
+    });
+
+    await tx.payment.create({
+      data: {
+        entityId,
+        documentId: document.id,
+        bankAccountId: bank.id,
+        date: dateOf(input.date),
+        txnAmountMinor: fromMinor(input.txnAmount),
+        rate: decimalOf(settlementRate),
+        bankAmountMinor: fromMinor(settlement.bankAmountMinor),
+        bankFunctionalMinor: fromMinor(settlement.bankFunctionalMinor),
+        reliefMinor: fromMinor(settlement.reliefMinor),
+        gainLossMinor: fromMinor(settlement.gainLossMinor),
+        journalEntryId: entry.id,
+        recordedById: principal.userId,
+      },
+    });
+
+    const gainText =
+      settlement.gainLossMinor === 0
+        ? ''
+        : `; realised FX ${settlement.gainLossMinor > 0 ? 'gain' : 'loss'} ${Math.abs(settlement.gainLossMinor) / 100} ${entity.functionalCurrency}`;
     await recordAuditEvent(
       {
         entityId,
@@ -408,16 +607,27 @@ async function markPaid(entityId: string, documentId: string, principal: Princip
         action: 'EDIT',
         resourceType: kind,
         resourceRef: number,
-        summary: `${documentLabel(kind, number)} marked paid`,
+        summary: `${documentLabel(kind, number)}: ${input.txnAmount / 100} ${document.currency} ${kind === 'invoice' ? 'received' : 'paid'} at ${settlementRate}${gainText}${isFinal ? '; settled in full' : ''}`,
+        metadata: {
+          journalEntryId: entry.id,
+          bankAccountId: bank.id,
+          txnAmount: input.txnAmount,
+          rate: settlementRate,
+          relief: settlement.reliefMinor,
+          bankFunctional: settlement.bankFunctionalMinor,
+          gainLoss: settlement.gainLossMinor,
+        },
       },
       tx,
     );
-    return document;
+
+    return tx.document.findUniqueOrThrow({ where: { id: document.id }, include: documentInclude });
+  }).catch((error) => {
+    if (error instanceof AlreadyPostedError) return null;
+    throw error;
   });
 
-  if (!row) {
-    return fail('Only a document awaiting payment can be marked paid.');
-  }
+  if (!row) return fail('This document changed while you were recording the payment. Reload and try again.');
 
   refresh();
   return { ok: true, value: documentRecord(row) };
@@ -456,6 +666,9 @@ async function voidPosted(entityId: string, documentId: string, principal: Princ
   if (document.status === 'DRAFT' || !document.journalEntry) {
     return fail('A draft has nothing to reverse; delete its lines instead.');
   }
+  if (document.paidTxnMinor > 0n) {
+    return fail('This document has payments recorded against it. Reverse those first.');
+  }
 
   const kind = document.kind === 'BILL' ? 'bill' : 'invoice';
   const number = postedNumberOf(document);
@@ -486,6 +699,9 @@ async function voidPosted(entityId: string, documentId: string, principal: Princ
             fundId: line.fundId,
             projectId: line.projectId,
             contactId: line.contactId,
+            txnCurrency: line.txnCurrency,
+            txnAmountMinor: line.txnAmountMinor,
+            rate: line.rate, // the original rate: a reversal undoes history at history's rate
             amountMinor: line.amountMinor,
             direction: line.direction === 'MONEY_IN' ? 'MONEY_OUT' : 'MONEY_IN',
           })),
@@ -658,6 +874,7 @@ async function addEntity(input: NewEntityInput): Promise<ActionResult<{ entity: 
     });
 
     await seedChartForEntity(tx, entity.id, input.type);
+    await ensureDefaultBankAccount(tx, entity.id);
 
     // Every existing contact gets a zero balance with the new entity, and the
     // new entity gets a group-entity contact everyone else can trade with.

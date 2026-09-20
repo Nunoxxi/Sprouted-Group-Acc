@@ -10,7 +10,7 @@
 
 import { PrismaClient } from '@prisma/client';
 
-import { seedChartForEntity } from '../src/lib/data/chart.ts';
+import { ensureDefaultBankAccount, seedChartForEntity } from '../src/lib/data/chart.ts';
 import {
   contactCategoryToPrisma,
   contactTypeToPrisma,
@@ -34,6 +34,7 @@ async function main() {
           vatRegistered: entity.vatRegistered,
           tin: entity.tin,
           accent: entity.accent,
+          functionalCurrency: entity.functionalCurrency,
         },
         create: {
           id: entity.id,
@@ -44,10 +45,12 @@ async function main() {
           vatRegistered: entity.vatRegistered,
           tin: entity.tin,
           accent: entity.accent,
+          functionalCurrency: entity.functionalCurrency,
         },
       });
 
       const accounts = await seedChartForEntity(tx, entity.id, entity.type);
+      await ensureDefaultBankAccount(tx, entity.id);
       console.log(`${entity.name}: ${accounts} accounts`);
     }
 
