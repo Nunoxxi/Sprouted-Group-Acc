@@ -5,6 +5,7 @@ import { useState, useTransition } from 'react';
 import { revokeSession, type ActiveSession } from '@/app/actions/users';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { formatDateTime } from '@/lib/format-date';
 
 function describe(userAgent: string | null): string {
   if (!userAgent) return 'Unknown device';
@@ -68,8 +69,8 @@ export function SessionsAdmin({ sessions }: { sessions: ActiveSession[] }) {
                   {describe(session.userAgent)}
                 </td>
                 <td className="px-4 py-3 font-mono text-xs text-slate-600">{session.ipAddress ?? '—'}</td>
-                <td className="px-4 py-3 text-slate-700">{new Date(session.createdAt).toLocaleString()}</td>
-                <td className="px-4 py-3 text-slate-700">{new Date(session.updatedAt).toLocaleString()}</td>
+                <td className="px-4 py-3 text-slate-700">{formatDateTime(session.createdAt)}</td>
+                <td className="px-4 py-3 text-slate-700">{formatDateTime(session.updatedAt)}</td>
                 <td className="px-4 py-3 text-right">
                   {session.isCurrent ? null : (
                     <Button

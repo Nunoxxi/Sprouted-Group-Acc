@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { roleLabels, roles, type Role } from '@/lib/authz';
+import { formatDateTime } from '@/lib/format-date';
 
 type EntityOption = { id: string; name: string };
 
@@ -240,7 +241,7 @@ function UserRow({
             <span className="font-medium">{user.roleLabel}</span> · {entityNames}
           </p>
           <p className="mt-1 text-xs text-slate-500">
-            {user.lastSeenAt ? `Last seen ${new Date(user.lastSeenAt).toLocaleString()}` : 'Never signed in'}
+            {user.lastSeenAt ? `Last seen ${formatDateTime(user.lastSeenAt)}` : 'Never signed in'}
             {user.failedLoginAttempts > 0 ? ` · ${user.failedLoginAttempts} failed sign-in${user.failedLoginAttempts === 1 ? '' : 's'}` : ''}
           </p>
         </div>
