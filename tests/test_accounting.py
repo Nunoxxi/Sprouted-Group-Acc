@@ -78,10 +78,10 @@ def test_default_group_has_three_companies_with_correct_types():
 
     assert [company.name for company in group.companies] == [
         "Sprouted Roots",
-        "Sprouted Assets",
-        "Sprouted Services",
+        "Sprouted Crafts",
+        "Oikazi",
     ]
-    assert {company.company_type for company in group.companies} == {"charity", "llc"}
+    assert {company.company_type for company in group.companies} == {"NFP", "LLC"}
 
 
 def test_accounting_system_seeds_group_and_reports():
@@ -89,9 +89,9 @@ def test_accounting_system_seeds_group_and_reports():
     system.seed_group()
 
     assert len(system.group.companies) == 3
-    assert system.group.companies[0].company_type == "charity"
-    assert system.group.companies[1].company_type == "llc"
-    assert system.group.companies[2].company_type == "llc"
+    assert system.group.companies[0].company_type == "NFP"
+    assert system.group.companies[1].company_type == "LLC"
+    assert system.group.companies[2].company_type == "LLC"
 
     for company in system.group.companies:
         assert company.accounts
@@ -100,9 +100,9 @@ def test_accounting_system_seeds_group_and_reports():
 
 def test_accounting_system_can_add_company_anytime():
     system = AccountingSystem()
-    company = system.add_company("Green Growth", "llc", "GG")
+    company = system.add_company("Green Growth", "LLC", "GG")
 
     assert company in system.group.companies
-    assert company.company_type == "llc"
+    assert company.company_type == "LLC"
     assert {account.name for account in company.accounts} >= {"Cash", "Accounts Receivable", "Revenue", "Operating Expenses", "Owner Equity"}
     assert company.entries

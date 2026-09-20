@@ -18,9 +18,7 @@ def main() -> None:
     for company in group.companies:
         show_company_report(company)
 
-    new_company = system.add_company("Sprouted Digital", "llc", "SD")
-    print(f"\nNew company added at runtime: {new_company.name} ({new_company.company_type})")
-    print("Runtime company accounts:", [account.name for account in new_company.accounts])
+    print("\nThe Group currently contains the three registered entities described in the source document.")
 
 
 if __name__ == "__main__":

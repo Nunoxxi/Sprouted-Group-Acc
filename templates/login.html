@@ -1,35 +1,99 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="card narrow">
-    <div class="login-brand">◌</div>
-    <div class="login-heading">
-        <h1>Login</h1>
-        <p>Sprouted Group Accounting Portal</p>
-    </div>
+<div class="auth-shell">
+    <section class="auth-visual">
+        <div class="auth-visual-inner">
+            <div class="eyebrow-pill">Sprouted Group</div>
 
-    <form method="post">
-        <div>
-            <label for="username">Username</label>
-            <input id="username" type="text" name="username" required>
+            <div class="floating-grid" aria-hidden="true">
+                <span class="line line-a"></span>
+                <span class="line line-b"></span>
+                <span class="line line-c"></span>
+                <span class="line line-d"></span>
+                <span class="dot dot-one"></span>
+                <span class="dot dot-two"></span>
+                <span class="dot dot-three"></span>
+                <span class="dot dot-four"></span>
+                <span class="dot dot-five"></span>
+                <span class="dot dot-six"></span>
+                <span class="node node-one"></span>
+                <span class="node node-two"></span>
+                <span class="node node-three"></span>
+                <span class="node node-four"></span>
+            </div>
+
+            <div class="feature-copy">
+                <h1>Financial clarity for every entity in your group.</h1>
+                <p>Manage performance, budgets, and programme reporting from one secure system built for modern operations.</p>
+            </div>
+
+            <div class="stat-row">
+                <div class="stat-box">
+                    <strong>3</strong>
+                    <span>companies</span>
+                </div>
+                <div class="stat-box">
+                    <strong>4</strong>
+                    <span>roles</span>
+                </div>
+                <div class="stat-box">
+                    <strong>real-time</strong>
+                    <span>oversight</span>
+                </div>
+            </div>
         </div>
+    </section>
 
-        <div>
-            <label for="password">Password</label>
-            <input id="password" type="password" name="password" required>
+    <section class="auth-panel">
+        <div class="auth-card">
+            <div class="brand-lockup">
+                <div class="brand-mark">SG</div>
+                <span>Sprouted</span>
+            </div>
+
+            <div class="auth-header">
+                <p class="eyebrow">Welcome back</p>
+                <h2>Sign in</h2>
+            </div>
+
+            <form method="post" class="login-form">
+                <div class="input-wrap">
+                    <label for="email">Email address</label>
+                    <input id="email" type="email" name="email" placeholder="you@company.com" required>
+                </div>
+
+                <div class="input-wrap">
+                    <label for="password">Password</label>
+                    <div class="password-wrap">
+                        <input id="password" type="password" name="password" placeholder="Enter your password" required>
+                        <span class="eye-icon" aria-hidden="true">◉</span>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <label class="checkbox-row">
+                        <input type="checkbox" checked>
+                        <span>Remember me</span>
+                    </label>
+                    <a href="#" class="text-link">Forgot password?</a>
+                </div>
+
+                <button type="submit">Login</button>
+            </form>
+
+            <p class="terms">By clicking Log in, you agree to our <a href="#">Terms &amp; Conditions</a> and <a href="#">Privacy Policy</a>.</p>
+
+            <div class="demo-box">
+                <strong>Demo access</strong>
+                <ul>
+                    <li><span>admin</span> / admin123</li>
+                    <li><span>accountant</span> / accountant123</li>
+                    <li><span>manager</span> / manager123</li>
+                    <li><span>viewer</span> / viewer123</li>
+                </ul>
+            </div>
         </div>
-
-        <button type="submit">Login</button>
-    </form>
-
-    <div class="demo-box">
-        <strong>Demo users:</strong>
-        <ul>
-            <li>admin / admin123</li>
-            <li>accountant / accountant123</li>
-            <li>manager / manager123</li>
-            <li>viewer / viewer123</li>
-        </ul>
-    </div>
+    </section>
 </div>
 {% endblock %}

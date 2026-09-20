@@ -2,7 +2,10 @@
 
 {% block content %}
 <div class="page-header">
-    <h1>Companies</h1>
+    <div>
+        <h1>Companies</h1>
+        <p class="muted-small">Group entities and company codes</p>
+    </div>
     {% if session.get('role') in ['admin', 'accountant'] %}
         <a class="button" href="{{ url_for('companies_add') }}">Add company</a>
     {% endif %}
@@ -21,8 +24,8 @@
             {% for company in companies %}
             <tr>
                 <td>{{ company['name'] }}</td>
-                <td>{{ company['company_type'] }}</td>
-                <td>{{ company['code'] }}</td>
+                <td><span class="entity-tag">{{ company['company_type'] }}</span></td>
+                <td><span class="company-code-inline">{{ company['code'] }}</span></td>
             </tr>
             {% endfor %}
         </tbody>

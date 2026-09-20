@@ -6,3 +6,20 @@ __pycache__/
 .pytest_cache/
 .DS_Store
 *.db
+node_modules/
+.next/
+out/
+coverage/
+*.log
+
+# Local financial data — do not push to GitHub
+*.xlsx
+*.xls
+
+# Local debug/log dumps
+app_log.txt
+debug_start.txt
+start_test.txt
+
+# Editor settings
+.vscode/

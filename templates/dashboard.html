@@ -5,21 +5,24 @@
     <div>
         <h1>Operational dashboard</h1>
         <p class="muted-small">Welcome, {{ user['username'] }} • {{ user['role']|title }}</p>
+        {% if session.get('company_name') %}
+            <p class="muted-small"><strong>Current company:</strong> {{ session.get('company_name') }}</p>
+        {% endif %}
     </div>
-    <div class="status-pill">Live overview</div>
+    <div class="status-pill">Group overview</div>
 </div>
 
 <div class="kpi-grid">
-    <div class="kpi-card">
-        <span class="kpi-label">Companies</span>
+    <div class="kpi-card neutral">
+        <span class="kpi-label">Companies in scope</span>
         <strong>{{ kpis['companies'] }}</strong>
     </div>
     <div class="kpi-card accent">
-        <span class="kpi-label">Total income</span>
+        <span class="kpi-label">Income</span>
         <strong>£{{ '%.2f' % kpis['income'] }}</strong>
     </div>
-    <div class="kpi-card">
-        <span class="kpi-label">Total expense</span>
+    <div class="kpi-card expense">
+        <span class="kpi-label">Expense</span>
         <strong>£{{ '%.2f' % kpis['expense'] }}</strong>
     </div>
     <div class="kpi-card success">
@@ -35,8 +38,8 @@
 <div class="panel-grid">
     <div class="panel-card activity-panel">
         <div class="panel-header">
-            <h2>Recent activity</h2>
-            {% if session.get('role') in ['admin', 'accountant'] %}
+            <h2>Recent activity{% if session.get('company_name') %} • {{ session.get('company_name') }}{% endif %}</h2>
+            {% if session.get('role') in ['admin', 'accountant', 'manager'] %}
                 <a class="button secondary small" href="{{ url_for('transactions') }}">New entry</a>
             {% endif %}
         </div>
@@ -70,7 +73,7 @@
         <div class="action-stack">
             <a class="button action-button" href="{{ url_for('companies') }}">View companies</a>
             <a class="button action-button secondary" href="{{ url_for('reports') }}">Open reports</a>
-            {% if session.get('role') in ['admin', 'accountant'] %}
+            {% if session.get('role') in ['admin', 'accountant', 'manager'] %}
                 <a class="button action-button" href="{{ url_for('transactions') }}">Add transaction</a>
             {% endif %}
             {% if session.get('role') == 'admin' %}

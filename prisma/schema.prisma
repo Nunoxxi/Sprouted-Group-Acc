@@ -1,0 +1,152 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Entity {
+  id            String                @id @default(cuid())
+  code          String                @unique
+  name          String
+  type          String
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  users         User[]
+  accounts      Account[]
+  journalEntries JournalEntry[]
+  contactBalances ContactEntityBalance[]
+}
+
+enum ContactType {
+  CUSTOMER
+  SUPPLIER
+  BOTH
+}
+
+enum ContactCategory {
+  CUSTOMER
+  SUPPLIER
+  FARMER
+  GROUP_ENTITY
+  OTHER
+}
+
+enum WithholdingTaxStatus {
+  NONE
+  WHT_5
+  WHT_10
+  EXEMPT
+}
+
+model Contact {
+  id                   String                 @id @default(cuid())
+  name                 String
+  type                 ContactType
+  category             ContactCategory        @default(OTHER)
+  tin                  String?
+  phone                String?
+  email                String?
+  address              String?
+  withholdingTaxStatus WithholdingTaxStatus   @default(NONE)
+  isFarmerAggregator   Boolean                @default(false)
+  isActive             Boolean                @default(true)
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  balances             ContactEntityBalance[]
+}
+
+model ContactEntityBalance {
+  id          String   @id @default(cuid())
+  contactId   String
+  entityId    String
+  balanceMinor Int     @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  contact     Contact @relation(fields: [contactId], references: [id])
+  entity      Entity  @relation(fields: [entityId], references: [id])
+
+  @@unique([contactId, entityId])
+  @@index([entityId, balanceMinor])
+}
+
+model User {
+  id        String   @id @default(cuid())
+  entityId  String
+  email     String   @unique
+  name      String
+  role      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  entity    Entity   @relation(fields: [entityId], references: [id])
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  INCOME
+  COST_OF_SALES
+  EXPENSE
+}
+
+model Account {
+  id          String      @id @default(cuid())
+  entityId    String
+  parentId    String?
+  code        String
+  name        String
+  type        AccountType
+  category    String?
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  entity      Entity      @relation(fields: [entityId], references: [id])
+  parent      Account?    @relation("AccountParent", fields: [parentId], references: [id])
+  children    Account[]   @relation("AccountParent")
+  journalLines JournalLine[]
+
+  @@unique([entityId, code])
+  @@index([entityId, parentId])
+  @@index([entityId, type])
+}
+
+model JournalEntry {
+  id            String        @id @default(cuid())
+  entityId      String
+  reference     String?
+  description   String
+  postedAt      DateTime      @default(now())
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  reversalOfId  String?
+
+  entity        Entity        @relation(fields: [entityId], references: [id])
+  lines         JournalLine[]
+}
+
+model JournalLine {
+  id            String          @id @default(cuid())
+  entityId      String
+  journalEntryId String
+  accountId     String
+  fundId        String?
+  amountMinor   Int
+  direction     JournalDirection
+  createdAt     DateTime        @default(now())
+
+  journalEntry  JournalEntry    @relation(fields: [journalEntryId], references: [id])
+  account       Account         @relation(fields: [accountId], references: [id])
+
+  @@index([entityId, journalEntryId])
+  @@index([entityId, fundId])
+}
+
+enum JournalDirection {
+  MONEY_IN
+  MONEY_OUT
+}

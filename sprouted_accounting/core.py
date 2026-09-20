@@ -91,7 +91,9 @@ class AccountingSystem:
         return company
 
     def seed_company(self, company: Company, initial_funding: float = 25000.0) -> Company:
-        if company.company_type == "charity":
+        normalized_type = (company.company_type or "").strip().lower()
+        if normalized_type in {"charity", "non-profit", "non_profit", "nonprofit", "nfp"}:
+            company.company_type = "NFP"
             company.accounts = [
                 Account("Cash", "asset", company.id),
                 Account("Donations Received", "revenue", company.id),
@@ -102,6 +104,7 @@ class AccountingSystem:
             revenue_name = "Donations Received"
             expense_name = "Program Expenses"
         else:
+            company.company_type = "LLC"
             company.accounts = [
                 Account("Cash", "asset", company.id),
                 Account("Accounts Receivable", "asset", company.id),
@@ -220,12 +223,12 @@ def balance_sheet(company: Company) -> dict[str, float]:
 def build_default_group() -> Group:
     group = Group("Sprouted Group of Companies")
 
-    charity = Company("Sprouted Roots", "charity", "SR")
-    llc_one = Company("Sprouted Assets", "llc", "SA")
-    llc_two = Company("Sprouted Services", "llc", "SS")
+    charity = Company("Sprouted Roots", "NFP", "SG001")
+    craft_company = Company("Sprouted Crafts", "LLC", "SG002")
+    oikazi_company = Company("Oikazi", "LLC", "SG003")
 
     group.add_company(charity)
-    group.add_company(llc_one)
-    group.add_company(llc_two)
+    group.add_company(craft_company)
+    group.add_company(oikazi_company)
 
     return group

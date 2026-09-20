@@ -10,14 +10,42 @@
         <thead>
             <tr>
                 <th>Username</th>
-                <th>Role</th>
+                <th>System role</th>
+                <th>Company access</th>
+                <th>Actions</th>
             </tr>
         </thead>
         <tbody>
-            {% for user in users %}
+            {% for item in users %}
+            {% set user = item['user'] %}
+            {% set access = item['access'] %}
             <tr>
                 <td>{{ user['username'] }}</td>
                 <td>{{ user['role'] }}</td>
+                <td>
+                    {% if access %}
+                        <div class="access-stack">
+                            {% for row in access %}
+                                <div class="access-item">
+                                    <div class="access-header">
+                                        <span class="access-company">{{ row['company_name'] }}</span>
+                                        <span class="access-role">{{ row['role']|title }}</span>
+                                    </div>
+                                    <div class="permission-row">
+                                        <span class="permission-chip {{ 'enabled' if row['can_view_reports'] else 'disabled' }}">Reports</span>
+                                        <span class="permission-chip {{ 'enabled' if row['can_add_transactions'] else 'disabled' }}">Transactions</span>
+                                        <span class="permission-chip {{ 'enabled' if row['can_manage_users'] else 'disabled' }}">Users</span>
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <span>No company access</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <a class="button small secondary" href="{{ url_for('user_access', user_id=user['id']) }}">Manage access</a>
+                </td>
             </tr>
             {% endfor %}
         </tbody>

@@ -1,90 +1,52 @@
-# Sprouted Group Accounting Web App
+# Sprouted Group Accounting App
 
-This project is now a simple web application for the Sprouted group of companies:
+This is the new Next.js + TypeScript + Tailwind + Prisma project skeleton for the Sprouted Group accounting system.
 
-- Sprouted Roots — charity
-- Sprouted Assets — limited liability company
-- Sprouted Services — limited liability company
+## What this is right now
 
-The app is designed for beginner-friendly use and includes role-based access for different users.
+This is only the app shell and the data model foundation. It does not include business features yet.
 
-## Roles
+The project is intentionally set up to follow the rules you gave:
 
-- Admin: full access
-- Accountant: can add companies and transactions
-- Manager: can view dashboards and reports
-- Viewer: can view company and reporting information only
+- three entities only
+- entity-scoped data by default
+- double-entry accounting model
+- money stored as integer pesewas
+- Ghanaian VAT structure documented in the codebase
+- user-facing language using "money in" and "money out"
 
-## Run the web app
+## Run it locally
 
 ```bash
-python web_app.py
+npm install
+npm run dev
 ```
 
-Then open the browser at:
+Then open:
 
 ```text
-http://127.0.0.1:5000/login
+http://localhost:3000
 ```
 
-## Demo users
-
-- admin / admin123
-- accountant / accountant123
-- manager / manager123
-- viewer / viewer123
-
-## Run tests
+## Useful commands
 
 ```bash
-pytest -q tests/test_web_app.py
+npm run build
+npm run start
+npm run lint
 ```
 
-## Beginner deployment roadmap
+## Folder guide
 
-A simple and beginner-friendly way to get this app online is:
+- app/ — the main Next.js app pages and layout
+- src/app/ — the app router and the main UI shell
+- src/lib/ — shared utilities, such as the Prisma client
+- prisma/ — Prisma schema and database model definitions
+- public/ — static files like images or icons
+- .env — local environment variables
+- .env.example — sample environment file for team members
+- package.json — project scripts and dependency list
 
-1. Put the project on GitHub
-2. Use a hosted Python service such as Render or Railway for the Flask app
-3. Use Supabase for the database and login backend if you want a more production-ready setup later
+## Important note
 
-This project is currently using a local SQLite database, which works on your computer but is not what you want for a public online app.
-
-### Recommended beginner path
-
-- GitHub: store your project code
-- Render or Railway: host the Flask app online
-- Supabase: replace SQLite with a hosted database when you are ready
-
-### Simple deployment notes
-
-- Create a GitHub repository
-- Push this project to GitHub
-- On Render, choose "Web Service" and connect the GitHub repo
-- Set the start command to:
-
-```bash
-gunicorn web_app:app
-```
-
-- Add a secret environment variable such as:
-
-```text
-SECRET_KEY=your-very-long-random-string
-```
-
-- Keep the app listening on the port provided by the host, which is usually managed automatically by the platform
-
-### Why not Vercel first?
-
-Vercel is excellent for frontend apps, but this project is a Python Flask application. For a beginner, Render or Railway is usually easier because it supports Python web apps more directly.
-
-### Next step
-
-The next best step is to:
-
-- create a GitHub repository,
-- push the project,
-- then deploy it to Render or Railway.
-
-We can do that together step by step next.
+This is intentionally a skeleton. The next steps are to add login, entities, chart of accounts, journal posting, and reporting, but not before the foundation is correct.
