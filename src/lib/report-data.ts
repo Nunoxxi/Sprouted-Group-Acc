@@ -13,8 +13,49 @@ export type LedgerLine = {
   accountCode: string;
   amount: number; // pesewas, debit positive / credit negative
   fund?: ReportFund;
+  projectId?: string;
   dueDate?: string;
 };
+
+export type Project = {
+  id: string;
+  entityId: string;
+  name: string;
+  funder: string;
+  fund: ReportFund;
+  budget: number; // pesewas; 0 = no budget set
+  active: boolean;
+};
+
+export const projects: Project[] = [
+  {
+    id: 'farmer-training',
+    entityId: 'sprouted-roots',
+    name: 'Farmer Training Programme',
+    funder: 'EDA Foundation',
+    fund: 'restricted',
+    budget: 2000000,
+    active: true,
+  },
+  {
+    id: 'cashew-aggregation',
+    entityId: 'sprouted-roots',
+    name: 'Cashew Aggregation Project',
+    funder: 'GIZ Ghana',
+    fund: 'restricted',
+    budget: 3000000,
+    active: true,
+  },
+  {
+    id: 'general-operations',
+    entityId: 'sprouted-roots',
+    name: 'General Operations',
+    funder: 'Mastercard Foundation',
+    fund: 'unrestricted',
+    budget: 1000000,
+    active: true,
+  },
+];
 
 export const reportAccounts: Record<string, { name: string; type: AccountClass; cashflow: CashflowClass }> = {
   '1001': { name: 'Bank — Ecobank Current', type: 'ASSET', cashflow: 'cash' },
@@ -41,6 +82,7 @@ export const reportAccounts: Record<string, { name: string; type: AccountClass; 
   '6005': { name: 'Factory Repairs & Maintenance', type: 'EXPENSE', cashflow: 'operating' },
   '6010': { name: 'Production Salaries', type: 'EXPENSE', cashflow: 'operating' },
   '7001': { name: 'Farmer Training Programme', type: 'EXPENSE', cashflow: 'operating' },
+  '7005': { name: 'Aggregation Programme Costs', type: 'EXPENSE', cashflow: 'operating' },
 };
 
 function ll(
@@ -51,7 +93,7 @@ function ll(
   contactName: string,
   accountCode: string,
   amount: number,
-  extra?: { fund?: ReportFund; dueDate?: string },
+  extra?: { fund?: ReportFund; projectId?: string; dueDate?: string },
 ): LedgerLine {
   return { id, entityId, date, document, contactName, accountCode, amount, ...extra };
 }
@@ -74,12 +116,12 @@ export const ledgerLines: LedgerLine[] = [
   ll('r-02d', 'sprouted-roots', '2026-08-12', 'BILL-3110', 'Nana Akua Farms', '1103', 30000),
   ll('r-02e', 'sprouted-roots', '2026-08-12', 'BILL-3110', 'Nana Akua Farms', '2001', -1368000, { dueDate: '2026-09-11' }),
   ll('r-02f', 'sprouted-roots', '2026-08-12', 'BILL-3110', 'Nana Akua Farms', '2035', -72000),
-  ll('r-03a', 'sprouted-roots', '2026-08-15', 'GRANT-015', 'EDA Foundation', '1001', 5000000, { fund: 'restricted' }),
-  ll('r-03b', 'sprouted-roots', '2026-08-15', 'GRANT-015', 'EDA Foundation', '4010', -5000000, { fund: 'restricted' }),
-  ll('r-04a', 'sprouted-roots', '2026-08-20', 'GRANT-016', 'Mastercard Foundation', '1001', 3000000, { fund: 'unrestricted' }),
-  ll('r-04b', 'sprouted-roots', '2026-08-20', 'GRANT-016', 'Mastercard Foundation', '4015', -3000000, { fund: 'unrestricted' }),
-  ll('r-05a', 'sprouted-roots', '2026-08-25', 'PROG-045', 'Farmer training cohort 4', '7001', 700000, { fund: 'restricted' }),
-  ll('r-05b', 'sprouted-roots', '2026-08-25', 'PROG-045', 'Farmer training cohort 4', '1001', -700000, { fund: 'restricted' }),
+  ll('r-03a', 'sprouted-roots', '2026-08-15', 'GRANT-015', 'EDA Foundation', '1001', 5000000, { fund: 'restricted', projectId: 'farmer-training' }),
+  ll('r-03b', 'sprouted-roots', '2026-08-15', 'GRANT-015', 'EDA Foundation', '4010', -5000000, { fund: 'restricted', projectId: 'farmer-training' }),
+  ll('r-04a', 'sprouted-roots', '2026-08-20', 'GRANT-016', 'Mastercard Foundation', '1001', 3000000, { fund: 'unrestricted', projectId: 'general-operations' }),
+  ll('r-04b', 'sprouted-roots', '2026-08-20', 'GRANT-016', 'Mastercard Foundation', '4015', -3000000, { fund: 'unrestricted', projectId: 'general-operations' }),
+  ll('r-05a', 'sprouted-roots', '2026-08-25', 'PROG-045', 'Farmer training cohort 4', '7001', 700000, { fund: 'restricted', projectId: 'farmer-training' }),
+  ll('r-05b', 'sprouted-roots', '2026-08-25', 'PROG-045', 'Farmer training cohort 4', '1001', -700000, { fund: 'restricted', projectId: 'farmer-training' }),
   // Sprouted Roots — September
   ll('r-06a', 'sprouted-roots', '2026-09-02', 'INV-1042', 'Cocoa Partners Limited', '1010', 1800000, { dueDate: '2026-10-02' }),
   ll('r-06b', 'sprouted-roots', '2026-09-02', 'INV-1042', 'Cocoa Partners Limited', '4001', -1500000),
@@ -92,16 +134,20 @@ export const ledgerLines: LedgerLine[] = [
   ll('r-07d', 'sprouted-roots', '2026-09-08', 'BILL-3155', 'Accra Packaging Co', '1103', 10000),
   ll('r-07e', 'sprouted-roots', '2026-09-08', 'BILL-3155', 'Accra Packaging Co', '2001', -456000, { dueDate: '2026-10-08' }),
   ll('r-07f', 'sprouted-roots', '2026-09-08', 'BILL-3155', 'Accra Packaging Co', '2035', -24000),
-  ll('r-08a', 'sprouted-roots', '2026-09-12', 'PROG-052', 'Farmer training cohort 5', '7001', 900000, { fund: 'restricted' }),
-  ll('r-08b', 'sprouted-roots', '2026-09-12', 'PROG-052', 'Farmer training cohort 5', '1001', -900000, { fund: 'restricted' }),
+  ll('r-08a', 'sprouted-roots', '2026-09-12', 'PROG-052', 'Farmer training cohort 5', '7001', 900000, { fund: 'restricted', projectId: 'farmer-training' }),
+  ll('r-08b', 'sprouted-roots', '2026-09-12', 'PROG-052', 'Farmer training cohort 5', '1001', -900000, { fund: 'restricted', projectId: 'farmer-training' }),
+  ll('r-11a', 'sprouted-roots', '2026-09-03', 'GRANT-017', 'GIZ Ghana', '1001', 4000000, { fund: 'restricted', projectId: 'cashew-aggregation' }),
+  ll('r-11b', 'sprouted-roots', '2026-09-03', 'GRANT-017', 'GIZ Ghana', '4010', -4000000, { fund: 'restricted', projectId: 'cashew-aggregation' }),
+  ll('r-12a', 'sprouted-roots', '2026-09-16', 'PROG-060', 'Aggregator motorbikes', '7005', 1200000, { fund: 'restricted', projectId: 'cashew-aggregation' }),
+  ll('r-12b', 'sprouted-roots', '2026-09-16', 'PROG-060', 'Aggregator motorbikes', '1001', -1200000, { fund: 'restricted', projectId: 'cashew-aggregation' }),
   ll('r-09a', 'sprouted-roots', '2026-09-15', 'BILL-3161', 'Nana Akua Farms', '5001', 800000),
   ll('r-09b', 'sprouted-roots', '2026-09-15', 'BILL-3161', 'Nana Akua Farms', '1101', 120000),
   ll('r-09c', 'sprouted-roots', '2026-09-15', 'BILL-3161', 'Nana Akua Farms', '1102', 20000),
   ll('r-09d', 'sprouted-roots', '2026-09-15', 'BILL-3161', 'Nana Akua Farms', '1103', 20000),
   ll('r-09e', 'sprouted-roots', '2026-09-15', 'BILL-3161', 'Nana Akua Farms', '2001', -912000, { dueDate: '2026-10-15' }),
   ll('r-09f', 'sprouted-roots', '2026-09-15', 'BILL-3161', 'Nana Akua Farms', '2035', -48000),
-  ll('r-10a', 'sprouted-roots', '2026-09-18', 'ADMIN-031', 'Office utilities', '6001', 150000, { fund: 'unrestricted' }),
-  ll('r-10b', 'sprouted-roots', '2026-09-18', 'ADMIN-031', 'Office utilities', '1001', -150000, { fund: 'unrestricted' }),
+  ll('r-10a', 'sprouted-roots', '2026-09-18', 'ADMIN-031', 'Office utilities', '6001', 150000, { fund: 'unrestricted', projectId: 'general-operations' }),
+  ll('r-10b', 'sprouted-roots', '2026-09-18', 'ADMIN-031', 'Office utilities', '1001', -150000, { fund: 'unrestricted', projectId: 'general-operations' }),
   // Sprouted Crafts — opening balances
   ll('c-ob-1', 'sprouted-crafts', '2026-07-31', 'OPEN-BAL', 'Opening balance', '1001', 12000000),
   ll('c-ob-2', 'sprouted-crafts', '2026-07-31', 'OPEN-BAL', 'Opening balance', '1501', 6000000),

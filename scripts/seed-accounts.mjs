@@ -122,6 +122,19 @@ const entitySeed = [
   },
 ];
 
+const fundSeed = {
+  code: 'SG001',
+  funds: [
+    { code: 'FUND-RES', name: 'Restricted Fund', classification: 'RESTRICTED', funder: 'Donor agencies' },
+    { code: 'FUND-UNRES', name: 'Unrestricted Fund', classification: 'UNRESTRICTED', funder: null },
+  ],
+  projects: [
+    { code: 'PROJ-TRAINING', name: 'Farmer Training Programme', funder: 'EDA Foundation', fundCode: 'FUND-RES', budgetMinor: 2000000 },
+    { code: 'PROJ-AGGREGATION', name: 'Cashew Aggregation Project', funder: 'GIZ Ghana', fundCode: 'FUND-RES', budgetMinor: 3000000 },
+    { code: 'PROJ-OPS', name: 'General Operations', funder: 'Mastercard Foundation', fundCode: 'FUND-UNRES', budgetMinor: 1000000 },
+  ],
+};
+
 function normalizeAccountType(type) {
   switch (type) {
     case 'ASSET':
@@ -191,6 +204,42 @@ async function main() {
           category: template.category ?? null,
           parentId: parentMatch?.id ?? null,
           isActive: true,
+        },
+      });
+    }
+  }
+
+  // Seed funds and projects for the charity entity (Sprouted Roots)
+  const rootsEntity = await prisma.entity.findUnique({ where: { code: fundSeed.code } });
+  if (rootsEntity) {
+    const fundIdsByCode = {};
+
+    for (const fund of fundSeed.funds) {
+      const record = await prisma.fund.upsert({
+        where: { entityId_code: { entityId: rootsEntity.id, code: fund.code } },
+        update: { name: fund.name, classification: fund.classification, funder: fund.funder, isActive: true },
+        create: {
+          entityId: rootsEntity.id,
+          code: fund.code,
+          name: fund.name,
+          classification: fund.classification,
+          funder: fund.funder,
+        },
+      });
+      fundIdsByCode[fund.code] = record.id;
+    }
+
+    for (const project of fundSeed.projects) {
+      await prisma.project.upsert({
+        where: { entityId_code: { entityId: rootsEntity.id, code: project.code } },
+        update: { name: project.name, funder: project.funder, fundId: fundIdsByCode[project.fundCode] ?? null, budgetMinor: project.budgetMinor, isActive: true },
+        create: {
+          entityId: rootsEntity.id,
+          code: project.code,
+          name: project.name,
+          funder: project.funder,
+          fundId: fundIdsByCode[project.fundCode] ?? null,
+          budgetMinor: project.budgetMinor,
         },
       });
     }

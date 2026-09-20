@@ -19,6 +19,8 @@ model Entity {
   journalEntries JournalEntry[]
   contactBalances ContactEntityBalance[]
   auditEvents   AuditEvent[]
+  funds         Fund[]
+  projects      Project[]
 }
 
 model AuditEvent {
@@ -174,8 +176,52 @@ model JournalLine {
 
   journalEntry  JournalEntry    @relation(fields: [journalEntryId], references: [id])
   account       Account         @relation(fields: [accountId], references: [id])
+  fund          Fund?           @relation(fields: [fundId], references: [id])
 
   @@index([entityId, journalEntryId])
+  @@index([entityId, fundId])
+}
+
+enum FundClassification {
+  RESTRICTED
+  UNRESTRICTED
+}
+
+model Fund {
+  id             String             @id @default(cuid())
+  entityId       String
+  code           String
+  name           String
+  classification FundClassification
+  funder         String?
+  isActive       Boolean            @default(true)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  entity         Entity             @relation(fields: [entityId], references: [id])
+  journalLines   JournalLine[]
+  projects       Project[]
+
+  @@unique([entityId, code])
+  @@index([entityId, classification])
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  entityId    String
+  fundId      String?
+  code        String
+  name        String
+  funder      String?
+  budgetMinor Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  entity      Entity   @relation(fields: [entityId], references: [id])
+  fund        Fund?    @relation(fields: [fundId], references: [id])
+
+  @@unique([entityId, code])
   @@index([entityId, fundId])
 }
 
