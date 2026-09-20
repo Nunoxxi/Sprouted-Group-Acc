@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "prisma:push": "prisma db push --schema prisma/schema.prisma",
     "prisma:seed": "node scripts/seed-accounts.mjs",
     "test": "vitest run"
