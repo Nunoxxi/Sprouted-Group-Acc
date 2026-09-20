@@ -2,56 +2,90 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// Postgres. DATABASE_URL is the transaction pooler (runtime); DIRECT_URL is the
+// session pooler, used only by `prisma migrate`. See .env.example.
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
+// ---------------------------------------------------------------------------
+// Money is stored as BigInt pesewas. Postgres's Int is 32-bit and would cap a
+// single line at GHS 21.4M; SQLite's was 64-bit. Every read converts to a JS
+// number through src/lib/data/money.ts — generated bigint types never leave
+// src/lib/data.
+// ---------------------------------------------------------------------------
+
+// Entity.id is the slug the UI uses ('sprouted-roots'); code is the statutory
+// short code ('SG001'). One identifier everywhere, no alias tables.
 model Entity {
-  id            String                @id @default(cuid())
-  code          String                @unique
-  name          String
-  type          String
-  createdAt     DateTime              @default(now())
-  updatedAt     DateTime              @updatedAt
-  users         User[]
-  accounts      Account[]
-  journalEntries JournalEntry[]
-  contactBalances ContactEntityBalance[]
-  auditEvents   AuditEvent[]
-  funds         Fund[]
-  projects      Project[]
+  id               String   @id
+  code             String   @unique
+  name             String
+  type             String // 'programs' | 'manufacturing'
+  financialYearEnd String?
+  vatRegistered    Boolean  @default(false)
+  tin              String?
+  accent           String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  users            User[]
+  accounts         Account[]
+  journalEntries   JournalEntry[]
+  contactBalances  ContactEntityBalance[]
+  auditEvents      AuditEvent[]
+  funds            Fund[]
+  projects         Project[]
+  documents        Document[]
+  documentLines    DocumentLine[]
+  taxPeriodFilings TaxPeriodFiling[]
+  documentCounters DocumentCounter[]
+  backupRuns       BackupRun[]
 }
 
+// Append-only. Events form a hash chain per entity ordered by `sequence`, which
+// is allocated under an advisory lock so concurrent writers cannot fork the
+// chain. metadataJson is deliberately text, not jsonb: jsonb reorders keys and
+// the stored bytes must be exactly the bytes that were hashed.
 model AuditEvent {
-  id            String   @id @default(cuid())
-  entityId      String
-  userName      String
-  action        String   // POST | EDIT | VOID | MATCH | BACKUP | FILE_PERIOD
-  resourceType  String   // invoice | bill | bank-line | intercompany | vat-period | backup
-  resourceRef   String
-  summary       String
-  metadataJson  String?
-  hash          String
-  previousHash  String?
-  createdAt     DateTime @default(now())
+  id           String   @id @default(cuid())
+  entityId     String
+  sequence     Int
+  userName     String
+  action       String // POST | EDIT | VOID | MATCH | BACKUP | FILE_PERIOD
+  resourceType String // invoice | bill | bank-line | intercompany | vat-period | backup
+  resourceRef  String
+  summary      String
+  metadataJson String?
+  hash         String
+  previousHash String?
+  createdAt    DateTime @default(now())
 
-  entity        Entity   @relation(fields: [entityId], references: [id])
+  entity Entity @relation(fields: [entityId], references: [id])
 
-  @@index([entityId, createdAt])
+  @@unique([entityId, sequence])
   @@index([entityId, resourceType])
 }
 
+// One row per ledger export (formerly per SQLite snapshot). Rows are never
+// deleted; only the files are pruned past the retention limit.
 model BackupRun {
-  id          String   @id @default(cuid())
-  fileName    String
-  filePath    String
-  sizeBytes   Int
-  status      String   // SUCCESS | FAILED
-  error       String?
-  checksum    String
-  createdAt   DateTime @default(now())
+  id        String   @id @default(cuid())
+  entityId  String?
+  kind      String   @default("export")
+  fileName  String
+  filePath  String
+  sizeBytes Int
+  status    String // SUCCESS | FAILED
+  error     String?
+  checksum  String
+  createdAt DateTime @default(now())
 
+  entity Entity? @relation(fields: [entityId], references: [id])
+
+  @@index([entityId, createdAt])
   @@index([createdAt])
 }
 
@@ -76,33 +110,38 @@ enum WithholdingTaxStatus {
   EXEMPT
 }
 
+// Contacts are shared across the group — the same supplier trades with all
+// three entities. Entity scoping happens on ContactEntityBalance and Document.
 model Contact {
-  id                   String                 @id @default(cuid())
+  id                   String               @id @default(cuid())
   name                 String
   type                 ContactType
-  category             ContactCategory        @default(OTHER)
+  category             ContactCategory      @default(OTHER)
   tin                  String?
   phone                String?
   email                String?
   address              String?
-  withholdingTaxStatus WithholdingTaxStatus   @default(NONE)
-  isFarmerAggregator   Boolean                @default(false)
-  isActive             Boolean                @default(true)
-  createdAt            DateTime               @default(now())
-  updatedAt            DateTime               @updatedAt
-  balances             ContactEntityBalance[]
+  withholdingTaxStatus WithholdingTaxStatus @default(NONE)
+  isFarmerAggregator   Boolean              @default(false)
+  isActive             Boolean              @default(true)
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  balances     ContactEntityBalance[]
+  documents    Document[]
+  journalLines JournalLine[]
 }
 
 model ContactEntityBalance {
-  id          String   @id @default(cuid())
-  contactId   String
-  entityId    String
-  balanceMinor Int     @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String   @id @default(cuid())
+  contactId    String
+  entityId     String
+  balanceMinor BigInt   @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  contact     Contact @relation(fields: [contactId], references: [id])
-  entity      Entity  @relation(fields: [entityId], references: [id])
+  contact Contact @relation(fields: [contactId], references: [id])
+  entity  Entity  @relation(fields: [entityId], references: [id])
 
   @@unique([contactId, entityId])
   @@index([entityId, balanceMinor])
@@ -116,7 +155,8 @@ model User {
   role      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  entity    Entity   @relation(fields: [entityId], references: [id])
+
+  entity Entity @relation(fields: [entityId], references: [id])
 }
 
 enum AccountType {
@@ -129,57 +169,81 @@ enum AccountType {
 }
 
 model Account {
-  id          String      @id @default(cuid())
-  entityId    String
-  parentId    String?
-  code        String
-  name        String
-  type        AccountType
-  category    String?
-  isActive    Boolean     @default(true)
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  id        String      @id @default(cuid())
+  entityId  String
+  parentId  String?
+  code      String
+  name      String
+  type      AccountType
+  category  String?
+  isActive  Boolean     @default(true)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
 
-  entity      Entity      @relation(fields: [entityId], references: [id])
-  parent      Account?    @relation("AccountParent", fields: [parentId], references: [id])
-  children    Account[]   @relation("AccountParent")
-  journalLines JournalLine[]
+  entity        Entity         @relation(fields: [entityId], references: [id])
+  parent        Account?       @relation("AccountParent", fields: [parentId], references: [id])
+  children      Account[]      @relation("AccountParent")
+  journalLines  JournalLine[]
+  documentLines DocumentLine[]
 
   @@unique([entityId, code])
   @@index([entityId, parentId])
   @@index([entityId, type])
 }
 
-model JournalEntry {
-  id            String        @id @default(cuid())
-  entityId      String
-  reference     String?
-  description   String
-  postedAt      DateTime      @default(now())
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  reversalOfId  String?
+enum JournalKind {
+  DOCUMENT
+  REVERSAL
+  MANUAL
+}
 
-  entity        Entity        @relation(fields: [entityId], references: [id])
-  lines         JournalLine[]
+// postedAt is the accounting date (a document's own date), never "now" —
+// reports and period locks must agree with the document.
+model JournalEntry {
+  id           String      @id @default(cuid())
+  entityId     String
+  kind         JournalKind @default(MANUAL)
+  reference    String?
+  description  String
+  postedAt     DateTime
+  reversalOfId String?     @unique
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  entity         Entity        @relation(fields: [entityId], references: [id])
+  lines          JournalLine[]
+  reversalOf     JournalEntry? @relation("Reversal", fields: [reversalOfId], references: [id])
+  reversedBy     JournalEntry? @relation("Reversal")
+  postedDocument Document?     @relation("DocumentPosting")
+  voidedDocument Document?     @relation("DocumentVoid")
+
+  @@index([entityId, postedAt])
+  @@index([entityId, kind])
 }
 
 model JournalLine {
-  id            String          @id @default(cuid())
-  entityId      String
+  id             String           @id @default(cuid())
+  entityId       String
   journalEntryId String
-  accountId     String
-  fundId        String?
-  amountMinor   Int
-  direction     JournalDirection
-  createdAt     DateTime        @default(now())
+  accountId      String
+  fundId         String?
+  projectId      String?
+  contactId      String?
+  amountMinor    BigInt
+  direction      JournalDirection
+  createdAt      DateTime         @default(now())
 
-  journalEntry  JournalEntry    @relation(fields: [journalEntryId], references: [id])
-  account       Account         @relation(fields: [accountId], references: [id])
-  fund          Fund?           @relation(fields: [fundId], references: [id])
+  journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id])
+  account      Account      @relation(fields: [accountId], references: [id])
+  fund         Fund?        @relation(fields: [fundId], references: [id])
+  project      Project?     @relation(fields: [projectId], references: [id])
+  contact      Contact?     @relation(fields: [contactId], references: [id])
 
   @@index([entityId, journalEntryId])
+  @@index([entityId, accountId])
   @@index([entityId, fundId])
+  @@index([entityId, projectId])
+  @@index([entityId, contactId])
 }
 
 enum FundClassification {
@@ -198,9 +262,10 @@ model Fund {
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
 
-  entity         Entity             @relation(fields: [entityId], references: [id])
-  journalLines   JournalLine[]
-  projects       Project[]
+  entity        Entity         @relation(fields: [entityId], references: [id])
+  journalLines  JournalLine[]
+  projects      Project[]
+  documentLines DocumentLine[]
 
   @@unique([entityId, code])
   @@index([entityId, classification])
@@ -213,13 +278,15 @@ model Project {
   code        String
   name        String
   funder      String?
-  budgetMinor Int      @default(0)
+  budgetMinor BigInt   @default(0)
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  entity      Entity   @relation(fields: [entityId], references: [id])
-  fund        Fund?    @relation(fields: [fundId], references: [id])
+  entity        Entity         @relation(fields: [entityId], references: [id])
+  fund          Fund?          @relation(fields: [fundId], references: [id])
+  journalLines  JournalLine[]
+  documentLines DocumentLine[]
 
   @@unique([entityId, code])
   @@index([entityId, fundId])
@@ -228,4 +295,106 @@ model Project {
 enum JournalDirection {
   MONEY_IN
   MONEY_OUT
+}
+
+// ---------------------------------------------------------------------------
+// Documents: invoices and bills. A document is posted by creating a balanced
+// JournalEntry (journalEntryId) and voided by creating a reversing one
+// (voidEntryId). Nothing is ever deleted.
+// ---------------------------------------------------------------------------
+
+enum DocumentKind {
+  INVOICE
+  BILL
+}
+
+enum DocumentStatus {
+  DRAFT
+  AWAITING_PAYMENT
+  PAID
+  VOIDED
+}
+
+enum VatTreatment {
+  STANDARD
+  ZERO_RATED
+  EXEMPT
+}
+
+model Document {
+  id                  String         @id @default(cuid())
+  entityId            String
+  kind                DocumentKind
+  number              String
+  contactId           String
+  date                DateTime
+  dueDate             DateTime
+  status              DocumentStatus @default(DRAFT)
+  evatClearanceNumber String?
+  evatQrCode          String?
+  evatTimestamp       String?
+  journalEntryId      String?        @unique
+  voidEntryId         String?        @unique
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  entity       Entity         @relation(fields: [entityId], references: [id])
+  contact      Contact        @relation(fields: [contactId], references: [id])
+  journalEntry JournalEntry?  @relation("DocumentPosting", fields: [journalEntryId], references: [id])
+  voidEntry    JournalEntry?  @relation("DocumentVoid", fields: [voidEntryId], references: [id])
+  lines        DocumentLine[]
+
+  @@unique([entityId, number])
+  @@index([entityId, status])
+  @@index([entityId, date])
+  @@index([entityId, contactId])
+}
+
+model DocumentLine {
+  id             String       @id @default(cuid())
+  documentId     String
+  entityId       String
+  position       Int
+  description    String
+  quantity       Float // not money: 1.5 kg is a legitimate quantity
+  unitPriceMinor BigInt
+  accountId      String
+  vatTreatment   VatTreatment @default(STANDARD)
+  projectId      String?
+  fundId         String?
+
+  document Document @relation(fields: [documentId], references: [id])
+  entity   Entity   @relation(fields: [entityId], references: [id])
+  account  Account  @relation(fields: [accountId], references: [id])
+  project  Project? @relation(fields: [projectId], references: [id])
+  fund     Fund?    @relation(fields: [fundId], references: [id])
+
+  @@index([documentId, position])
+  @@index([entityId, accountId])
+}
+
+// Filing a VAT period locks it: documents dated in a filed period cannot be
+// posted, and a void's reversal must land in an open period.
+model TaxPeriodFiling {
+  id       String   @id @default(cuid())
+  entityId String
+  period   String // YYYY-MM
+  filedAt  DateTime @default(now())
+  filedBy  String
+
+  entity Entity @relation(fields: [entityId], references: [id])
+
+  @@unique([entityId, period])
+}
+
+// Server-side document numbering, allocated inside the posting transaction so
+// two clients cannot claim the same number.
+model DocumentCounter {
+  entityId String
+  kind     DocumentKind
+  next     Int          @default(1)
+
+  entity Entity @relation(fields: [entityId], references: [id])
+
+  @@id([entityId, kind])
 }

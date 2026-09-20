@@ -7,19 +7,11 @@ export const dynamic = 'force-dynamic';
 
 const VALID_ACTIONS: AuditAction[] = ['POST', 'EDIT', 'VOID', 'MATCH', 'BACKUP', 'FILE_PERIOD'];
 
-const ENTITY_ALIASES: Record<string, string> = {
-  'sprouted-roots': 'Sprouted Roots',
-  'sprouted-crafts': 'Sprouted Crafts',
-  oikazi: 'Oikazi',
-};
-
-async function resolveEntityId(idOrAlias: string): Promise<string | null> {
-  const byId = await prisma.entity.findUnique({ where: { id: idOrAlias }, select: { id: true } });
-  if (byId) return byId.id;
-  const name = ENTITY_ALIASES[idOrAlias];
-  if (!name) return null;
-  const byName = await prisma.entity.findFirst({ where: { name }, select: { id: true } });
-  return byName?.id ?? null;
+// Entity.id is the slug the UI uses, so there is one identifier and no alias
+// table. An entity created in the UI resolves the moment it is persisted.
+async function resolveEntityId(id: string): Promise<string | null> {
+  const entity = await prisma.entity.findUnique({ where: { id }, select: { id: true } });
+  return entity?.id ?? null;
 }
 
 export async function GET(request: Request) {

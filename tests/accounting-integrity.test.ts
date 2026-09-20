@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { execFileSync } from 'node:child_process';
 
 import {
   balanceSheetBalances,
@@ -11,6 +10,7 @@ import {
 } from '@/lib/accounting-integrity';
 import { accountTypesMap, entityIds, ledgerLines, projects } from '@/lib/report-data';
 import { leviesOnBase, withholdingTaxOn } from '@/lib/ghana-tax';
+import { seedFunds, seedProjects } from '@/lib/seed-data';
 
 const accountTypes = accountTypesMap();
 
@@ -196,29 +196,28 @@ describe('project tracking (Sprouted Roots)', () => {
     }
   });
 
-  it('the seeded Fund model covers every fund classification the fund report uses', () => {
-    const script = `
-      const { PrismaClient } = require('@prisma/client');
-      const prisma = new PrismaClient();
-      prisma.fund.findMany({ select: { classification: true } })
-        .then((rows) => { console.log(JSON.stringify(rows.map((r) => r.classification))); })
-        .finally(() => prisma.$disconnect());
-    `;
-    const output = execFileSync(process.execPath, ['-e', script], {
-      cwd: process.cwd(),
-      env: { ...process.env, DATABASE_URL: process.env.DATABASE_URL ?? 'file:./dev.db' },
-    }).toString();
-    const dbClassifications = new Set(JSON.parse(output.trim().split('\n').pop() as string));
+  it('the seeded funds cover every fund classification the fund report uses', () => {
+    // The seed is the only thing that creates funds, so checking the seed
+    // definitions is checking what the database will hold — without needing one.
+    const seededClassifications = new Set(
+      seedFunds.filter((fund) => fund.entityId === 'sprouted-roots').map((fund) => fund.classification),
+    );
 
-    // The fund report groups journal lines by these two tags — both must exist in the DB.
     const reportTags = new Set(
       ledgerLines
         .filter((line) => line.entityId === 'sprouted-roots' && line.fund)
-        .map((line) => (line.fund === 'restricted' ? 'RESTRICTED' : 'UNRESTRICTED')),
+        .map((line) => line.fund as string),
     );
 
     for (const tag of Array.from(reportTags)) {
-      expect(dbClassifications.has(tag), `fund classification ${tag} missing from the Fund model`).toBe(true);
+      expect(seededClassifications.has(tag as 'restricted' | 'unrestricted'), `fund classification ${tag} is not seeded`).toBe(true);
+    }
+  });
+
+  it('every seeded project belongs to a seeded fund of the same entity', () => {
+    const fundKeys = new Set(seedFunds.map((fund) => `${fund.entityId}/${fund.code}`));
+    for (const project of seedProjects) {
+      expect(fundKeys.has(`${project.entityId}/${project.fundCode}`), `project ${project.id} references an unseeded fund`).toBe(true);
     }
   });
 });

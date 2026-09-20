@@ -26,11 +26,13 @@ Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 3.4 · Prisma 
 
 ## Run it locally
 
+You need a Postgres database — Supabase, or a local one. Copy `.env.example` to `.env` and fill in the two connection strings (the file explains which is which).
+
 ```bash
-npm install
-npx prisma db push --schema prisma/schema.prisma   # create the SQLite database
-node scripts/seed-accounts.mjs                     # seed entities, accounts and funds
-npm run dev                                        # http://localhost:3000
+npm install                  # also generates the Prisma client
+npx prisma migrate deploy    # apply prisma/migrations
+npm run prisma:seed          # entities, charts of accounts, contacts, funds, projects
+npm run dev                  # http://localhost:3000
 ```
 
 On Windows PowerShell you may first need:
@@ -46,12 +48,13 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 | `npm run dev` | Development server |
 | `npm run build` | Production build |
 | `npm run start` | Serve the production build |
-| `npm test` | Accounting integrity and backup tests (Vitest) |
-| `npm run prisma:push` | Apply `prisma/schema.prisma` to the database |
-| `npm run prisma:seed` | Seed entities, chart of accounts and funds |
-| `npm run lint` | **Currently broken** — see below |
+| `npm test` | Accounting integrity, audit chain and export tests (Vitest); none need a database |
+| `npm run lint` | ESLint (flat config, Next core-web-vitals + TypeScript presets) |
+| `npm run prisma:deploy` | Apply pending migrations (what production runs) |
+| `npm run prisma:migrate` | Create a migration from a schema change and re-seed (development) |
+| `npm run prisma:seed` | Seed entities, charts of accounts, contacts, funds, projects — idempotent |
 
-`npm run lint` runs `next lint`, which was removed in Next.js 16. The project also has an `.eslintrc.json` extending `next/core-web-vitals`, but `eslint-config-next` is not installed, and the installed ESLint 9 expects flat config (`eslint.config.mjs`) rather than `.eslintrc.*`. Three separate breaks, so there is currently no working linter. Type checking still works via `npx tsc --noEmit`.
+Type checking: `npx tsc --noEmit`.
 
 ## Environment
 
@@ -59,8 +62,9 @@ Copy `.env.example` to `.env`. Relevant variables:
 
 | Variable | Purpose |
 | --- | --- |
-| `DATABASE_URL` | SQLite connection. A relative `file:` URL resolves against the **schema directory** (`prisma/`), not the working directory — so `file:./dev.db` means `prisma/dev.db`. |
-| `BACKUP_DIR` | Where database backups are written. Defaults to `backups/` next to the database; point it at separate durable storage. |
+| `DATABASE_URL` | Postgres, **transaction pooler** (Supabase port 6543, `?pgbouncer=true`). Used by the running app. |
+| `DIRECT_URL` | Postgres, **session pooler** (port 5432 on the same pooler host). Used only by `prisma migrate`. Not Supabase's "Direct connection", which is IPv6-only on most tiers. |
+| `EXPORT_DIR` | Where ledger export files are written. Defaults to `exports/` next to the app; point it at durable storage in production. |
 
 `.env` is git-ignored and holds real credentials. Never commit it.
 
@@ -71,23 +75,27 @@ src/app/              App Router entry, layout, and API routes (audit, backups)
 src/components/app/   app-shell.tsx — the entire UI, single shell with sidebar nav
 src/components/ui/    Design system primitives (Button, Card, Input, Money, Badge)
 src/lib/              Shared logic (see below)
-src/instrumentation.ts  Server boot hook — starts the nightly backup scheduler
-prisma/               Schema and the SQLite database file
-scripts/              Seed scripts
+src/lib/data/         The Prisma boundary: mappers, enum translation, bigint → number
+src/instrumentation.ts  Server boot hook — starts the nightly export scheduler
+prisma/               Schema and migrations
+scripts/              Seed script (runs under plain Node 24)
 tests/                Vitest suites
+render.yaml           Render deployment
 public/               Static assets
 ```
 
 The files worth reading first in `src/lib/`:
 
 - **`ghana-tax.ts`** — the statutory levy rule. Single source of truth, shared by the document form, the journal builder, the tax report and the tests.
+- **`data/money.ts`** — `toMinor` / `fromMinor`. Money is `BigInt` in Postgres and `number` everywhere else; this is the only place the two meet.
 - **`accounting-integrity.ts`** — the invariants the books must satisfy (journals balance, trial balance nets to zero, balance sheet balances, intercompany postings mirror faithfully). Exercised by the tests; the shell does not import it.
-- **`report-data.ts`** — the demo ledger, projects and account classifications that the reports currently read from.
-- **`backup.ts`** — SQLite online backup, checksum verification, retention.
-- **`audit.ts`** — append-only audit log with a SHA-256 hash chain per entity.
+- **`seed-data.ts`** — the demo entities, contacts, funds and projects. The seed writes them; nothing else defines them.
+- **`report-data.ts`** — the demo ledger and account classifications that the reports currently read from.
+- **`export.ts`** — per-entity ledger export, checksum verification, retention.
+- **`audit.ts`** — append-only audit log with a SHA-256 hash chain per entity; runs inside the caller's transaction when given one.
 
 ## A caution on the current state
 
-The UI reads its accounting data from the module-level arrays in `report-data.ts`, not from the database. The Prisma schema is real and seeded, but only the audit log and backups actually round-trip through it. Funds and projects consequently exist in two places at once. Persisting documents and journals is the main outstanding work — see the known gaps in [PROJECT_STATE.md](PROJECT_STATE.md).
+The UI still reads its accounting data from demo arrays — `seed-data.ts` for entities and contacts, `report-data.ts` and constants inside the shell for everything else — not from the database. The schema is real, migrated and seeded, but only the audit log and exports round-trip through it today. Persisting documents and journals, then pointing the reports at the ledger, is the outstanding work — see the known gaps in [PROJECT_STATE.md](PROJECT_STATE.md).
 
-There is also no deploy configuration. The pre-rebuild Flask app and its Render config were removed in `38ed586`, and nothing has replaced them — the new config depends on whether the datasource stays SQLite or moves to Postgres.
+`render.yaml` describes the deployment but nothing has been deployed yet.

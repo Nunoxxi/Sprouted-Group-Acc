@@ -3,6 +3,7 @@ __pycache__/
 .venv/
 .env
 .env.*
+!.env.example
 .pytest_cache/
 .DS_Store
 *.db
@@ -24,8 +25,9 @@ start_test.txt
 # Editor settings
 .vscode/
 
-# database backups contain the full ledger - never commit them
+# ledger exports and legacy backups contain the full ledger - never commit them
 /backups
+/exports
 
 # typescript incremental build output
 *.tsbuildinfo

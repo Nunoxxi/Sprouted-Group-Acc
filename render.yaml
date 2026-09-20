@@ -1,0 +1,31 @@
+# Render deployment for the Next.js app.
+#
+# Migrations run in preDeployCommand — once per deploy, only after a
+# successful build — rather than in buildCommand, which would migrate on
+# every build including ones that then fail.
+#
+# DATABASE_URL and DIRECT_URL are set in the Render dashboard (sync: false),
+# never in this file. See .env.example for which Supabase string is which.
+services:
+  - type: web
+    name: sprouted-accounting
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    preDeployCommand: npx prisma migrate deploy
+    startCommand: npm run start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      # Where ledger export files are written. On the free plan the disk is
+      # ephemeral, so exports vanish on redeploy; attach a Render Disk and
+      # point this at its mount path for exports that persist.
+      - key: EXPORT_DIR
+        value: /opt/render/project/exports

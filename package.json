@@ -2,18 +2,27 @@
   "name": "sprouted-group-accounting",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "prisma:push": "prisma db push --schema prisma/schema.prisma",
-    "prisma:seed": "node scripts/seed-accounts.mjs",
+    "postinstall": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:seed": "node scripts/seed-accounts.ts",
     "test": "vitest run"
+  },
+  "prisma": {
+    "seed": "node scripts/seed-accounts.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.15.0",
     "next": "^16.3.5",
+    "prisma": "^6.15.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
@@ -25,7 +34,6 @@
     "eslint": "^9.39.5",
     "eslint-config-next": "^16.3.5",
     "postcss": "^8.5.28",
-    "prisma": "^6.15.0",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.9.3",
     "vitest": "^5.0.1"

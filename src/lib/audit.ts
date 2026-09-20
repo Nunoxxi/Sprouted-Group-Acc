@@ -1,5 +1,8 @@
 import crypto from 'crypto';
 
+import type { Prisma } from '@prisma/client';
+
+import { assertNoBigInt } from './data/money';
 import { prisma } from './prisma';
 
 export type AuditAction = 'POST' | 'EDIT' | 'VOID' | 'MATCH' | 'BACKUP' | 'FILE_PERIOD';
@@ -14,50 +17,96 @@ export type AuditEventInput = {
   metadata?: Record<string, unknown>;
 };
 
+/** Either the global client or the `tx` handed to a $transaction callback. */
+export type AuditClient = Prisma.TransactionClient;
+
+type HashInput = {
+  entityId: string;
+  sequence: number;
+  userName: string;
+  action: string;
+  resourceType: string;
+  resourceRef: string;
+  summary: string;
+  metadata: unknown;
+  previousHash: string | null;
+  createdAt: string;
+};
+
+function hashOf(input: HashInput): string {
+  return crypto.createHash('sha256').update(JSON.stringify(input)).digest('hex');
+}
+
 /**
  * Append an immutable audit event.
  *
  * There are intentionally no update or delete functions for this model.
- * Events form a hash chain per entity: each event's hash covers its content
- * plus the previous event's hash, so any tampering with an earlier record
- * breaks every hash after it and is detectable.
+ * Events form a hash chain per entity: each event's hash covers its content,
+ * its position in the chain, and the previous event's hash, so any tampering
+ * with an earlier record breaks every hash after it and is detectable.
+ *
+ * Pass the caller's transaction client to record the event atomically with
+ * the change it describes — a posted journal without its POST event, or the
+ * reverse, is worse than a failed post. Without one, this opens its own.
+ *
+ * The next sequence number is read under a per-entity advisory lock so two
+ * concurrent writers cannot both read the same tail and fork the chain.
  */
-export async function recordAuditEvent(input: AuditEventInput): Promise<string> {
-  const previous = await prisma.auditEvent.findFirst({
+export async function recordAuditEvent(input: AuditEventInput, client?: AuditClient): Promise<string> {
+  if (client) {
+    return appendEvent(input, client);
+  }
+  return prisma.$transaction((tx) => appendEvent(input, tx));
+}
+
+async function appendEvent(input: AuditEventInput, tx: AuditClient): Promise<string> {
+  // A bigint in metadata would throw inside JSON.stringify and roll back the
+  // caller's whole transaction with an unhelpful message. Fail clearly instead.
+  assertNoBigInt(input.metadata ?? null, 'audit metadata');
+
+  // Held until the surrounding transaction ends. Keyed by entity so entities
+  // never block each other.
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${input.entityId}))`;
+
+  const previous = await tx.auditEvent.findFirst({
     where: { entityId: input.entityId },
-    orderBy: { createdAt: 'desc' },
-    select: { hash: true },
+    orderBy: { sequence: 'desc' },
+    select: { hash: true, sequence: true },
   });
 
+  const sequence = (previous?.sequence ?? 0) + 1;
+  const userName = input.userName ?? 'system';
   const createdAt = new Date();
-  const createdAtIso = createdAt.toISOString();
-  const payload = JSON.stringify({
+  const metadata = input.metadata ?? null;
+
+  const hash = hashOf({
     entityId: input.entityId,
-    userName: input.userName ?? 'system',
+    sequence,
+    userName,
     action: input.action,
     resourceType: input.resourceType,
     resourceRef: input.resourceRef,
     summary: input.summary,
-    metadata: input.metadata ?? null,
+    metadata,
     previousHash: previous?.hash ?? null,
-    createdAt: createdAtIso,
+    createdAt: createdAt.toISOString(),
   });
 
-  const hash = crypto.createHash('sha256').update(payload).digest('hex');
-
-  const event = await prisma.auditEvent.create({
+  const event = await tx.auditEvent.create({
     data: {
       entityId: input.entityId,
-      userName: input.userName ?? 'system',
+      sequence,
+      userName,
       action: input.action,
       resourceType: input.resourceType,
       resourceRef: input.resourceRef,
       summary: input.summary,
-      metadataJson: input.metadata ? JSON.stringify(input.metadata) : null,
+      metadataJson: metadata ? JSON.stringify(metadata) : null,
       hash,
       previousHash: previous?.hash ?? null,
       createdAt,
     },
+    select: { id: true },
   });
 
   return event.id;
@@ -66,6 +115,7 @@ export async function recordAuditEvent(input: AuditEventInput): Promise<string> 
 export type ChainEventLike = {
   id: string;
   entityId: string;
+  sequence: number;
   userName: string;
   action: string;
   resourceType: string;
@@ -78,30 +128,33 @@ export type ChainEventLike = {
 };
 
 /**
- * Walk a chain of events in order and return the id of the first one that
- * breaks it, or null when the chain is intact.
+ * Walk a chain of events in sequence order and return the id of the first one
+ * that breaks it, or null when the chain is intact.
  *
- * Two things are checked for every event, and both are needed:
+ * Three things are checked for every event:
  *
- * 1. Its stored previousHash equals the hash of the event before it. This is
- *    the link. Without it a record can be deleted from the middle, reordered,
- *    or replaced by a self-consistent forgery and nothing notices — which is
- *    precisely what a hash chain exists to catch.
- * 2. Its stored hash equals a fresh hash of its own content. This catches an
- *    edit made without recomputing the hash.
+ * 1. Its sequence is exactly one more than the last. Catches a deleted or
+ *    inserted record directly.
+ * 2. Its stored previousHash equals the hash of the event before it. This is
+ *    the link: without it a record can be replaced by a self-consistent forgery
+ *    and nothing notices.
+ * 3. Its stored hash equals a fresh hash of its own content. Catches an edit
+ *    made without recomputing the hash.
  *
  * Pure so it can be tested without a database.
  */
 export function verifyChain(events: ChainEventLike[]): string | null {
   let previousHash: string | null = null;
+  let expectedSequence = 1;
 
   for (const event of events) {
-    if (event.previousHash !== previousHash) {
+    if (event.sequence !== expectedSequence || event.previousHash !== previousHash) {
       return event.id;
     }
 
-    const payload: string = JSON.stringify({
+    const hash = hashOf({
       entityId: event.entityId,
+      sequence: event.sequence,
       userName: event.userName,
       action: event.action,
       resourceType: event.resourceType,
@@ -112,12 +165,12 @@ export function verifyChain(events: ChainEventLike[]): string | null {
       createdAt: event.createdAt.toISOString(),
     });
 
-    const hash: string = crypto.createHash('sha256').update(payload).digest('hex');
     if (hash !== event.hash) {
       return event.id;
     }
 
     previousHash = event.hash;
+    expectedSequence += 1;
   }
 
   return null;
@@ -130,7 +183,7 @@ export function verifyChain(events: ChainEventLike[]): string | null {
 export async function verifyAuditChain(entityId: string): Promise<string | null> {
   const events = await prisma.auditEvent.findMany({
     where: { entityId },
-    orderBy: { createdAt: 'asc' },
+    orderBy: { sequence: 'asc' },
   });
 
   return verifyChain(events);

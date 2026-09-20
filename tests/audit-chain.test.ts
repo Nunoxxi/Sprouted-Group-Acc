@@ -13,8 +13,10 @@ function buildChain(count: number): ChainEventLike[] {
 
   for (let index = 0; index < count; index += 1) {
     const createdAt = new Date(Date.UTC(2026, 8, 20, 9, index));
+    const sequence = index + 1;
     const base = {
       entityId: 'sprouted-roots',
+      sequence,
       userName: 'system',
       action: 'POST',
       resourceType: 'invoice',
@@ -25,6 +27,7 @@ function buildChain(count: number): ChainEventLike[] {
 
     const payload: string = JSON.stringify({
       entityId: base.entityId,
+      sequence,
       userName: base.userName,
       action: base.action,
       resourceType: base.resourceType,
@@ -47,6 +50,7 @@ function buildChain(count: number): ChainEventLike[] {
 function rehash(event: ChainEventLike): ChainEventLike {
   const payload = JSON.stringify({
     entityId: event.entityId,
+    sequence: event.sequence,
     userName: event.userName,
     action: event.action,
     resourceType: event.resourceType,
@@ -103,6 +107,25 @@ describe('the audit log is a chain, not a pile of self-consistent records', () =
     chain[0] = rehash({ ...chain[0], previousHash: 'deadbeef' });
 
     expect(verifyChain(chain)).toBe('evt-0');
+  });
+
+  it('catches a renumbered event even when its hash and link are recomputed', () => {
+    // A forger who rewrites sequence numbers and rehashes still cannot make
+    // the chain start anywhere but 1 and step by exactly 1.
+    const chain = buildChain(3);
+    chain[1] = rehash({ ...chain[1], sequence: 5 });
+
+    expect(verifyChain(chain)).toBe('evt-1');
+  });
+
+  it('catches a gap in the sequence', () => {
+    // evt-2 removed and evt-3 relinked to evt-1 with a fresh hash — the link
+    // check passes, but sequence 4 following sequence 2 does not.
+    const chain = buildChain(4);
+    chain.splice(2, 1);
+    chain[2] = rehash({ ...chain[2], previousHash: chain[1].hash });
+
+    expect(verifyChain(chain)).toBe('evt-3');
   });
 
   it('catches the last event being silently dropped', () => {

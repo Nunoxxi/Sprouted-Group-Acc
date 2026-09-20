@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Money } from '@/components/ui/money';
+import type { ContactCategory, ContactRecord, ContactType, EntityRecord, EntityType } from '@/lib/data/types';
+import { accentPalette, seedContacts, seedEntities } from '@/lib/seed-data';
 import {
   leviesOnBase,
   roundPesewas,
@@ -28,18 +30,6 @@ const navigationItems = [
   'Settings',
 ] as const;
 
-type EntityType = 'manufacturing' | 'programs';
-
-type EntityRecord = {
-  id: string;
-  name: string;
-  type: EntityType;
-  financialYearEnd: string;
-  vatRegistered: boolean;
-  tin: string;
-  accent: string;
-};
-
 type EntityMetrics = {
   cashPosition: number;
   moneyOwedToUs: number;
@@ -47,54 +37,6 @@ type EntityMetrics = {
   intercompanyBalance: number;
 };
 
-type ContactType = 'customer' | 'supplier' | 'both';
-type ContactCategory = 'customer' | 'supplier' | 'farmer' | 'group-entity' | 'other';
-
-type ContactRecord = {
-  id: string;
-  name: string;
-  type: ContactType;
-  category: ContactCategory;
-  tin: string;
-  phone: string;
-  email: string;
-  address: string;
-  withholdingTaxStatus: WithholdingTaxStatus;
-  isFarmerAggregator: boolean;
-  balances: Record<string, number>;
-};
-
-const accentPalette = ['#2F6F5A', '#A76A27', '#3E6EAC', '#8D4D7B', '#6C7F54', '#B34C4C'];
-
-const defaultEntities: EntityRecord[] = [
-  {
-    id: 'sprouted-roots',
-    name: 'Sprouted Roots',
-    type: 'programs',
-    financialYearEnd: '31 Dec',
-    vatRegistered: true,
-    tin: 'GH-0001-ROOTS',
-    accent: accentPalette[0],
-  },
-  {
-    id: 'sprouted-crafts',
-    name: 'Sprouted Crafts',
-    type: 'manufacturing',
-    financialYearEnd: '30 Jun',
-    vatRegistered: true,
-    tin: 'GH-0002-CRAFTS',
-    accent: accentPalette[1],
-  },
-  {
-    id: 'oikazi',
-    name: 'Oikazi',
-    type: 'manufacturing',
-    financialYearEnd: '31 Mar',
-    vatRegistered: false,
-    tin: 'GH-0003-OIKAZI',
-    accent: accentPalette[2],
-  },
-];
 
 const metricsByEntity: Record<string, EntityMetrics> = {
   'sprouted-roots': {
@@ -124,93 +66,6 @@ const summaryRows = [
   { label: 'Donor disbursement', status: 'Scheduled', value: 250000, tone: 'success' as const },
 ];
 
-const defaultContacts: ContactRecord[] = [
-  {
-    id: 'roots-contact',
-    name: 'Sprouted Roots',
-    type: 'supplier',
-    category: 'group-entity',
-    tin: 'GH-0001-ROOTS',
-    phone: '+233 20 111 0001',
-    email: 'ops@sproutedroots.com',
-    address: 'Kumasi, Ghana',
-    withholdingTaxStatus: '5%',
-    isFarmerAggregator: true,
-    balances: {
-      'sprouted-roots': 0,
-      'sprouted-crafts': -345000,
-      'oikazi': 185000,
-    },
-  },
-  {
-    id: 'crafts-contact',
-    name: 'Sprouted Crafts',
-    type: 'supplier',
-    category: 'group-entity',
-    tin: 'GH-0002-CRAFTS',
-    phone: '+233 20 111 0002',
-    email: 'ops@sproutedcrafts.com',
-    address: 'Accra, Ghana',
-    withholdingTaxStatus: '5%',
-    isFarmerAggregator: false,
-    balances: {
-      'sprouted-roots': 245000,
-      'sprouted-crafts': 0,
-      'oikazi': -68000,
-    },
-  },
-  {
-    id: 'oikazi-contact',
-    name: 'Oikazi',
-    type: 'supplier',
-    category: 'group-entity',
-    tin: 'GH-0003-OIKAZI',
-    phone: '+233 20 111 0003',
-    email: 'ops@oikazi.com',
-    address: 'Tema, Ghana',
-    withholdingTaxStatus: '10%',
-    isFarmerAggregator: false,
-    balances: {
-      'sprouted-roots': -118000,
-      'sprouted-crafts': 42000,
-      'oikazi': 0,
-    },
-  },
-  {
-    id: 'nana-farmers',
-    name: 'Nana Akua Farms',
-    type: 'supplier',
-    category: 'farmer',
-    tin: 'GH-0101-NAF',
-    phone: '+233 20 555 0140',
-    email: 'nana@farms.gh',
-    address: 'Bia, Western North',
-    withholdingTaxStatus: '5%',
-    isFarmerAggregator: true,
-    balances: {
-      'sprouted-roots': 520000,
-      'sprouted-crafts': 160000,
-      'oikazi': 70000,
-    },
-  },
-  {
-    id: 'cocoa-partners',
-    name: 'Cocoa Partners Limited',
-    type: 'both',
-    category: 'customer',
-    tin: 'GH-0204-CPL',
-    phone: '+233 20 555 0999',
-    email: 'sales@cocoapartners.gh',
-    address: 'Tema, Ghana',
-    withholdingTaxStatus: 'exempt',
-    isFarmerAggregator: false,
-    balances: {
-      'sprouted-roots': 160000,
-      'sprouted-crafts': 280000,
-      'oikazi': 340000,
-    },
-  },
-];
 
 const defaultFormValues = {
   name: '',
@@ -448,7 +303,7 @@ function makeDocument(kind: 'invoice' | 'bill'): DocumentFormState {
 
   return {
     docNumber: `${prefix}-${String(Date.now()).slice(-4)}`,
-    contactId: defaultContacts[0]?.id ?? 'nana-farmers',
+    contactId: seedContacts[0]?.id ?? 'nana-farmers',
     date: today,
     dueDate: today,
     status: 'draft',
@@ -755,14 +610,14 @@ function getSuggestionsForBankLine(line: BankLine): BankSuggestion[] {
 }
 
 export function AppShell() {
-  const [entities, setEntities] = useState<EntityRecord[]>(defaultEntities);
-  const [selectedEntityId, setSelectedEntityId] = useState(defaultEntities[0].id);
+  const [entities, setEntities] = useState<EntityRecord[]>(seedEntities);
+  const [selectedEntityId, setSelectedEntityId] = useState(seedEntities[0].id);
   const [activeNav, setActiveNav] = useState<(typeof navigationItems)[number]>('Dashboard');
   const [entityMenuOpen, setEntityMenuOpen] = useState(false);
   const [showAddEntityForm, setShowAddEntityForm] = useState(false);
   const [showAddContactForm, setShowAddContactForm] = useState(false);
   const [formValues, setFormValues] = useState(defaultFormValues);
-  const [contacts, setContacts] = useState<ContactRecord[]>(defaultContacts);
+  const [contacts, setContacts] = useState<ContactRecord[]>(seedContacts);
   const [contactFormValues, setContactFormValues] = useState({
     name: '',
     type: 'supplier' as ContactType,
@@ -839,8 +694,8 @@ export function AppShell() {
   const [intercompanyForm, setIntercompanyForm] = useState(() => ({
     reference: newIntercompanyReference(),
     date: new Date().toISOString().slice(0, 10),
-    fromEntityId: defaultEntities[0].id,
-    toEntityId: defaultEntities[1].id,
+    fromEntityId: seedEntities[0].id,
+    toEntityId: seedEntities[1].id,
     amount: 0,
     description: 'Raw material supply',
   }));
@@ -941,7 +796,7 @@ export function AppShell() {
 
   const activeDocument = activeNav === 'Sales' ? salesDocument : purchaseDocument;
   const isPurchaseView = activeNav === 'Purchases';
-  const activeContact = entityContacts.find((contact) => contact.id === activeDocument.contactId) ?? entityContacts[0] ?? defaultContacts[0];
+  const activeContact = entityContacts.find((contact) => contact.id === activeDocument.contactId) ?? entityContacts[0] ?? seedContacts[0];
   const activeTotals = buildTotals(activeDocument.lines, isPurchaseView ? activeContact.withholdingTaxStatus : undefined);
   const journalEntries = buildJournalEntries(activeDocument, isPurchaseView, activeContact);
   const groupEntityOptions = entities;
@@ -1562,6 +1417,7 @@ export function AppShell() {
 
     const nextEntity: EntityRecord = {
       id: `${slugify(trimmedName)}-${Date.now()}`,
+      code: `SG${String(entities.length + 1).padStart(3, '0')}`,
       name: trimmedName,
       type: formValues.type,
       financialYearEnd: formValues.financialYearEnd,
@@ -1593,6 +1449,7 @@ export function AppShell() {
         address: '',
         withholdingTaxStatus: '5%',
         isFarmerAggregator: false,
+        isActive: true,
         balances: groupBalances,
       };
 
@@ -1619,6 +1476,7 @@ export function AppShell() {
       address: contactFormValues.address.trim(),
       withholdingTaxStatus: contactFormValues.withholdingTaxStatus,
       isFarmerAggregator: contactFormValues.isFarmerAggregator,
+      isActive: true,
       balances: Object.fromEntries(
         entities.map((entity) => [entity.id, 0]),
       ),
@@ -1925,8 +1783,8 @@ export function AppShell() {
   async function loadSettingsData() {
     try {
       const [backupResponse, auditResponse] = await Promise.all([
-        fetch('/api/backups'),
-        fetch(`/api/audit?entityId=${selectedEntity.id}`),
+        fetch(`/api/backups?entityId=${encodeURIComponent(selectedEntity.id)}`),
+        fetch(`/api/audit?entityId=${encodeURIComponent(selectedEntity.id)}`),
       ]);
 
       if (backupResponse.ok) {
@@ -1954,14 +1812,18 @@ export function AppShell() {
     setBackupBusy(true);
     setBackupError(null);
     try {
-      const response = await fetch('/api/backups', { method: 'POST' });
+      const response = await fetch('/api/backups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entityId: selectedEntity.id }),
+      });
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as { error?: string | null } | null;
-        setBackupError(payload?.error ?? 'The backup did not complete. The database has not been saved.');
+        setBackupError(payload?.error ?? 'The export did not complete. No file was written.');
       }
       await loadSettingsData();
     } catch {
-      setBackupError('Could not reach the server to run a backup.');
+      setBackupError('Could not reach the server to run an export.');
     } finally {
       setBackupBusy(false);
     }
@@ -3956,26 +3818,26 @@ export function AppShell() {
                 <div className="flex items-start justify-between gap-4 pb-4">
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Data protection</p>
-                    <h3 className="mt-1 text-xl font-semibold text-slate-900">Database backups</h3>
+                    <h3 className="mt-1 text-xl font-semibold text-slate-900">Ledger exports</h3>
                     <p className="mt-1 text-sm text-slate-600">
-                      A backup of the whole database runs automatically every night, is checked against its SHA-256 before
-                      you download it, and the most recent 14 are kept. You can also run one now.
+                      A JSON export of {selectedEntity.name}&rsquo;s books &mdash; accounts, contacts, funds, projects and the audit
+                      trail &mdash; runs automatically every night, is checked against its SHA-256 before you download it, and the
+                      most recent 14 are kept. Database backups themselves are handled by the database platform.
                     </p>
                   </div>
                   <Button size="sm" onClick={triggerManualBackup} disabled={backupBusy}>
-                    {backupBusy ? 'Running…' : 'Run backup now'}
+                    {backupBusy ? 'Exporting…' : 'Export now'}
                   </Button>
                 </div>
 
                 {(backupError || lastBackupFailed) ? (
                   <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-red-700">Last backup failed</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-red-700">Last export failed</p>
                     <p className="mt-1 text-sm font-semibold text-red-900">
-                      {backupError ?? backupRuns[0]?.error ?? 'The most recent backup did not complete.'}
+                      {backupError ?? backupRuns[0]?.error ?? 'The most recent export did not complete.'}
                     </p>
                     <p className="mt-0.5 text-xs text-red-700">
-                      The database has not been saved since the last successful backup shown below. Run a backup now, and
-                      check that the backup location is writable.
+                      No file was written. Run an export now, and check that the export location is writable.
                     </p>
                   </div>
                 ) : null}
@@ -3984,7 +3846,7 @@ export function AppShell() {
                   <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-700">Last successful backup</p>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-700">Last successful export</p>
                         <p className="mt-1 text-sm font-semibold text-emerald-900">
                           {new Date(lastSuccessfulBackup.createdAt).toLocaleString('en-GH')}
                         </p>
@@ -3994,7 +3856,7 @@ export function AppShell() {
                       </div>
                       {lastSuccessfulBackup.available ? (
                         <a
-                          href={`/api/backups?download=${encodeURIComponent(lastSuccessfulBackup.fileName)}`}
+                          href={`/api/backups?entityId=${encodeURIComponent(selectedEntity.id)}&download=${encodeURIComponent(lastSuccessfulBackup.fileName)}`}
                           className="inline-flex min-h-[36px] items-center justify-center rounded-lg border border-brand-200 bg-white px-3 py-2 text-sm font-medium text-brand-800 transition-colors duration-150 ease-out hover:bg-brand-50"
                         >
                           Download latest
@@ -4006,7 +3868,8 @@ export function AppShell() {
                   </div>
                 ) : (
                   <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                    No backup has completed successfully yet. The nightly backup runs automatically, or use &ldquo;Run backup now&rdquo;.
+                    No export has completed successfully yet for {selectedEntity.name}. The nightly export runs automatically,
+                    or use &ldquo;Export now&rdquo;.
                   </div>
                 )}
 
@@ -4038,7 +3901,7 @@ export function AppShell() {
                           <span className="text-xs text-red-600">{run.error ?? 'Failed'}</span>
                         ) : run.available ? (
                           <a
-                            href={`/api/backups?download=${encodeURIComponent(run.fileName)}`}
+                            href={`/api/backups?entityId=${encodeURIComponent(selectedEntity.id)}&download=${encodeURIComponent(run.fileName)}`}
                             className="text-sm font-medium text-brand-700 hover:underline"
                           >
                             Download
