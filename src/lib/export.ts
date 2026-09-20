@@ -129,12 +129,18 @@ async function pruneOldExportFiles(entityId: string) {
  * resolves normally rather than throwing, so the failure is recorded rather
  * than lost, but it is emphatically not a success.
  */
-export async function runLedgerExport(entityId: string, trigger: 'nightly' | 'manual' = 'manual') {
+export async function runLedgerExport(
+  entityId: string,
+  trigger: 'nightly' | 'manual' = 'manual',
+  actor: { userId: string; userName: string } | null = null,
+) {
   const directory = exportDir();
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const fileName = `sprouted-${entityId}-${timestamp}.json`;
   const target = path.join(directory, fileName);
   const label = trigger === 'nightly' ? 'Nightly' : 'Manual';
+  // Scheduled exports are the system's; manual ones carry the person who ran them.
+  const who = actor ? { userId: actor.userId, userName: actor.userName } : { userId: null, userName: 'system' };
 
   try {
     const payload = await buildLedgerExport(entityId);
@@ -154,7 +160,7 @@ export async function runLedgerExport(entityId: string, trigger: 'nightly' | 'ma
 
     await recordAuditEvent({
       entityId,
-      userName: 'system',
+      ...who,
       action: 'BACKUP',
       resourceType: 'export',
       resourceRef: fileName,
@@ -175,7 +181,7 @@ export async function runLedgerExport(entityId: string, trigger: 'nightly' | 'ma
     // A failed export is more important to record than a successful one.
     await recordAuditEvent({
       entityId,
-      userName: 'system',
+      ...who,
       action: 'BACKUP',
       resourceType: 'export',
       resourceRef: fileName,

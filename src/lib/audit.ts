@@ -5,10 +5,12 @@ import type { Prisma } from '@prisma/client';
 import { assertNoBigInt } from './data/money';
 import { prisma } from './prisma';
 
-export type AuditAction = 'POST' | 'EDIT' | 'VOID' | 'MATCH' | 'BACKUP' | 'FILE_PERIOD';
+export type AuditAction = 'POST' | 'EDIT' | 'VOID' | 'MATCH' | 'BACKUP' | 'FILE_PERIOD' | 'USER';
 
 export type AuditEventInput = {
   entityId: string;
+  /** The signed-in user's id. Omit only for system events (scheduled exports). */
+  userId?: string | null;
   userName?: string;
   action: AuditAction;
   resourceType: string;
@@ -23,6 +25,7 @@ export type AuditClient = Prisma.TransactionClient;
 type HashInput = {
   entityId: string;
   sequence: number;
+  userId: string | null;
   userName: string;
   action: string;
   resourceType: string;
@@ -75,6 +78,7 @@ async function appendEvent(input: AuditEventInput, tx: AuditClient): Promise<str
   });
 
   const sequence = (previous?.sequence ?? 0) + 1;
+  const userId = input.userId ?? null;
   const userName = input.userName ?? 'system';
   const createdAt = new Date();
   const metadata = input.metadata ?? null;
@@ -82,6 +86,7 @@ async function appendEvent(input: AuditEventInput, tx: AuditClient): Promise<str
   const hash = hashOf({
     entityId: input.entityId,
     sequence,
+    userId,
     userName,
     action: input.action,
     resourceType: input.resourceType,
@@ -96,6 +101,7 @@ async function appendEvent(input: AuditEventInput, tx: AuditClient): Promise<str
     data: {
       entityId: input.entityId,
       sequence,
+      userId,
       userName,
       action: input.action,
       resourceType: input.resourceType,
@@ -116,6 +122,7 @@ export type ChainEventLike = {
   id: string;
   entityId: string;
   sequence: number;
+  userId: string | null;
   userName: string;
   action: string;
   resourceType: string;
@@ -155,6 +162,7 @@ export function verifyChain(events: ChainEventLike[]): string | null {
     const hash = hashOf({
       entityId: event.entityId,
       sequence: event.sequence,
+      userId: event.userId,
       userName: event.userName,
       action: event.action,
       resourceType: event.resourceType,

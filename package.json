@@ -14,20 +14,24 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "node scripts/seed-accounts.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "auth:create-owner": "node scripts/create-owner.ts"
   },
   "prisma": {
     "seed": "node scripts/seed-accounts.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.15.0",
+    "better-auth": "^1.7.5",
     "next": "^16.3.5",
     "prisma": "^6.15.0",
+    "qrcode": "^1.5.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "autoprefixer": "^10.6.1",

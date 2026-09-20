@@ -4,6 +4,7 @@
  * booleans — never bigint, never Date. Amounts are integer pesewas.
  */
 
+import type { Permission, Role } from '../authz';
 import type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus } from './enums';
 
 export type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus };
@@ -122,8 +123,23 @@ export type DocumentRecord = {
   updatedAt: string;
 };
 
+/**
+ * The signed-in person as the browser may know them. `permissions` drives
+ * what the UI offers; the server re-checks every one of them.
+ */
+export type CurrentUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  roleLabel: string;
+  permissions: Permission[];
+};
+
 /** Everything the shell needs on first render, loaded once by the page. */
 export type InitialData = {
+  currentUser: CurrentUser;
+  /** Only the entities the signed-in user may see. */
   entities: EntityRecord[];
   contacts: ContactRecord[];
   accountsByEntity: Record<string, AccountRecord[]>;

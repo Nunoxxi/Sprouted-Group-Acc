@@ -32,8 +32,11 @@ You need a Postgres database — Supabase, or a local one. Copy `.env.example` t
 npm install                  # also generates the Prisma client
 npx prisma migrate deploy    # apply prisma/migrations
 npm run prisma:seed          # entities, charts of accounts, contacts, funds, projects
+npm run auth:create-owner -- --email you@example.com --name "Your Name"
 npm run dev                  # http://localhost:3000
 ```
+
+There is no sign-up page. The command above creates the first Owner without a password; open `/forgot-password`, enter that email, and set one from the link (printed to the dev server console when no email transport is configured). Owners and Accountants are asked to set up an authenticator app on first sign-in. Everyone else is invited from **/admin/users**.
 
 On Windows PowerShell you may first need:
 
@@ -65,6 +68,9 @@ Copy `.env.example` to `.env`. Relevant variables:
 | `DATABASE_URL` | Postgres, **transaction pooler** (Supabase port 6543, `?pgbouncer=true`). Used by the running app. |
 | `DIRECT_URL` | Postgres, **session pooler** (port 5432 on the same pooler host). Used only by `prisma migrate`. Not Supabase's "Direct connection", which is IPv6-only on most tiers. |
 | `EXPORT_DIR` | Where ledger export files are written. Defaults to `exports/` next to the app; point it at durable storage in production. |
+| `BETTER_AUTH_SECRET` | Signs session cookies and encrypts TOTP secrets. `openssl rand -base64 32`. Changing it signs everyone out. |
+| `BETTER_AUTH_URL` | The app's public URL; invite and reset links are built from it. |
+| `RESEND_API_KEY`, `EMAIL_FROM` | Outbound email for invitations and resets. Without a key, development prints the email to the console; production refuses to send. |
 
 `.env` is git-ignored and holds real credentials. Never commit it.
 
@@ -93,9 +99,12 @@ The files worth reading first in `src/lib/`:
 - **`report-data.ts`** — the demo ledger and account classifications that the reports currently read from.
 - **`export.ts`** — per-entity ledger export, checksum verification, retention.
 - **`audit.ts`** — append-only audit log with a SHA-256 hash chain per entity; runs inside the caller's transaction when given one.
+- **`authz.ts`** — the role matrix and entity-access rules. Pure; every decision about who may do what comes from here.
+- **`dal.ts`** — turns the session into a principal and refuses anything not allowed. Every server function and route handler starts here.
+- **`auth.ts`** — the Better Auth configuration: the library owns passwords, sessions, tokens, TOTP and rate limits; hooks add the ten-failure lock and the deactivation check.
 
 ## A caution on the current state
 
 Entities, contacts, charts of accounts, invoices, bills, journals, filed periods, the audit log and exports all live in Postgres and round-trip through it. **Reports, the VAT return, intercompany, bank reconciliation and the dashboard do not yet** — they still read demo arrays in `report-data.ts` and the shell, so a document you post is in the ledger but not on any report. Pointing the reports at the ledger is the next pass; see [PROJECT_STATE.md](PROJECT_STATE.md).
 
-**There is no authentication.** Every server function is reachable by direct POST. Do not deploy this anywhere untrusted until that is done. `render.yaml` describes the deployment; nothing has been deployed yet.
+**Authentication is built in** (Better Auth): invite-only email + password, mandatory TOTP for roles that can post, four roles, per-entity access checked on every server function and route, an Owner-only users and sessions screen. See PROJECT_STATE.md. `render.yaml` describes the deployment; nothing has been deployed yet. Before deploying, set `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` and an email transport (`RESEND_API_KEY`, `EMAIL_FROM`) — invitations cannot be sent without one.

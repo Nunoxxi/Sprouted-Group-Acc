@@ -31,7 +31,7 @@ model Entity {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  users            User[]
+  userAccess       UserEntityAccess[]
   accounts         Account[]
   journalEntries   JournalEntry[]
   contactBalances  ContactEntityBalance[]
@@ -53,8 +53,10 @@ model AuditEvent {
   id           String   @id @default(cuid())
   entityId     String
   sequence     Int
+  /// NULL only for system events (scheduled exports). Part of the hashed record.
+  userId       String?
   userName     String
-  action       String // POST | EDIT | VOID | MATCH | BACKUP | FILE_PERIOD
+  action       String // POST | EDIT | VOID | MATCH | BACKUP | FILE_PERIOD | USER
   resourceType String // invoice | bill | bank-line | intercompany | vat-period | backup
   resourceRef  String
   summary      String
@@ -64,9 +66,11 @@ model AuditEvent {
   createdAt    DateTime @default(now())
 
   entity Entity @relation(fields: [entityId], references: [id])
+  user   User?  @relation(fields: [userId], references: [id])
 
   @@unique([entityId, sequence])
   @@index([entityId, resourceType])
+  @@index([userId])
 }
 
 // One row per ledger export (formerly per SQLite snapshot). Rows are never
@@ -147,16 +151,133 @@ model ContactEntityBalance {
   @@index([entityId, balanceMinor])
 }
 
-model User {
-  id        String   @id @default(cuid())
-  entityId  String
-  email     String   @unique
-  name      String
-  role      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+// ---------------------------------------------------------------------------
+// Users and authentication. Better Auth owns User, AuthSession, AuthAccount,
+// AuthVerification, TwoFactor and RateLimit (see src/lib/auth.ts); the app
+// never writes password hashes, sessions or tokens itself. Users are never
+// deleted — deactivatedAt is set and every session revoked — so the user id
+// on every journal, document, filing and audit event keeps resolving.
+// ---------------------------------------------------------------------------
 
-  entity Entity @relation(fields: [entityId], references: [id])
+model User {
+  id                  String    @id @default(cuid())
+  name                String
+  email               String    @unique
+  emailVerified       Boolean   @default(false)
+  image               String?
+  /// owner | accountant | data-entry | viewer — see src/lib/authz.ts
+  role                String    @default("viewer")
+  /// Better Auth admin plugin. A "ban" is how the library refuses sign-in;
+  /// banReason distinguishes LOCKED (ten failed attempts) from DEACTIVATED.
+  banned              Boolean   @default(false)
+  banReason           String?
+  banExpires          DateTime?
+  twoFactorEnabled    Boolean   @default(false)
+  failedLoginAttempts Int       @default(0)
+  deactivatedAt       DateTime?
+  invitedById         String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  invitedBy     User?              @relation("Invitations", fields: [invitedById], references: [id])
+  invitees      User[]             @relation("Invitations")
+  sessions      AuthSession[]
+  authAccounts  AuthAccount[]
+  twoFactors    TwoFactor[]
+  entityAccess  UserEntityAccess[]
+  grantedAccess UserEntityAccess[] @relation("AccessGrantedBy")
+  auditEvents   AuditEvent[]
+  postedEntries JournalEntry[]
+  createdDocs   Document[]         @relation("DocumentCreatedBy")
+  editedDocs    Document[]         @relation("DocumentEditedBy")
+  filings       TaxPeriodFiling[]
+
+  @@index([deactivatedAt])
+}
+
+// Entity access is separate from role: an Accountant on Sprouted Roots with
+// no row for Oikazi cannot see Oikazi at all. Owners have every entity
+// implicitly (src/lib/authz.ts) and hold no rows here.
+model UserEntityAccess {
+  userId      String
+  entityId    String
+  grantedById String?
+  createdAt   DateTime @default(now())
+
+  user      User   @relation(fields: [userId], references: [id])
+  entity    Entity @relation(fields: [entityId], references: [id])
+  grantedBy User?  @relation("AccessGrantedBy", fields: [grantedById], references: [id])
+
+  @@id([userId, entityId])
+  @@index([entityId])
+}
+
+model AuthSession {
+  id             String   @id @default(cuid())
+  userId         String
+  token          String   @unique
+  expiresAt      DateTime
+  ipAddress      String?
+  userAgent      String?
+  impersonatedBy String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+model AuthAccount {
+  id                    String    @id @default(cuid())
+  userId                String
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+model AuthVerification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+}
+
+model TwoFactor {
+  id                      String    @id @default(cuid())
+  userId                  String
+  secret                  String
+  backupCodes             String
+  verified                Boolean   @default(false)
+  failedVerificationCount Int       @default(0)
+  lockedUntil             DateTime?
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+model RateLimit {
+  id          String @id @default(cuid())
+  key         String @unique
+  count       Int
+  lastRequest BigInt
 }
 
 enum AccountType {
@@ -207,10 +328,13 @@ model JournalEntry {
   description  String
   postedAt     DateTime
   reversalOfId String?     @unique
+  /// Who posted it. NULL only for entries that predate authentication.
+  postedById   String?
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
   entity         Entity        @relation(fields: [entityId], references: [id])
+  postedBy       User?         @relation(fields: [postedById], references: [id])
   lines          JournalLine[]
   reversalOf     JournalEntry? @relation("Reversal", fields: [reversalOfId], references: [id])
   reversedBy     JournalEntry? @relation("Reversal")
@@ -337,11 +461,15 @@ model Document {
   evatTimestamp       String?
   journalEntryId      String?        @unique
   voidEntryId         String?        @unique
+  createdById         String?
+  lastEditedById      String?
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
 
   entity       Entity         @relation(fields: [entityId], references: [id])
   contact      Contact        @relation(fields: [contactId], references: [id])
+  createdBy    User?          @relation("DocumentCreatedBy", fields: [createdById], references: [id])
+  lastEditedBy User?          @relation("DocumentEditedBy", fields: [lastEditedById], references: [id])
   journalEntry JournalEntry?  @relation("DocumentPosting", fields: [journalEntryId], references: [id])
   voidEntry    JournalEntry?  @relation("DocumentVoid", fields: [voidEntryId], references: [id])
   lines        DocumentLine[]
@@ -378,13 +506,15 @@ model DocumentLine {
 // Filing a VAT period locks it: documents dated in a filed period cannot be
 // posted, and a void's reversal must land in an open period.
 model TaxPeriodFiling {
-  id       String   @id @default(cuid())
-  entityId String
-  period   String // YYYY-MM
-  filedAt  DateTime @default(now())
-  filedBy  String
+  id        String   @id @default(cuid())
+  entityId  String
+  period    String // YYYY-MM
+  filedAt   DateTime @default(now())
+  filedBy   String
+  filedById String?
 
-  entity Entity @relation(fields: [entityId], references: [id])
+  entity      Entity @relation(fields: [entityId], references: [id])
+  filedByUser User?  @relation(fields: [filedById], references: [id])
 
   @@unique([entityId, period])
 }

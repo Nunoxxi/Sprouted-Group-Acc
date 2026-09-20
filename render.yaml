@@ -24,6 +24,18 @@ services:
         sync: false
       - key: DIRECT_URL
         sync: false
+      # Authentication (Better Auth). Generate the secret with: openssl rand -base64 32
+      - key: BETTER_AUTH_SECRET
+        sync: false
+      # The public URL of the service; invite and reset links are built from it.
+      - key: BETTER_AUTH_URL
+        sync: false
+      # Outbound email for invitations and password resets (Resend). Required in
+      # production: an invite with no transport fails rather than vanishing.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
       # Where ledger export files are written. On the free plan the disk is
       # ephemeral, so exports vanish on redeploy; attach a Render Disk and
       # point this at its mount path for exports that persist.

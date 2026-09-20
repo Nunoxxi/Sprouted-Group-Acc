@@ -29,6 +29,8 @@ import {
   saveDocumentDraft,
   voidDocument,
 } from '@/app/actions/documents';
+import { SignOutButton } from '@/components/auth/sign-out-button';
+import type { Permission } from '@/lib/authz';
 import {
   leviesOnBase,
   roundPesewas,
@@ -523,7 +525,10 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
   const [backupBusy, setBackupBusy] = useState(false);
   const [auditEvents, setAuditEvents] = useState<AuditEventView[]>([]);
   const [auditChainIntact, setAuditChainIntact] = useState<boolean | null>(null);
-  const currentUserName = 'Edem Agblevor';
+  // Who is signed in, and what their role allows. The server re-checks every
+  // one of these on every call; here they only decide what to show.
+  const currentUser = initialData.currentUser;
+  const allowed = (permission: Permission) => currentUser.permissions.includes(permission);
 
   const selectedEntity = useMemo(
     () => entities.find((entity) => entity.id === selectedEntityId) ?? entities[0],
@@ -566,7 +571,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
   const groupEntityOptions = entities;
 
   const documentPeriodLocked = (filedPeriods[selectedEntity.id] ?? []).includes(periodOf(activeDocument.date));
-  const documentReadOnly = activeDocument.status !== 'draft' || documentPeriodLocked;
+  const documentReadOnly = activeDocument.status !== 'draft' || documentPeriodLocked || !allowed('document:draft');
   const filedPeriodKeys = filedPeriods[selectedEntity.id] ?? [];
   const isSelectedPeriodFiled = filedPeriodKeys.includes(selectedTaxPeriod);
 
@@ -1145,12 +1150,15 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
     if (activeDocument.status !== 'draft' || (activeNav !== 'Sales' && activeNav !== 'Purchases')) {
       return;
     }
+    if (!allowed('document:draft')) {
+      return; // viewers never autosave; the server would refuse anyway
+    }
     const entityId = selectedEntity.id;
     const snapshot = activeDocument;
     const setter = activeNav === 'Sales' ? setSalesDocument : setPurchaseDocument;
     autosaveTimer.current = window.setTimeout(() => {
       autosaveTimer.current = null;
-      void saveDocumentDraft(entityId, snapshot, currentUserName).then((result) => {
+      void saveDocumentDraft(entityId, snapshot).then((result) => {
         if (!result.ok) {
           setDocumentError(result.error);
           return;
@@ -1166,20 +1174,23 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
         autosaveTimer.current = null;
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeDocument, activeNav, selectedEntity.id]);
 
   // One-time import of filed periods that only exist in localStorage from
   // before they were persisted. Old document drafts are simply discarded.
+  // Only someone who may file periods imports them; for anyone else the
+  // key is left for a later, entitled sign-in on this browser.
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem('sprouted-vat-filed-periods');
-      if (raw) {
+      if (raw && allowed('period:file')) {
         const stored = JSON.parse(raw) as Record<string, string[]>;
         for (const [entityId, periods] of Object.entries(stored)) {
           if (!initialData.entities.some((entity) => entity.id === entityId)) continue;
           for (const period of periods) {
             if (!(initialData.filedPeriodsByEntity[entityId] ?? []).includes(period)) {
-              void fileTaxPeriod(entityId, period, currentUserName);
+              void fileTaxPeriod(entityId, period);
             }
           }
         }
@@ -1298,7 +1309,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
   /** Save the open draft now and return its server id, saving first if it has never been saved. */
   async function ensureSaved(): Promise<string | null> {
     if (activeDocument.status !== 'draft') return activeDocument.id;
-    const result = await saveDocumentDraft(selectedEntity.id, activeDocument, currentUserName);
+    const result = await saveDocumentDraft(selectedEntity.id, activeDocument);
     if (!result.ok) {
       setDocumentError(result.error);
       return null;
@@ -1325,15 +1336,15 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
   }
 
   function postCurrentDocument() {
-    runDocumentAction((documentId) => postDocument(selectedEntity.id, documentId, currentUserName));
+    runDocumentAction((documentId) => postDocument(selectedEntity.id, documentId));
   }
 
   function markCurrentDocumentPaid() {
-    runDocumentAction((documentId) => markDocumentPaid(selectedEntity.id, documentId, currentUserName));
+    runDocumentAction((documentId) => markDocumentPaid(selectedEntity.id, documentId));
   }
 
   function voidCurrentDocument() {
-    runDocumentAction((documentId) => voidDocument(selectedEntity.id, documentId, currentUserName));
+    runDocumentAction((documentId) => voidDocument(selectedEntity.id, documentId));
   }
 
   function startNewDocument() {
@@ -1442,7 +1453,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
 
     const entityId = selectedEntity.id;
     startDocumentTransition(async () => {
-      const result = await fileTaxPeriod(entityId, selectedTaxPeriod, currentUserName);
+      const result = await fileTaxPeriod(entityId, selectedTaxPeriod);
       if (!result.ok) {
         setDocumentError(result.error);
         return;
@@ -1601,7 +1612,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
       await fetch('/api/audit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...event, userName: currentUserName }),
+        body: JSON.stringify(event), // the server records the session's user, not a name from the browser
       });
     } catch {
       // The audit API is best-effort while the app runs in demo mode without a live server session.
@@ -1658,7 +1669,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
   }
 
   useEffect(() => {
-    if (activeNav === 'Settings') {
+    if (activeNav === 'Settings' && allowed('export:run')) {
       // loadSettingsData only sets state after its fetches resolve, so this is
       // the ordinary fetch-in-effect pattern, not a synchronous setState.
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -2140,17 +2151,19 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                 );
               })}
 
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAddEntityForm(true);
-                  setEntityMenuOpen(false);
-                }}
-                className="mt-1 flex w-full items-center justify-between rounded-lg border border-dashed border-brand-200 bg-brand-50 px-2.5 py-2 text-left text-sm font-medium text-brand-800 hover:bg-brand-100"
-              >
-                <span>Add entity</span>
-                <span>＋</span>
-              </button>
+              {allowed('entity:create') ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddEntityForm(true);
+                    setEntityMenuOpen(false);
+                  }}
+                  className="mt-1 flex w-full items-center justify-between rounded-lg border border-dashed border-brand-200 bg-brand-50 px-2.5 py-2 text-left text-sm font-medium text-brand-800 hover:bg-brand-100"
+                >
+                  <span>Add entity</span>
+                  <span>＋</span>
+                </button>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -2176,6 +2189,26 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
             );
           })}
         </nav>
+
+        {allowed('users:manage') ? (
+          <nav className="mt-6 space-y-1 border-t border-slate-100 pt-4">
+            <p className="px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Owner</p>
+            <a href="/admin/users" className="block rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900">
+              Users
+            </a>
+            <a href="/admin/sessions" className="block rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900">
+              Sessions
+            </a>
+          </nav>
+        ) : null}
+
+        <div className="mt-6 border-t border-slate-100 pt-4">
+          <p className="truncate px-3 text-sm font-medium text-slate-900">{currentUser.name}</p>
+          <p className="truncate px-3 text-xs text-slate-500">{currentUser.roleLabel}</p>
+          <div className="px-3 pt-2">
+            <SignOutButton />
+          </div>
+        </div>
       </aside>
 
       <div className="flex-1">
@@ -2219,7 +2252,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Shared contacts</p>
                     <h2 className="mt-1 text-xl font-semibold text-slate-900">Contacts</h2>
                   </div>
-                  <Button size="sm" onClick={() => setShowAddContactForm(true)}>Add contact</Button>
+                  {allowed('contact:create') ? <Button size="sm" onClick={() => setShowAddContactForm(true)}>Add contact</Button> : null}
                 </div>
 
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -2672,9 +2705,9 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                     <span className="rounded-full bg-emerald-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700">
                       Filed — locked
                     </span>
-                  ) : (
+                  ) : allowed('period:file') ? (
                     <Button size="sm" onClick={fileSelectedTaxPeriod}>File this period</Button>
-                  )}
+                  ) : null}
                 </div>
               </div>
 
@@ -3633,6 +3666,14 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                 </Card>
               ) : null}
             </div>
+          ) : activeNav === 'Settings' && !allowed('export:run') ? (
+            <Card className="rounded-2xl">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">System</p>
+              <h2 className="mt-1 text-2xl font-semibold text-slate-900">Settings</h2>
+              <p className="mt-3 text-sm text-slate-600">
+                Ledger exports and the audit trail are available to Owners and Accountants. Your role is {currentUser.roleLabel}.
+              </p>
+            </Card>
           ) : activeNav === 'Settings' ? (
             <div className="space-y-6">
               <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
@@ -3832,16 +3873,18 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                     ].join(' ')}>
                       {statusLabels[activeDocument.status]}
                     </span>
-                    <Button variant="secondary" size="sm" disabled={documentPending} onClick={startNewDocument}>New {isPurchaseView ? 'bill' : 'invoice'}</Button>
-                    {activeDocument.status === 'draft' ? (
+                    {allowed('document:draft') ? (
+                      <Button variant="secondary" size="sm" disabled={documentPending} onClick={startNewDocument}>New {isPurchaseView ? 'bill' : 'invoice'}</Button>
+                    ) : null}
+                    {activeDocument.status === 'draft' && allowed('document:post') ? (
                       <Button size="sm" disabled={documentPending || documentPeriodLocked} onClick={postCurrentDocument}>
                         {documentPending ? 'Posting…' : 'Post'}
                       </Button>
                     ) : null}
-                    {activeDocument.status === 'awaiting-payment' ? (
+                    {activeDocument.status === 'awaiting-payment' && allowed('document:mark-paid') ? (
                       <Button size="sm" disabled={documentPending} onClick={markCurrentDocumentPaid}>Mark paid</Button>
                     ) : null}
-                    {activeDocument.status === 'awaiting-payment' || activeDocument.status === 'paid' ? (
+                    {(activeDocument.status === 'awaiting-payment' || activeDocument.status === 'paid') && allowed('document:void') ? (
                       <Button variant="danger" size="sm" disabled={documentPending} onClick={voidCurrentDocument}>Void</Button>
                     ) : null}
                   </div>

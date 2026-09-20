@@ -15,6 +15,7 @@ import type {
   Contact,
 } from '@prisma/client';
 
+import { can, permissions, roleLabels, type Principal } from '../authz';
 import { prisma } from '../prisma';
 import { accountRecord, contactRecord, entityRecord, fundRecord, projectRecord } from './mappers';
 import { toMinor } from './money';
@@ -131,15 +132,24 @@ function groupBy<T>(items: T[], keyOf: (item: T) => string): Record<string, T[]>
  * Everything the shell needs, in one round of queries. Three entities and a
  * few dozen documents — no pagination at this scale.
  */
-export async function loadInitialData(): Promise<InitialData> {
+/**
+ * Everything the shell needs, restricted to the entities the principal may
+ * see. The restriction is in the queries themselves — `where: { entityId: in
+ * ... }` — not applied afterwards, so nothing from another entity is ever
+ * read. Contacts are group-wide by design; their balances are filtered.
+ */
+export async function loadInitialData(principal: Principal): Promise<InitialData> {
+  const entityScope = principal.entityIds === 'all' ? {} : { entityId: { in: [...principal.entityIds] } };
+  const entityFilter = principal.entityIds === 'all' ? {} : { id: { in: [...principal.entityIds] } };
+
   const [entities, contacts, accounts, funds, projects, documents, filings] = await Promise.all([
-    prisma.entity.findMany({ orderBy: { code: 'asc' } }),
-    prisma.contact.findMany({ include: { balances: true }, orderBy: { name: 'asc' } }),
-    prisma.account.findMany({ include: { parent: { select: { code: true } } }, orderBy: [{ entityId: 'asc' }, { code: 'asc' }] }),
-    prisma.fund.findMany({ orderBy: { code: 'asc' } }),
-    prisma.project.findMany({ include: { fund: { select: { classification: true } } }, orderBy: { code: 'asc' } }),
-    prisma.document.findMany({ include: documentInclude, orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] }),
-    prisma.taxPeriodFiling.findMany({ select: { entityId: true, period: true }, orderBy: { period: 'asc' } }),
+    prisma.entity.findMany({ where: entityFilter, orderBy: { code: 'asc' } }),
+    prisma.contact.findMany({ include: { balances: { where: entityScope } }, orderBy: { name: 'asc' } }),
+    prisma.account.findMany({ where: entityScope, include: { parent: { select: { code: true } } }, orderBy: [{ entityId: 'asc' }, { code: 'asc' }] }),
+    prisma.fund.findMany({ where: entityScope, orderBy: { code: 'asc' } }),
+    prisma.project.findMany({ where: entityScope, include: { fund: { select: { classification: true } } }, orderBy: { code: 'asc' } }),
+    prisma.document.findMany({ where: entityScope, include: documentInclude, orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] }),
+    prisma.taxPeriodFiling.findMany({ where: entityScope, select: { entityId: true, period: true }, orderBy: { period: 'asc' } }),
   ]);
 
   const entityIds = entities.map((entity) => entity.id);
@@ -149,6 +159,14 @@ export async function loadInitialData(): Promise<InitialData> {
   const periodsByEntity = groupBy(filings, (filing) => filing.entityId);
 
   return {
+    currentUser: {
+      id: principal.userId,
+      name: principal.name,
+      email: principal.email,
+      role: principal.role,
+      roleLabel: roleLabels[principal.role],
+      permissions: permissions.filter((permission) => can(principal, permission)),
+    },
     entities: entities.map(entityRecord),
     contacts: contacts.map(contactRecord),
     accountsByEntity: withAllEntities(groupBy(accounts.map(accountRecord), (account) => account.entityId)),

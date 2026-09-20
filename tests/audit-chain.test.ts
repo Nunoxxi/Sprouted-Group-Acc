@@ -17,6 +17,7 @@ function buildChain(count: number): ChainEventLike[] {
     const base = {
       entityId: 'sprouted-roots',
       sequence,
+      userId: 'user-1',
       userName: 'system',
       action: 'POST',
       resourceType: 'invoice',
@@ -28,6 +29,7 @@ function buildChain(count: number): ChainEventLike[] {
     const payload: string = JSON.stringify({
       entityId: base.entityId,
       sequence,
+      userId: base.userId,
       userName: base.userName,
       action: base.action,
       resourceType: base.resourceType,
@@ -51,6 +53,7 @@ function rehash(event: ChainEventLike): ChainEventLike {
   const payload = JSON.stringify({
     entityId: event.entityId,
     sequence: event.sequence,
+    userId: event.userId,
     userName: event.userName,
     action: event.action,
     resourceType: event.resourceType,

@@ -1,0 +1,379 @@
+/**
+ * Proof that a user without access to an entity cannot read or write that
+ * entity's data through any route.
+ *
+ * The authorization layer is the real one (src/lib/dal.ts + src/lib/authz.ts).
+ * What is faked is underneath it: the session Better Auth would return, and
+ * the database. The database fake answers exactly one query — the
+ * principal's own entity-access rows — and records every other call, so a
+ * test can assert not only that a request was refused but that nothing was
+ * read or written on the way to refusing it.
+ *
+ * Every exported Server Function in src/app/actions/*.ts and every Route
+ * Handler under src/app/api must appear in the tables below; a new export
+ * without a case fails the suite.
+ */
+
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+// --- fakes -----------------------------------------------------------------------
+
+type FakeUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  banned?: boolean;
+  twoFactorEnabled?: boolean;
+  deactivatedAt?: Date | null;
+};
+
+const { state, dbCalls, scopeProbe, UnexpectedDatabaseAccess, prismaFake } = vi.hoisted(() => {
+  const state: { user: FakeUser | null; access: string[] } = { user: null, access: [] };
+  const dbCalls: string[] = [];
+  const scopeProbe: { call: string; args: unknown }[] = [];
+
+  class UnexpectedDatabaseAccess extends Error {
+    constructor(call: string) {
+      super(`unexpected database access: ${call}`);
+    }
+  }
+
+  /** prisma.<model>.<method>(...) → recorded; only userEntityAccess.findMany answers. */
+  const prismaFake: Record<string, unknown> = new Proxy(
+  {},
+  {
+    get(_target, model: string) {
+      if (model === '$transaction') {
+        return async (arg: unknown) => {
+          dbCalls.push('$transaction');
+          if (typeof arg === 'function') return (arg as (tx: unknown) => unknown)(prismaFake);
+          throw new UnexpectedDatabaseAccess('$transaction([])');
+        };
+      }
+      if (typeof model !== 'string' || model.startsWith('$') || model === 'then') {
+        return undefined;
+      }
+      return new Proxy(
+        {},
+        {
+          get(_m, method: string) {
+            return async (args: unknown) => {
+              const call = `${model}.${method}`;
+              dbCalls.push(call);
+              if (call === 'userEntityAccess.findMany') {
+                return state.access.map((entityId) => ({ entityId }));
+              }
+              // Used by the read-only positive control on loadInitialData.
+              if (state.user?.id === 'scope-probe' && method === 'findMany') {
+                scopeProbe.push({ call, args });
+                return [];
+              }
+              throw new UnexpectedDatabaseAccess(call);
+            };
+          },
+        },
+      );
+    },
+  },
+  );
+
+  return { state, dbCalls, scopeProbe, UnexpectedDatabaseAccess, prismaFake };
+});
+
+vi.mock('@/lib/prisma', () => ({ prisma: prismaFake }));
+vi.mock('next/headers', () => ({ headers: async () => new Headers() }));
+vi.mock('next/cache', () => ({ refresh: () => undefined }));
+vi.mock('@/lib/auth', () => {
+  const refuse = (name: string) => async () => {
+    throw new UnexpectedDatabaseAccess(name);
+  };
+  return {
+    auth: {
+      api: {
+        getSession: async () => (state.user ? { user: state.user, session: { token: 'tok' } } : null),
+        createUser: refuse('auth.createUser'),
+        requestPasswordReset: refuse('auth.requestPasswordReset'),
+        setRole: refuse('auth.setRole'),
+        banUser: refuse('auth.banUser'),
+        unbanUser: refuse('auth.unbanUser'),
+        revokeUserSession: refuse('auth.revokeUserSession'),
+        revokeUserSessions: refuse('auth.revokeUserSessions'),
+      },
+    },
+  };
+});
+
+import * as documentActions from '@/app/actions/documents';
+import * as userActions from '@/app/actions/users';
+import * as auditRoute from '@/app/api/audit/route';
+import * as backupsRoute from '@/app/api/backups/route';
+import { getPrincipal } from '@/lib/dal';
+import { loadInitialData } from '@/lib/data/documents';
+
+const FORBIDDEN_ENTITY = 'oikazi';
+const GRANTED_ENTITY = 'sprouted-roots';
+
+function signIn(user: Partial<FakeUser> & { role: string }, access: string[]) {
+  state.user = { id: 'user-1', name: 'Test User', email: 'test@example.com', twoFactorEnabled: true, ...user };
+  state.access = access;
+}
+
+beforeEach(() => {
+  state.user = null;
+  state.access = [];
+  dbCalls.length = 0;
+  scopeProbe.length = 0;
+});
+
+// --- the call tables ---------------------------------------------------------------
+
+type Call = () => Promise<unknown>;
+
+/** Every document Server Function, invoked against the forbidden entity. */
+const documentCalls: Record<keyof typeof documentActions, Call | null> = {
+  saveDocumentDraft: () => documentActions.saveDocumentDraft(FORBIDDEN_ENTITY, { kind: 'invoice' }),
+  postDocument: () => documentActions.postDocument(FORBIDDEN_ENTITY, 'doc-1'),
+  markDocumentPaid: () => documentActions.markDocumentPaid(FORBIDDEN_ENTITY, 'doc-1'),
+  voidDocument: () => documentActions.voidDocument(FORBIDDEN_ENTITY, 'doc-1'),
+  fileTaxPeriod: () => documentActions.fileTaxPeriod(FORBIDDEN_ENTITY, '2026-08'),
+  // Not entity-scoped (contacts are group-wide; entities are created by Owners);
+  // covered by the role tests below instead.
+  createContact: null,
+  createEntity: null,
+};
+
+/** Every user-management Server Function. Owner-only, so any other role is refused. */
+const userCalls: Record<keyof typeof userActions, Call> = {
+  listUsers: () => userActions.listUsers(),
+  listSessions: () => userActions.listSessions(),
+  inviteUser: () => userActions.inviteUser({ name: 'X', email: 'x@example.com', role: 'viewer', entityIds: [FORBIDDEN_ENTITY] }),
+  resendInvite: () => userActions.resendInvite('user-2'),
+  updateUserAccess: () => userActions.updateUserAccess({ userId: 'user-2', role: 'viewer', entityIds: [FORBIDDEN_ENTITY] }),
+  deactivateUser: () => userActions.deactivateUser('user-2'),
+  reactivateUser: () => userActions.reactivateUser('user-2'),
+  unlockUser: () => userActions.unlockUser('user-2'),
+  revokeSession: () => userActions.revokeSession('tok-2'),
+};
+
+/** Every Route Handler, invoked against the forbidden entity. */
+const routeCalls: Record<string, () => Promise<Response>> = {
+  'GET /api/audit': () => auditRoute.GET(new Request(`http://app/api/audit?entityId=${FORBIDDEN_ENTITY}`)),
+  'POST /api/audit': () =>
+    auditRoute.POST(
+      new Request('http://app/api/audit', {
+        method: 'POST',
+        body: JSON.stringify({ entityId: FORBIDDEN_ENTITY, action: 'MATCH', resourceRef: 'x', summary: 'x' }),
+      }),
+    ),
+  'GET /api/backups': () => backupsRoute.GET(new Request(`http://app/api/backups?entityId=${FORBIDDEN_ENTITY}`)),
+  'GET /api/backups download': () =>
+    backupsRoute.GET(new Request(`http://app/api/backups?entityId=${FORBIDDEN_ENTITY}&download=sprouted-oikazi.json`)),
+  'POST /api/backups': () =>
+    backupsRoute.POST(new Request('http://app/api/backups', { method: 'POST', body: JSON.stringify({ entityId: FORBIDDEN_ENTITY }) })),
+};
+
+function isRefusal(result: unknown): boolean {
+  return typeof result === 'object' && result !== null && (result as { ok?: boolean }).ok === false;
+}
+
+function errorOf(result: unknown): string {
+  return (result as { error: string }).error;
+}
+
+function onlyAccessLookup() {
+  // The principal's own access rows are the one permitted read. Nothing
+  // belonging to any entity was touched.
+  expect(dbCalls.filter((call) => call !== 'userEntityAccess.findMany')).toEqual([]);
+}
+
+// --- coverage guard ----------------------------------------------------------------
+
+describe('coverage', () => {
+  it('every exported Server Function has a case', () => {
+    const exportedDocs = Object.keys(documentActions).filter((k) => typeof (documentActions as Record<string, unknown>)[k] === 'function');
+    expect(exportedDocs.sort()).toEqual(Object.keys(documentCalls).sort());
+    const exportedUsers = Object.keys(userActions).filter((k) => typeof (userActions as Record<string, unknown>)[k] === 'function');
+    expect(exportedUsers.sort()).toEqual(Object.keys(userCalls).sort());
+  });
+
+  it('every Route Handler method has a case', () => {
+    expect(Object.keys(auditRoute).filter((k) => /^[A-Z]+$/.test(k)).sort()).toEqual(['GET', 'POST']);
+    expect(Object.keys(backupsRoute).filter((k) => /^[A-Z]+$/.test(k)).sort()).toEqual(['GET', 'POST']);
+  });
+});
+
+// --- signed out --------------------------------------------------------------------
+
+describe('signed out', () => {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...userCalls })) {
+    if (!call) continue;
+    it(`${name} is refused without touching the database`, async () => {
+      expect(isRefusal(await call())).toBe(true);
+      expect(dbCalls).toEqual([]);
+    });
+  }
+  for (const [name, call] of Object.entries(routeCalls)) {
+    it(`${name} answers 401 without touching the database`, async () => {
+      expect((await call()).status).toBe(401);
+      expect(dbCalls).toEqual([]);
+    });
+  }
+});
+
+// --- signed in, wrong entity -------------------------------------------------------
+
+describe('an Accountant on Sprouted Roots asking for Oikazi', () => {
+  beforeEach(() => signIn({ role: 'accountant' }, [GRANTED_ENTITY]));
+
+  for (const [name, call] of Object.entries(documentCalls)) {
+    if (!call) continue;
+    it(`${name} is refused and reads nothing`, async () => {
+      const result = await call();
+      expect(isRefusal(result)).toBe(true);
+      expect(errorOf(result)).toBe('You do not have access to this entity.');
+      onlyAccessLookup();
+    });
+  }
+
+  for (const [name, call] of Object.entries(routeCalls)) {
+    it(`${name} answers 403 and reads nothing`, async () => {
+      expect((await call()).status).toBe(403);
+      onlyAccessLookup();
+    });
+  }
+
+  it('sees only Sprouted Roots in the initial data — in the query itself, not after', async () => {
+    signIn({ id: 'scope-probe', role: 'accountant' }, [GRANTED_ENTITY]);
+    const principal = await getPrincipal();
+    expect(principal).not.toBeNull();
+    await loadInitialData(principal!);
+
+    const entityScoped = scopeProbe.filter((probe) => probe.call !== 'contact.findMany');
+    expect(entityScoped.length).toBeGreaterThanOrEqual(6);
+    for (const probe of entityScoped) {
+      const where = (probe.args as { where: { entityId?: { in: string[] }; id?: { in: string[] } } }).where;
+      const scope = where.entityId?.in ?? where.id?.in;
+      expect(scope, probe.call).toEqual([GRANTED_ENTITY]);
+    }
+    const contacts = scopeProbe.find((probe) => probe.call === 'contact.findMany');
+    const balanceScope = (contacts?.args as { include: { balances: { where: { entityId: { in: string[] } } } } }).include.balances.where;
+    expect(balanceScope.entityId.in).toEqual([GRANTED_ENTITY]);
+  });
+
+  it('an entity that does not exist is refused identically to one not granted', async () => {
+    const notGranted = await documentActions.postDocument(FORBIDDEN_ENTITY, 'doc-1');
+    const unknown = await documentActions.postDocument('no-such-entity', 'doc-1');
+    expect(notGranted).toEqual(unknown);
+  });
+});
+
+describe('a Viewer with access to Oikazi', () => {
+  beforeEach(() => signIn({ role: 'viewer' }, [FORBIDDEN_ENTITY]));
+
+  for (const [name, call] of Object.entries(documentCalls)) {
+    if (!call) continue;
+    it(`${name} is refused by role, and reads nothing`, async () => {
+      const result = await call();
+      expect(isRefusal(result)).toBe(true);
+      expect(errorOf(result)).toMatch(/cannot do that/);
+      onlyAccessLookup();
+    });
+  }
+
+  it('cannot run an export or read the audit trail', async () => {
+    expect((await routeCalls['GET /api/backups']()).status).toBe(403);
+    expect((await routeCalls['GET /api/audit']()).status).toBe(403);
+    onlyAccessLookup();
+  });
+});
+
+describe('roles that are not Owner', () => {
+  for (const role of ['accountant', 'data-entry', 'viewer']) {
+    for (const [name, call] of Object.entries(userCalls)) {
+      it(`${role}: ${name} is refused and reads nothing`, async () => {
+        signIn({ role }, [GRANTED_ENTITY, FORBIDDEN_ENTITY]);
+        expect(isRefusal(await call())).toBe(true);
+        onlyAccessLookup();
+      });
+    }
+    it(`${role}: cannot create an entity`, async () => {
+      signIn({ role }, [GRANTED_ENTITY]);
+      const result = await documentActions.createEntity({ name: 'X', type: 'manufacturing', financialYearEnd: '', vatRegistered: false, tin: '' });
+      expect(isRefusal(result)).toBe(true);
+      onlyAccessLookup();
+    });
+  }
+
+  it('viewer: cannot create a contact', async () => {
+    signIn({ role: 'viewer' }, [GRANTED_ENTITY]);
+    const result = await documentActions.createContact({
+      name: 'X',
+      type: 'supplier',
+      category: 'supplier',
+      tin: '',
+      phone: '',
+      email: '',
+      address: '',
+      withholdingTaxStatus: 'none',
+      isFarmerAggregator: false,
+    });
+    expect(isRefusal(result)).toBe(true);
+    onlyAccessLookup();
+  });
+});
+
+// --- sessions that should be worthless ---------------------------------------------
+
+describe('stale sessions', () => {
+  it('a deactivated user with a surviving session is treated as signed out', async () => {
+    signIn({ role: 'owner', deactivatedAt: new Date() }, []);
+    expect(isRefusal(await documentActions.postDocument(GRANTED_ENTITY, 'doc-1'))).toBe(true);
+    expect((await routeCalls['GET /api/audit']()).status).toBe(401);
+    expect(dbCalls).toEqual([]);
+  });
+
+  it('a locked user with a surviving session is treated as signed out', async () => {
+    signIn({ role: 'accountant', banned: true }, [GRANTED_ENTITY]);
+    expect(isRefusal(await documentActions.postDocument(GRANTED_ENTITY, 'doc-1'))).toBe(true);
+    expect(dbCalls).toEqual([]);
+  });
+
+  it('an Accountant who has not set up TOTP can do nothing, even on their own entity', async () => {
+    signIn({ role: 'accountant', twoFactorEnabled: false }, [GRANTED_ENTITY]);
+    const result = await documentActions.postDocument(GRANTED_ENTITY, 'doc-1');
+    expect(isRefusal(result)).toBe(true);
+    expect(errorOf(result)).toMatch(/two-factor/);
+    onlyAccessLookup();
+  });
+
+  it('a Viewer without TOTP is not blocked by it (their role cannot post)', async () => {
+    signIn({ role: 'viewer', twoFactorEnabled: false }, [GRANTED_ENTITY]);
+    const result = await documentActions.postDocument(GRANTED_ENTITY, 'doc-1');
+    expect(errorOf(result)).toMatch(/cannot do that/);
+  });
+});
+
+// --- positive control ----------------------------------------------------------------
+
+describe('positive control: the guard is what stopped the calls above', () => {
+  it('an Accountant on Oikazi posting to Oikazi gets past the guard to the document lookup', async () => {
+    signIn({ role: 'accountant' }, [FORBIDDEN_ENTITY]);
+    // The fake database refuses the first real read, so the call throws — and
+    // the name of that read is the proof the guard let it through.
+    await expect(documentActions.postDocument(FORBIDDEN_ENTITY, 'doc-1')).rejects.toThrow('unexpected database access: entity.findUnique');
+    expect(dbCalls).toEqual(['userEntityAccess.findMany', 'entity.findUnique']);
+  });
+
+  it('an Owner reaches the audit trail of any entity', async () => {
+    signIn({ role: 'owner' }, []);
+    await expect(routeCalls['GET /api/audit']()).rejects.toThrow('unexpected database access: entity.count');
+    // Owners hold every entity implicitly: no access rows were even read.
+    expect(dbCalls).toEqual(['entity.count']);
+  });
+
+  it('an Owner reaches the user list', async () => {
+    signIn({ role: 'owner' }, []);
+    await expect(userActions.listUsers()).rejects.toThrow('unexpected database access: user.findMany');
+  });
+});

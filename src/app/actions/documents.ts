@@ -8,9 +8,11 @@
  * with their audit event, so the ledger can never hold a journal without the
  * event that explains it, or the reverse.
  *
- * These are reachable by direct POST with no authentication. `userName` is
- * whatever the client sent. Auth is the first job after this pass; until
- * then this must not be deployed anywhere untrusted.
+ * Every function is reachable by direct POST, so none of them trusts the
+ * caller: the first thing each does is ask src/lib/dal.ts who is signed in
+ * and whether their role and entity access allow the operation. The
+ * identity recorded on journals, documents, filings and audit events is the
+ * session's, never an argument.
  *
  * Server functions dispatch sequentially on the client, so a debounced
  * autosave queued behind a slow post blocks other actions — the shell
@@ -21,6 +23,8 @@ import { refresh } from 'next/cache';
 
 import { journalEntriesBalance } from '@/lib/accounting-integrity';
 import { recordAuditEvent } from '@/lib/audit';
+import type { Permission, Principal } from '@/lib/authz';
+import { authorizationFailure, requireEntityAccess, requirePermission } from '@/lib/dal';
 import { seedChartForEntity } from '@/lib/data/chart.ts';
 import { documentInclude, documentRecord, kindToPrisma, vatToPrisma } from '@/lib/data/documents';
 import { contactRecord, entityRecord, toPrismaEnum } from '@/lib/data/mappers';
@@ -42,6 +46,39 @@ export type ActionResult<T> = { ok: true; value: T } | { ok: false; error: strin
 
 function fail<T>(error: string): ActionResult<T> {
   return { ok: false, error };
+}
+
+/**
+ * Authorize first, then run. Nothing inside `run` executes — no query, no
+ * read — unless the signed-in user may perform `permission` on `entityId`.
+ * An authorization failure is returned as a value, like any other refusal.
+ */
+async function withEntityAccess<T>(
+  entityId: string,
+  permission: Permission,
+  run: (principal: Principal) => Promise<ActionResult<T>>,
+): Promise<ActionResult<T>> {
+  let principal: Principal;
+  try {
+    principal = await requireEntityAccess(entityId, permission);
+  } catch (error) {
+    const failure = authorizationFailure(error);
+    if (failure) return failure;
+    throw error;
+  }
+  return run(principal);
+}
+
+async function withPermission<T>(permission: Permission, run: (principal: Principal) => Promise<ActionResult<T>>): Promise<ActionResult<T>> {
+  let principal: Principal;
+  try {
+    principal = await requirePermission(permission);
+  } catch (error) {
+    const failure = authorizationFailure(error);
+    if (failure) return failure;
+    throw error;
+  }
+  return run(principal);
 }
 
 async function requireEntity(entityId: string) {
@@ -83,11 +120,11 @@ function postedNumberOf(document: { id: string; status: string; number: string |
  * longer a draft — the editor's autosave can fire after a post, and that
  * must not be an error.
  */
-export async function saveDocumentDraft(
-  entityId: string,
-  input: unknown,
-  userName: string,
-): Promise<ActionResult<DocumentRecord>> {
+export async function saveDocumentDraft(entityId: string, input: unknown): Promise<ActionResult<DocumentRecord>> {
+  return withEntityAccess(entityId, 'document:draft', (principal) => saveDraft(entityId, input, principal));
+}
+
+async function saveDraft(entityId: string, input: unknown, principal: Principal): Promise<ActionResult<DocumentRecord>> {
   await requireEntity(entityId);
 
   const kind = (input as { kind?: string } | null)?.kind === 'bill' ? 'bill' : 'invoice';
@@ -142,6 +179,7 @@ export async function saveDocumentDraft(
           evatClearanceNumber: form.evatClearanceNumber || null,
           evatQrCode: form.evatQrCode || null,
           evatTimestamp: form.evatTimestamp || null,
+          lastEditedById: principal.userId,
           lines: { create: linesData },
         },
         include: documentInclude,
@@ -160,13 +198,16 @@ export async function saveDocumentDraft(
         evatClearanceNumber: form.evatClearanceNumber || null,
         evatQrCode: form.evatQrCode || null,
         evatTimestamp: form.evatTimestamp || null,
+        createdById: principal.userId,
+        lastEditedById: principal.userId,
         lines: { create: linesData },
       },
       include: documentInclude,
     });
   });
 
-  void userName; // drafts are not audited; posting is
+  // Drafts are not audited (the audit trail is for the ledger); the editor's
+  // identity is on the row.
   refresh();
   return { ok: true, value: documentRecord(row) };
 }
@@ -180,11 +221,11 @@ export async function saveDocumentDraft(
  * The status change is a guarded updateMany on DRAFT, so two concurrent
  * posts of the same document produce exactly one journal.
  */
-export async function postDocument(
-  entityId: string,
-  documentId: string,
-  userName: string,
-): Promise<ActionResult<DocumentRecord>> {
+export async function postDocument(entityId: string, documentId: string): Promise<ActionResult<DocumentRecord>> {
+  return withEntityAccess(entityId, 'document:post', (principal) => post(entityId, documentId, principal));
+}
+
+async function post(entityId: string, documentId: string, principal: Principal): Promise<ActionResult<DocumentRecord>> {
   await requireEntity(entityId);
 
   const document = await prisma.document.findFirst({
@@ -255,6 +296,7 @@ export async function postDocument(
           reference: number,
           description: `${documentLabel(kind, number)} — ${document.contact.name}`,
           postedAt: document.date,
+          postedById: principal.userId,
           lines: {
             create: lines.map((line) => ({
               entityId,
@@ -276,7 +318,8 @@ export async function postDocument(
       await recordAuditEvent(
         {
           entityId,
-          userName,
+          userId: principal.userId,
+          userName: principal.name,
           action: 'POST',
           resourceType: kind,
           resourceRef: number,
@@ -329,11 +372,11 @@ function documentRecordToForm(record: DocumentRecord): DocumentFormState {
  * Status and audit only. Posting the cash movement belongs to bank
  * reconciliation, which is not persisted yet — recorded as a known gap.
  */
-export async function markDocumentPaid(
-  entityId: string,
-  documentId: string,
-  userName: string,
-): Promise<ActionResult<DocumentRecord>> {
+export async function markDocumentPaid(entityId: string, documentId: string): Promise<ActionResult<DocumentRecord>> {
+  return withEntityAccess(entityId, 'document:mark-paid', (principal) => markPaid(entityId, documentId, principal));
+}
+
+async function markPaid(entityId: string, documentId: string, principal: Principal): Promise<ActionResult<DocumentRecord>> {
   await requireEntity(entityId);
 
   const row = await prisma.$transaction(async (tx) => {
@@ -350,7 +393,8 @@ export async function markDocumentPaid(
     await recordAuditEvent(
       {
         entityId,
-        userName,
+        userId: principal.userId,
+        userName: principal.name,
         action: 'EDIT',
         resourceType: kind,
         resourceRef: number,
@@ -376,11 +420,11 @@ export async function markDocumentPaid(
  * original entry is untouched — nothing is deleted. Refused if today's period
  * has been filed, because the reversal has to land in an open period.
  */
-export async function voidDocument(
-  entityId: string,
-  documentId: string,
-  userName: string,
-): Promise<ActionResult<DocumentRecord>> {
+export async function voidDocument(entityId: string, documentId: string): Promise<ActionResult<DocumentRecord>> {
+  return withEntityAccess(entityId, 'document:void', (principal) => voidPosted(entityId, documentId, principal));
+}
+
+async function voidPosted(entityId: string, documentId: string, principal: Principal): Promise<ActionResult<DocumentRecord>> {
   await requireEntity(entityId);
 
   const today = todayIso();
@@ -424,6 +468,7 @@ export async function voidDocument(
         description: `Reversal of ${documentLabel(kind, number)} — ${document.contact.name}`,
         postedAt: dateOf(today),
         reversalOfId: original.id,
+        postedById: principal.userId,
         lines: {
           create: original.lines.map((line) => ({
             entityId,
@@ -444,7 +489,8 @@ export async function voidDocument(
     await recordAuditEvent(
       {
         entityId,
-        userName,
+        userId: principal.userId,
+        userName: principal.name,
         action: 'VOID',
         resourceType: kind,
         resourceRef: number,
@@ -470,7 +516,11 @@ export async function voidDocument(
 
 // --- periods -----------------------------------------------------------------------
 
-export async function fileTaxPeriod(entityId: string, period: string, userName: string): Promise<ActionResult<string[]>> {
+export async function fileTaxPeriod(entityId: string, period: string): Promise<ActionResult<string[]>> {
+  return withEntityAccess(entityId, 'period:file', (principal) => filePeriod(entityId, period, principal));
+}
+
+async function filePeriod(entityId: string, period: string, principal: Principal): Promise<ActionResult<string[]>> {
   await requireEntity(entityId);
   if (!/^\d{4}-\d{2}$/.test(period)) {
     return fail('Period must be YYYY-MM.');
@@ -480,11 +530,12 @@ export async function fileTaxPeriod(entityId: string, period: string, userName: 
     const existing = await tx.taxPeriodFiling.findUnique({ where: { entityId_period: { entityId, period } } });
     if (existing) return;
 
-    await tx.taxPeriodFiling.create({ data: { entityId, period, filedBy: userName } });
+    await tx.taxPeriodFiling.create({ data: { entityId, period, filedBy: principal.name, filedById: principal.userId } });
     await recordAuditEvent(
       {
         entityId,
-        userName,
+        userId: principal.userId,
+        userName: principal.name,
         action: 'FILE_PERIOD',
         resourceType: 'vat-period',
         resourceRef: period,
@@ -513,7 +564,13 @@ export type NewContactInput = {
   isFarmerAggregator: boolean;
 };
 
+// Contacts are shared across the group, so this is a role check, not an
+// entity one: anyone who can draft a document can add the contact it needs.
 export async function createContact(input: NewContactInput): Promise<ActionResult<ContactRecord>> {
+  return withPermission('contact:create', () => addContact(input));
+}
+
+async function addContact(input: NewContactInput): Promise<ActionResult<ContactRecord>> {
   const name = input.name.trim();
   if (!name) {
     return fail('A contact needs a name.');
@@ -559,6 +616,10 @@ function slugify(value: string): string {
  * through. No schema change is needed for a fourth, fifth or tenth entity.
  */
 export async function createEntity(input: NewEntityInput): Promise<ActionResult<{ entity: EntityRecord; contact: ContactRecord }>> {
+  return withPermission('entity:create', () => addEntity(input));
+}
+
+async function addEntity(input: NewEntityInput): Promise<ActionResult<{ entity: EntityRecord; contact: ContactRecord }>> {
   const name = input.name.trim();
   if (!name) {
     return fail('An entity needs a name.');
