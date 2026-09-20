@@ -96,6 +96,6 @@ The files worth reading first in `src/lib/`:
 
 ## A caution on the current state
 
-The UI still reads its accounting data from demo arrays — `seed-data.ts` for entities and contacts, `report-data.ts` and constants inside the shell for everything else — not from the database. The schema is real, migrated and seeded, but only the audit log and exports round-trip through it today. Persisting documents and journals, then pointing the reports at the ledger, is the outstanding work — see the known gaps in [PROJECT_STATE.md](PROJECT_STATE.md).
+Entities, contacts, charts of accounts, invoices, bills, journals, filed periods, the audit log and exports all live in Postgres and round-trip through it. **Reports, the VAT return, intercompany, bank reconciliation and the dashboard do not yet** — they still read demo arrays in `report-data.ts` and the shell, so a document you post is in the ledger but not on any report. Pointing the reports at the ledger is the next pass; see [PROJECT_STATE.md](PROJECT_STATE.md).
 
-`render.yaml` describes the deployment but nothing has been deployed yet.
+**There is no authentication.** Every server function is reachable by direct POST. Do not deploy this anywhere untrusted until that is done. `render.yaml` describes the deployment; nothing has been deployed yet.

@@ -1,17 +1,37 @@
 'use client';
 
 import { ledgerLines, projects, reportAccounts, type AccountClass, type CashflowClass, type LedgerLine, type ReportFund } from '@/lib/report-data';
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition, type ChangeEvent, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Money } from '@/components/ui/money';
-import type { ContactCategory, ContactRecord, ContactType, EntityRecord, EntityType } from '@/lib/data/types';
-import { accentPalette, seedContacts, seedEntities } from '@/lib/seed-data';
+import type { ContactCategory, ContactRecord, ContactType, DocumentRecord, EntityRecord, EntityType, InitialData } from '@/lib/data/types';
+import {
+  accountNameMap,
+  buildJournalEntries,
+  buildTotals,
+  makeDocument,
+  makeLine,
+  periodOf,
+  type DocumentFormState,
+  type DocumentKind,
+  type DocumentLine,
+  type DocumentStatus,
+  type JournalLineDraft,
+} from '@/lib/documents';
+import {
+  createContact,
+  createEntity,
+  fileTaxPeriod,
+  markDocumentPaid,
+  postDocument,
+  saveDocumentDraft,
+  voidDocument,
+} from '@/app/actions/documents';
 import {
   leviesOnBase,
   roundPesewas,
-  withholdingRateOf,
   withholdingTaxOn,
   type VATTreatment,
   type WithholdingRate,
@@ -210,303 +230,6 @@ function csvEscape(value: string) {
   return `"${value.replace(/"/g, '""')}"`;
 }
 
-function slugify(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'new-entity';
-}
-
-type DocumentStatus = 'draft' | 'awaiting-payment' | 'paid' | 'voided';
-
-type DocumentLine = {
-  id: string;
-  description: string;
-  quantity: number;
-  unitPrice: number;
-  accountCode: string;
-  vatTreatment: VATTreatment;
-};
-
-type DocumentFormState = {
-  docNumber: string;
-  contactId: string;
-  date: string;
-  dueDate: string;
-  status: DocumentStatus;
-  lines: DocumentLine[];
-  evatClearanceNumber: string;
-  evatQrCode: string;
-  evatTimestamp: string;
-};
-
-type JournalEntry = {
-  accountCode: string;
-  accountName: string;
-  amount: number;
-  type: 'debit' | 'credit';
-};
-
-const documentAccountOptions = [
-  '1010',
-  '1101',
-  '1102',
-  '1103',
-  '2001',
-  '2020',
-  '2025',
-  '2030',
-  '2035',
-  '4001',
-  '4005',
-  '5001',
-  '5010',
-  '6001',
-  '6005',
-  '6010',
-];
-
-const accountNames: Record<string, string> = {
-  '1010': 'Trade Receivables',
-  '1101': 'VAT Input Tax Recoverable',
-  '1102': 'NHIL Input Tax Recoverable',
-  '1103': 'GETFund Input Tax Recoverable',
-  '2001': 'Trade Payables',
-  '2020': 'VAT Output Tax Payable',
-  '2025': 'NHIL Payable',
-  '2030': 'GETFund Payable',
-  '2035': 'Withholding Tax Payable',
-  '4001': 'Domestic Sales',
-  '4005': 'Export Sales',
-  '5001': 'Raw Materials Used',
-  '5010': 'Production Labour Allocation',
-  '6001': 'Factory Utilities',
-  '6005': 'Factory Repairs & Maintenance',
-  '6010': 'Production Salaries',
-};
-
-function makeLine(): DocumentLine {
-  return {
-    id: `line-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    description: '',
-    quantity: 1,
-    unitPrice: 0,
-    accountCode: '4001',
-    vatTreatment: 'standard',
-  };
-}
-
-function makeDocument(kind: 'invoice' | 'bill'): DocumentFormState {
-  const prefix = kind === 'invoice' ? 'INV' : 'BILL';
-  const today = new Date().toISOString().slice(0, 10);
-
-  return {
-    docNumber: `${prefix}-${String(Date.now()).slice(-4)}`,
-    contactId: seedContacts[0]?.id ?? 'nana-farmers',
-    date: today,
-    dueDate: today,
-    status: 'draft',
-    lines: [makeLine()],
-    evatClearanceNumber: '',
-    evatQrCode: '',
-    evatTimestamp: '',
-  };
-}
-
-const documentStatuses: DocumentStatus[] = ['draft', 'awaiting-payment', 'paid', 'voided'];
-const vatTreatments: VATTreatment[] = ['standard', 'zero-rated', 'exempt'];
-
-function asText(value: unknown, fallback = ''): string {
-  return typeof value === 'string' ? value : fallback;
-}
-
-function asNumber(value: unknown, fallback: number): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
-}
-
-function normalizeLine(value: unknown): DocumentLine {
-  const line = (value ?? {}) as Partial<DocumentLine>;
-  const fresh = makeLine();
-
-  return {
-    id: asText(line.id, fresh.id),
-    description: asText(line.description),
-    quantity: asNumber(line.quantity, fresh.quantity),
-    unitPrice: asNumber(line.unitPrice, fresh.unitPrice),
-    accountCode: asText(line.accountCode, fresh.accountCode),
-    vatTreatment: vatTreatments.includes(line.vatTreatment as VATTreatment)
-      ? (line.vatTreatment as VATTreatment)
-      : fresh.vatTreatment,
-  };
-}
-
-// Saved drafts can predate any field on DocumentFormState, so fill every gap from a
-// fresh document. Without this a restored draft hands the form undefined values and
-// React flips those inputs from controlled to uncontrolled.
-function normalizeDocument(value: unknown, kind: 'invoice' | 'bill'): DocumentFormState {
-  const draft = (value ?? {}) as Partial<DocumentFormState>;
-  const fresh = makeDocument(kind);
-  const lines = Array.isArray(draft.lines) ? draft.lines.map(normalizeLine) : [];
-
-  return {
-    docNumber: asText(draft.docNumber, fresh.docNumber),
-    contactId: asText(draft.contactId, fresh.contactId),
-    date: asText(draft.date, fresh.date),
-    dueDate: asText(draft.dueDate, fresh.dueDate),
-    status: documentStatuses.includes(draft.status as DocumentStatus)
-      ? (draft.status as DocumentStatus)
-      : fresh.status,
-    lines: lines.length > 0 ? lines : fresh.lines,
-    evatClearanceNumber: asText(draft.evatClearanceNumber),
-    evatQrCode: asText(draft.evatQrCode),
-    evatTimestamp: asText(draft.evatTimestamp),
-  };
-}
-
-function lineTaxBreakdown(line: DocumentLine) {
-  // Each line is its own tax point, so levies are rounded per line and then
-  // summed — rounding the summed base instead would disagree with the invoice.
-  return leviesOnBase(roundPesewas(line.quantity * line.unitPrice), line.vatTreatment);
-}
-
-function buildTotals(lines: DocumentLine[], withholdingTaxStatus?: WithholdingTaxStatus) {
-  const lineSummaries = lines.map(lineTaxBreakdown);
-  const subtotal = lineSummaries.reduce((sum, line) => sum + line.base, 0);
-  const vat = lineSummaries.reduce((sum, line) => sum + line.vat, 0);
-  const nhil = lineSummaries.reduce((sum, line) => sum + line.nhil, 0);
-  const getFund = lineSummaries.reduce((sum, line) => sum + line.getFund, 0);
-  const totalTax = vat + nhil + getFund;
-  const total = subtotal + totalTax;
-
-  const withheldRate = withholdingRateOf(withholdingTaxStatus);
-  const withholdingTax = withholdingTaxOn(total, withheldRate);
-  const netPayable = Math.max(total - withholdingTax, 0);
-
-  return {
-    subtotal,
-    vat,
-    nhil,
-    getFund,
-    totalTax,
-    total,
-    withholdingTax,
-    netPayable,
-  };
-}
-
-function buildJournalEntries(documentState: DocumentFormState, isPurchase: boolean, contact?: ContactRecord) {
-  const totals = buildTotals(documentState.lines, isPurchase ? contact?.withholdingTaxStatus : undefined);
-  const groupedEntries: JournalEntry[] = [];
-
-  if (!documentState.lines.length) {
-    return groupedEntries;
-  }
-
-  if (!isPurchase) {
-    groupedEntries.push({
-      accountCode: '1010',
-      accountName: accountNames['1010'],
-      amount: totals.total,
-      type: 'debit',
-    });
-
-    const revenueAccounts = documentState.lines.reduce(
-      (accumulator, line) => {
-        const summary = lineTaxBreakdown(line);
-        const existing = accumulator[line.accountCode] ?? 0;
-        accumulator[line.accountCode] = existing + summary.base;
-        return accumulator;
-      },
-      {} as Record<string, number>,
-    );
-
-    Object.entries(revenueAccounts).forEach(([accountCode, amount]) => {
-      groupedEntries.push({
-        accountCode,
-        accountName: accountNames[accountCode] ?? 'Revenue',
-        amount,
-        type: 'credit',
-      });
-    });
-
-    groupedEntries.push({
-      accountCode: '2020',
-      accountName: accountNames['2020'],
-      amount: totals.vat,
-      type: 'credit',
-    });
-    groupedEntries.push({
-      accountCode: '2025',
-      accountName: accountNames['2025'],
-      amount: totals.nhil,
-      type: 'credit',
-    });
-    groupedEntries.push({
-      accountCode: '2030',
-      accountName: accountNames['2030'],
-      amount: totals.getFund,
-      type: 'credit',
-    });
-  } else {
-    const purchaseAccounts = documentState.lines.reduce(
-      (accumulator, line) => {
-        const summary = lineTaxBreakdown(line);
-        const existing = accumulator[line.accountCode] ?? 0;
-        accumulator[line.accountCode] = existing + summary.base;
-        return accumulator;
-      },
-      {} as Record<string, number>,
-    );
-
-    Object.entries(purchaseAccounts).forEach(([accountCode, amount]) => {
-      groupedEntries.push({
-        accountCode,
-        accountName: accountNames[accountCode] ?? 'Expense',
-        amount,
-        type: 'debit',
-      });
-    });
-
-    groupedEntries.push({
-      accountCode: '1101',
-      accountName: accountNames['1101'],
-      amount: totals.vat,
-      type: 'debit',
-    });
-    groupedEntries.push({
-      accountCode: '1102',
-      accountName: accountNames['1102'],
-      amount: totals.nhil,
-      type: 'debit',
-    });
-    groupedEntries.push({
-      accountCode: '1103',
-      accountName: accountNames['1103'],
-      amount: totals.getFund,
-      type: 'debit',
-    });
-
-    groupedEntries.push({
-      accountCode: '2001',
-      accountName: accountNames['2001'],
-      amount: Math.max(totals.total - totals.withholdingTax, 0),
-      type: 'credit',
-    });
-
-    if (totals.withholdingTax > 0) {
-      groupedEntries.push({
-        accountCode: '2035',
-        accountName: accountNames['2035'],
-        amount: totals.withholdingTax,
-        type: 'credit',
-      });
-    }
-  }
-
-  return groupedEntries;
-}
-
 /**
  * Money inputs: people type cedis (12.50), the ledger stores pesewas (1250).
  * The conversion rounds, because 12.34 * 100 is 1233.9999999999998 in
@@ -609,15 +332,54 @@ function getSuggestionsForBankLine(line: BankLine): BankSuggestion[] {
     .slice(0, 3);
 }
 
-export function AppShell() {
-  const [entities, setEntities] = useState<EntityRecord[]>(seedEntities);
-  const [selectedEntityId, setSelectedEntityId] = useState(seedEntities[0].id);
+/** A persisted document as the editor holds it. */
+function formFrom(record: DocumentRecord): DocumentFormState {
+  return {
+    id: record.id,
+    kind: record.kind,
+    docNumber: record.docNumber,
+    contactId: record.contactId,
+    date: record.date,
+    dueDate: record.dueDate,
+    status: record.status,
+    lines: record.lines.map((line) => ({
+      id: line.id,
+      description: line.description,
+      quantity: line.quantity,
+      unitPrice: line.unitPrice,
+      accountCode: line.accountCode,
+      vatTreatment: line.vatTreatment,
+    })),
+    evatClearanceNumber: record.evatClearanceNumber,
+    evatQrCode: record.evatQrCode,
+    evatTimestamp: record.evatTimestamp,
+  };
+}
+
+/** The document the editor should open for an entity and kind: its newest draft, else a fresh one. */
+function initialDocumentFor(data: InitialData, entityId: string, kind: DocumentKind): DocumentFormState {
+  const draft = (data.documentsByEntity[entityId] ?? []).find((document) => document.kind === kind && document.status === 'draft');
+  if (draft) return formFrom(draft);
+  const contact = data.contacts.find((candidate) => candidate.balances[entityId] !== undefined) ?? data.contacts[0];
+  return makeDocument(kind, contact?.id ?? '');
+}
+
+const statusLabels: Record<DocumentStatus, string> = {
+  draft: 'Draft',
+  'awaiting-payment': 'Awaiting payment',
+  paid: 'Paid',
+  voided: 'Voided',
+};
+
+export function AppShell({ initialData }: { initialData: InitialData }) {
+  const [entities, setEntities] = useState<EntityRecord[]>(initialData.entities);
+  const [selectedEntityId, setSelectedEntityId] = useState(initialData.entities[0]?.id ?? '');
   const [activeNav, setActiveNav] = useState<(typeof navigationItems)[number]>('Dashboard');
   const [entityMenuOpen, setEntityMenuOpen] = useState(false);
   const [showAddEntityForm, setShowAddEntityForm] = useState(false);
   const [showAddContactForm, setShowAddContactForm] = useState(false);
   const [formValues, setFormValues] = useState(defaultFormValues);
-  const [contacts, setContacts] = useState<ContactRecord[]>(seedContacts);
+  const [contacts, setContacts] = useState<ContactRecord[]>(initialData.contacts);
   const [contactFormValues, setContactFormValues] = useState({
     name: '',
     type: 'supplier' as ContactType,
@@ -629,9 +391,12 @@ export function AppShell() {
     withholdingTaxStatus: 'none' as WithholdingTaxStatus,
     isFarmerAggregator: false,
   });
-  const [salesDocument, setSalesDocument] = useState<DocumentFormState>(() => makeDocument('invoice'));
-  const [purchaseDocument, setPurchaseDocument] = useState<DocumentFormState>(() => makeDocument('bill'));
+  const [salesDocument, setSalesDocument] = useState<DocumentFormState>(() => initialDocumentFor(initialData, initialData.entities[0]?.id ?? '', 'invoice'));
+  const [purchaseDocument, setPurchaseDocument] = useState<DocumentFormState>(() => initialDocumentFor(initialData, initialData.entities[0]?.id ?? '', 'bill'));
   const [journalOpen, setJournalOpen] = useState(true);
+  const [documentError, setDocumentError] = useState<string | null>(null);
+  const [documentPending, startDocumentTransition] = useTransition();
+  const autosaveTimer = useRef<number | null>(null);
   const [intercompanyTransactions, setIntercompanyTransactions] = useState<IntercompanyTransaction[]>([
     {
       id: 'ic-001',
@@ -694,24 +459,13 @@ export function AppShell() {
   const [intercompanyForm, setIntercompanyForm] = useState(() => ({
     reference: newIntercompanyReference(),
     date: new Date().toISOString().slice(0, 10),
-    fromEntityId: seedEntities[0].id,
-    toEntityId: seedEntities[1].id,
+    fromEntityId: initialData.entities[0]?.id ?? '',
+    toEntityId: initialData.entities[1]?.id ?? initialData.entities[0]?.id ?? '',
     amount: 0,
     description: 'Raw material supply',
   }));
 
-  const [filedPeriods, setFiledPeriods] = useState<Record<string, string[]>>(() => {
-    if (typeof window === 'undefined') {
-      return {};
-    }
-
-    try {
-      const raw = window.localStorage.getItem('sprouted-vat-filed-periods');
-      return raw ? JSON.parse(raw) : {};
-    } catch {
-      return {};
-    }
-  });
+  const [filedPeriods, setFiledPeriods] = useState<Record<string, string[]>>(initialData.filedPeriodsByEntity);
   const [selectedTaxPeriod, setSelectedTaxPeriod] = useState('2026-09');
   const [taxDrilldown, setTaxDrilldown] = useState<TaxBucket | null>(null);
 
@@ -796,12 +550,23 @@ export function AppShell() {
 
   const activeDocument = activeNav === 'Sales' ? salesDocument : purchaseDocument;
   const isPurchaseView = activeNav === 'Purchases';
-  const activeContact = entityContacts.find((contact) => contact.id === activeDocument.contactId) ?? entityContacts[0] ?? seedContacts[0];
-  const activeTotals = buildTotals(activeDocument.lines, isPurchaseView ? activeContact.withholdingTaxStatus : undefined);
-  const journalEntries = buildJournalEntries(activeDocument, isPurchaseView, activeContact);
+  const activeKind: DocumentKind = isPurchaseView ? 'bill' : 'invoice';
+  // The document's own contact by id first — a deactivated contact must still
+  // resolve rather than the editor silently swapping to the first in the list.
+  const activeContact =
+    contacts.find((contact) => contact.id === activeDocument.contactId) ?? entityContacts[0] ?? contacts[0];
+  const activeTotals = buildTotals(activeDocument.lines, isPurchaseView ? activeContact?.withholdingTaxStatus : undefined);
+  const entityAccounts = useMemo(() => initialData.accountsByEntity[selectedEntity.id] ?? [], [initialData, selectedEntity.id]);
+  const accountNames = useMemo(() => accountNameMap(entityAccounts), [entityAccounts]);
+  const entityDocuments = initialData.documentsByEntity[selectedEntity.id] ?? [];
+  const activeRecord = activeDocument.id ? entityDocuments.find((document) => document.id === activeDocument.id) : undefined;
+  const previewJournal: JournalLineDraft[] = buildJournalEntries(activeDocument, isPurchaseView, activeContact, accountNames);
+  // Once posted, the panel shows what the ledger actually holds, not a preview.
+  const journalEntries: JournalLineDraft[] = activeRecord?.journal ? activeRecord.journal.lines : previewJournal;
   const groupEntityOptions = entities;
 
-  const documentPeriodLocked = (filedPeriods[selectedEntity.id] ?? []).includes(periodKeyOf(activeDocument.date));
+  const documentPeriodLocked = (filedPeriods[selectedEntity.id] ?? []).includes(periodOf(activeDocument.date));
+  const documentReadOnly = activeDocument.status !== 'draft' || documentPeriodLocked;
   const filedPeriodKeys = filedPeriods[selectedEntity.id] ?? [];
   const isSelectedPeriodFiled = filedPeriodKeys.includes(selectedTaxPeriod);
 
@@ -1346,39 +1111,88 @@ export function AppShell() {
     [intercompanyBalances],
   );
 
+  // Switching entity reloads that entity's newest drafts into both editors;
+  // a refresh() after a server function reloads the open document from what
+  // the server now holds (its status and number may have changed). Both are
+  // syncs from the server's state into local editing state.
+  const lastSyncedEntity = useRef(selectedEntity.id);
   useEffect(() => {
-    const key = `sprouted-${selectedEntity.id}-${activeNav.toLowerCase()}-document`;
-    const stringValue = localStorage.getItem(key);
-
-    if (!stringValue) {
+    if (lastSyncedEntity.current !== selectedEntity.id) {
+      lastSyncedEntity.current = selectedEntity.id;
+      setSalesDocument(initialDocumentFor(initialData, selectedEntity.id, 'invoice'));
+      setPurchaseDocument(initialDocumentFor(initialData, selectedEntity.id, 'bill'));
+      setDocumentError(null);
       return;
     }
+    const sync = (setter: typeof setSalesDocument) =>
+      setter((current) => {
+        if (!current.id) return current;
+        const record = (initialData.documentsByEntity[selectedEntity.id] ?? []).find((document) => document.id === current.id);
+        // Only adopt the server copy when it has moved on (posted, voided); an
+        // in-flight draft edit must not be clobbered by its own autosave echo.
+        return record && record.status !== current.status ? formFrom(record) : current;
+      });
+    sync(setSalesDocument);
+    sync(setPurchaseDocument);
+    setFiledPeriods(initialData.filedPeriodsByEntity);
+    setEntities(initialData.entities);
+    setContacts(initialData.contacts);
+  }, [initialData, selectedEntity.id]);
 
-    try {
-      const parsed: unknown = JSON.parse(stringValue);
-      // Re-hydrating from localStorage whenever the entity or module changes is
-      // a sync from an external store, which is what effects are for. The
-      // cascading-render cost is one extra render per switch.
-      /* eslint-disable react-hooks/set-state-in-effect */
-      if (activeNav === 'Sales') {
-        setSalesDocument(normalizeDocument(parsed, 'invoice'));
-      } else if (activeNav === 'Purchases') {
-        setPurchaseDocument(normalizeDocument(parsed, 'bill'));
-      }
-      /* eslint-enable react-hooks/set-state-in-effect */
-    } catch {
-      // ignore invalid storage payloads and keep the fresh default form
-    }
-  }, [activeNav, selectedEntity.id]);
-
+  // Debounced autosave to the server for drafts. Cancelled before any post or
+  // void so a stale save cannot race the status change.
   useEffect(() => {
-    const key = `sprouted-${selectedEntity.id}-${activeNav.toLowerCase()}-document`;
-    const timer = window.setTimeout(() => {
-      localStorage.setItem(key, JSON.stringify(activeDocument));
+    if (activeDocument.status !== 'draft' || (activeNav !== 'Sales' && activeNav !== 'Purchases')) {
+      return;
+    }
+    const entityId = selectedEntity.id;
+    const snapshot = activeDocument;
+    const setter = activeNav === 'Sales' ? setSalesDocument : setPurchaseDocument;
+    autosaveTimer.current = window.setTimeout(() => {
+      autosaveTimer.current = null;
+      void saveDocumentDraft(entityId, snapshot, currentUserName).then((result) => {
+        if (!result.ok) {
+          setDocumentError(result.error);
+          return;
+        }
+        // Adopt the server id for a document that was new, so later saves update it.
+        setter((current) => (current.id ? current : { ...current, id: result.value.id }));
+      });
     }, 2500);
 
-    return () => window.clearTimeout(timer);
+    return () => {
+      if (autosaveTimer.current !== null) {
+        window.clearTimeout(autosaveTimer.current);
+        autosaveTimer.current = null;
+      }
+    };
   }, [activeDocument, activeNav, selectedEntity.id]);
+
+  // One-time import of filed periods that only exist in localStorage from
+  // before they were persisted. Old document drafts are simply discarded.
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem('sprouted-vat-filed-periods');
+      if (raw) {
+        const stored = JSON.parse(raw) as Record<string, string[]>;
+        for (const [entityId, periods] of Object.entries(stored)) {
+          if (!initialData.entities.some((entity) => entity.id === entityId)) continue;
+          for (const period of periods) {
+            if (!(initialData.filedPeriodsByEntity[entityId] ?? []).includes(period)) {
+              void fileTaxPeriod(entityId, period, currentUserName);
+            }
+          }
+        }
+        window.localStorage.removeItem('sprouted-vat-filed-periods');
+      }
+      for (const key of Object.keys(window.localStorage)) {
+        if (/^sprouted-.*-document$/.test(key)) window.localStorage.removeItem(key);
+      }
+    } catch {
+      // storage unavailable — nothing to import
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const metricsCards = [
     {
@@ -1415,45 +1229,25 @@ export function AppShell() {
       return;
     }
 
-    const nextEntity: EntityRecord = {
-      id: `${slugify(trimmedName)}-${Date.now()}`,
-      code: `SG${String(entities.length + 1).padStart(3, '0')}`,
-      name: trimmedName,
-      type: formValues.type,
-      financialYearEnd: formValues.financialYearEnd,
-      vatRegistered: formValues.vatRegistered,
-      tin: formValues.tin.trim() || 'TIN pending',
-      accent: accentPalette[entities.length % accentPalette.length],
-    };
-
-    setEntities((previous) => [...previous, nextEntity]);
-    setSelectedEntityId(nextEntity.id);
-    setActiveNav('Dashboard');
-    setShowAddEntityForm(false);
-    setFormValues(defaultFormValues);
-    setEntityMenuOpen(false);
-
-    setContacts((previous) => {
-      const groupBalances = Object.fromEntries(
-        [...entities, nextEntity].map((entity) => [entity.id, 0]),
-      );
-
-      const nextGroupContact: ContactRecord = {
-        id: `${slugify(trimmedName)}-group`,
+    startDocumentTransition(async () => {
+      const result = await createEntity({
         name: trimmedName,
-        type: 'supplier',
-        category: 'group-entity',
-        tin: formValues.tin.trim() || 'TIN pending',
-        phone: '',
-        email: '',
-        address: '',
-        withholdingTaxStatus: '5%',
-        isFarmerAggregator: false,
-        isActive: true,
-        balances: groupBalances,
-      };
-
-      return [...previous, nextGroupContact];
+        type: formValues.type,
+        financialYearEnd: formValues.financialYearEnd,
+        vatRegistered: formValues.vatRegistered,
+        tin: formValues.tin,
+      });
+      if (!result.ok) {
+        setDocumentError(result.error);
+        return;
+      }
+      setEntities((previous) => [...previous, result.value.entity]);
+      setContacts((previous) => [...previous.map((contact) => ({ ...contact, balances: { ...contact.balances, [result.value.entity.id]: 0 } })), result.value.contact]);
+      setSelectedEntityId(result.value.entity.id);
+      setActiveNav('Dashboard');
+      setShowAddEntityForm(false);
+      setFormValues(defaultFormValues);
+      setEntityMenuOpen(false);
     });
   }
 
@@ -1465,24 +1259,14 @@ export function AppShell() {
       return;
     }
 
-    const nextContact: ContactRecord = {
-      id: `${slugify(trimmedName)}-${Date.now()}`,
-      name: trimmedName,
-      type: contactFormValues.type,
-      category: contactFormValues.category,
-      tin: contactFormValues.tin.trim() || 'TIN pending',
-      phone: contactFormValues.phone.trim(),
-      email: contactFormValues.email.trim(),
-      address: contactFormValues.address.trim(),
-      withholdingTaxStatus: contactFormValues.withholdingTaxStatus,
-      isFarmerAggregator: contactFormValues.isFarmerAggregator,
-      isActive: true,
-      balances: Object.fromEntries(
-        entities.map((entity) => [entity.id, 0]),
-      ),
-    };
-
-    setContacts((previous) => [...previous, nextContact]);
+    startDocumentTransition(async () => {
+      const result = await createContact({ ...contactFormValues, name: trimmedName });
+      if (!result.ok) {
+        setDocumentError(result.error);
+        return;
+      }
+      setContacts((previous) => [...previous, result.value]);
+    });
     setShowAddContactForm(false);
     setContactFormValues({
       name: '',
@@ -1497,34 +1281,79 @@ export function AppShell() {
     });
   }
 
-  function updateCurrentDocument(patch: Partial<DocumentFormState>) {
-    if (patch.status && patch.status !== activeDocument.status) {
-      const kind = isPurchaseView ? 'bill' : 'invoice';
-      const action =
-        patch.status === 'voided'
-          ? 'VOID'
-          : patch.status === 'awaiting-payment' || patch.status === 'paid'
-            ? 'POST'
-            : 'EDIT';
-      void auditEvent({
-        entityId: selectedEntity.id,
-        action,
-        resourceType: kind,
-        resourceRef: activeDocument.docNumber,
-        summary: `${kind === 'bill' ? 'Bill' : 'Invoice'} ${activeDocument.docNumber} moved from ${activeDocument.status} to ${patch.status}`,
-        metadata: { total: activeTotals.total, contact: activeContact?.name },
-      });
-    }
+  // Status changes go through the server functions below, never through a patch.
+  function updateCurrentDocument(patch: Partial<Omit<DocumentFormState, 'status' | 'id' | 'kind'>>) {
+    if (documentReadOnly) return;
+    const setter = activeNav === 'Sales' ? setSalesDocument : setPurchaseDocument;
+    setter((current) => ({ ...current, ...patch }));
+  }
 
-    if (activeNav === 'Sales') {
-      setSalesDocument((current) => ({ ...current, ...patch }));
-      return;
+  function cancelAutosave() {
+    if (autosaveTimer.current !== null) {
+      window.clearTimeout(autosaveTimer.current);
+      autosaveTimer.current = null;
     }
+  }
 
-    setPurchaseDocument((current) => ({ ...current, ...patch }));
+  /** Save the open draft now and return its server id, saving first if it has never been saved. */
+  async function ensureSaved(): Promise<string | null> {
+    if (activeDocument.status !== 'draft') return activeDocument.id;
+    const result = await saveDocumentDraft(selectedEntity.id, activeDocument, currentUserName);
+    if (!result.ok) {
+      setDocumentError(result.error);
+      return null;
+    }
+    const setter = activeNav === 'Sales' ? setSalesDocument : setPurchaseDocument;
+    setter((current) => ({ ...current, id: result.value.id }));
+    return result.value.id;
+  }
+
+  function runDocumentAction(action: (documentId: string) => Promise<{ ok: true; value: DocumentRecord } | { ok: false; error: string }>) {
+    cancelAutosave();
+    setDocumentError(null);
+    startDocumentTransition(async () => {
+      const documentId = await ensureSaved();
+      if (!documentId) return;
+      const result = await action(documentId);
+      if (!result.ok) {
+        setDocumentError(result.error);
+        return;
+      }
+      const setter = activeNav === 'Sales' ? setSalesDocument : setPurchaseDocument;
+      setter(formFrom(result.value));
+    });
+  }
+
+  function postCurrentDocument() {
+    runDocumentAction((documentId) => postDocument(selectedEntity.id, documentId, currentUserName));
+  }
+
+  function markCurrentDocumentPaid() {
+    runDocumentAction((documentId) => markDocumentPaid(selectedEntity.id, documentId, currentUserName));
+  }
+
+  function voidCurrentDocument() {
+    runDocumentAction((documentId) => voidDocument(selectedEntity.id, documentId, currentUserName));
+  }
+
+  function startNewDocument() {
+    cancelAutosave();
+    setDocumentError(null);
+    const contact = entityContacts[0] ?? contacts[0];
+    const setter = activeNav === 'Sales' ? setSalesDocument : setPurchaseDocument;
+    setter(makeDocument(activeKind, contact?.id ?? ''));
+  }
+
+  function openDocument(record: DocumentRecord) {
+    cancelAutosave();
+    setDocumentError(null);
+    const setter = record.kind === 'invoice' ? setSalesDocument : setPurchaseDocument;
+    setter(formFrom(record));
+    setActiveNav(record.kind === 'invoice' ? 'Sales' : 'Purchases');
   }
 
   function updateLine(lineId: string, patch: Partial<DocumentLine>) {
+    if (documentReadOnly) return;
     const setter = activeNav === 'Sales' ? setSalesDocument : setPurchaseDocument;
     setter((current) => ({
       ...current,
@@ -1534,10 +1363,11 @@ export function AppShell() {
 
   function addLine() {
     const setter = activeNav === 'Sales' ? setSalesDocument : setPurchaseDocument;
-    setter((current) => ({ ...current, lines: [...current.lines, makeLine()] }));
+    setter((current) => ({ ...current, lines: [...current.lines, makeLine(activeKind)] }));
   }
 
   function removeLine(lineId: string) {
+    if (documentReadOnly) return;
     const setter = activeNav === 'Sales' ? setSalesDocument : setPurchaseDocument;
     setter((current) => ({
       ...current,
@@ -1610,16 +1440,14 @@ export function AppShell() {
       return;
     }
 
-    setFiledPeriods((current) => ({
-      ...current,
-      [selectedEntity.id]: [...(current[selectedEntity.id] ?? []), selectedTaxPeriod],
-    }));
-    void auditEvent({
-      entityId: selectedEntity.id,
-      action: 'FILE_PERIOD',
-      resourceType: 'vat-period',
-      resourceRef: selectedTaxPeriod,
-      summary: `VAT period ${selectedTaxPeriod} filed and locked for ${selectedEntity.name}`,
+    const entityId = selectedEntity.id;
+    startDocumentTransition(async () => {
+      const result = await fileTaxPeriod(entityId, selectedTaxPeriod, currentUserName);
+      if (!result.ok) {
+        setDocumentError(result.error);
+        return;
+      }
+      setFiledPeriods((current) => ({ ...current, [entityId]: result.value }));
     });
   }
 
@@ -3978,48 +3806,116 @@ export function AppShell() {
                 </div>
               </Card>
             </div>
+          ) : activeNav === 'Inventory' ? (
+            <Card className="rounded-2xl">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Inventory</p>
+              <h2 className="mt-1 text-2xl font-semibold text-slate-900">Not built yet</h2>
+              <p className="mt-3 max-w-xl text-sm text-slate-600">
+                Stock, raw material lots and processing yields are on the roadmap. Nothing here is recorded yet.
+              </p>
+            </Card>
           ) : (
             <Card className="rounded-2xl">
               <div className="border-b border-slate-200 pb-4">
                 <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{isPurchaseView ? 'Purchase' : 'Sales'}</p>
-                    <h2 className="mt-1 text-2xl font-semibold text-slate-900">{documentTitle}</h2>
+                    <h2 className="mt-1 text-2xl font-semibold text-slate-900">
+                      {documentTitle}
+                      {activeDocument.docNumber ? <span className="ml-3 font-mono text-lg text-slate-500">{activeDocument.docNumber}</span> : null}
+                    </h2>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Button variant="secondary" size="sm" disabled={documentPeriodLocked} onClick={() => updateCurrentDocument({ status: 'draft' })}>Draft</Button>
-                    <Button variant="secondary" size="sm" disabled={documentPeriodLocked} onClick={() => updateCurrentDocument({ status: 'awaiting-payment' })}>Awaiting payment</Button>
-                    <Button size="sm" disabled={documentPeriodLocked} onClick={() => updateCurrentDocument({ status: isPurchaseView ? 'paid' : 'paid' })}>Mark paid</Button>
-                    <Button variant="danger" size="sm" disabled={documentPeriodLocked} onClick={() => updateCurrentDocument({ status: 'voided' })}>Void</Button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={[
+                      'rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]',
+                      activeDocument.status === 'draft' ? 'bg-slate-100 text-slate-700' : activeDocument.status === 'voided' ? 'bg-red-100 text-red-700' : activeDocument.status === 'paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800',
+                    ].join(' ')}>
+                      {statusLabels[activeDocument.status]}
+                    </span>
+                    <Button variant="secondary" size="sm" disabled={documentPending} onClick={startNewDocument}>New {isPurchaseView ? 'bill' : 'invoice'}</Button>
+                    {activeDocument.status === 'draft' ? (
+                      <Button size="sm" disabled={documentPending || documentPeriodLocked} onClick={postCurrentDocument}>
+                        {documentPending ? 'Posting…' : 'Post'}
+                      </Button>
+                    ) : null}
+                    {activeDocument.status === 'awaiting-payment' ? (
+                      <Button size="sm" disabled={documentPending} onClick={markCurrentDocumentPaid}>Mark paid</Button>
+                    ) : null}
+                    {activeDocument.status === 'awaiting-payment' || activeDocument.status === 'paid' ? (
+                      <Button variant="danger" size="sm" disabled={documentPending} onClick={voidCurrentDocument}>Void</Button>
+                    ) : null}
                   </div>
                 </div>
               </div>
 
-              {documentPeriodLocked ? (
+              {documentError ? (
+                <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{documentError}</div>
+              ) : null}
+
+              {documentPeriodLocked && activeDocument.status === 'draft' ? (
                 <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-                  The VAT period for this document date has been filed and locked for {selectedEntity.name}. This document cannot be changed — post a reversing adjustment dated in the current open period instead.
+                  The VAT period for this document date has been filed and locked for {selectedEntity.name}. Date the document in an open period, or post a reversing adjustment dated in the current one.
+                </div>
+              ) : null}
+
+              {activeDocument.status === 'voided' && activeRecord?.voidJournal ? (
+                <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                  Voided. A reversing journal dated {activeRecord.voidJournal.postedAt} cancels the original posting; both remain in the ledger.
+                </div>
+              ) : null}
+
+              {entityDocuments.filter((document) => document.kind === activeKind).length > 0 ? (
+                <div className="mt-5 overflow-hidden rounded-xl border border-slate-200">
+                  <div className="grid grid-cols-[1fr_1.6fr_1fr_1fr_1fr] gap-3 bg-slate-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    <span>Number</span>
+                    <span>Contact</span>
+                    <span>Date</span>
+                    <span>Status</span>
+                    <span className="text-right">Total</span>
+                  </div>
+                  {entityDocuments
+                    .filter((document) => document.kind === activeKind)
+                    .slice(0, 8)
+                    .map((document) => (
+                      <button
+                        key={document.id}
+                        type="button"
+                        onClick={() => openDocument(document)}
+                        className={[
+                          'grid w-full grid-cols-[1fr_1.6fr_1fr_1fr_1fr] gap-3 border-t border-slate-200 px-4 py-2 text-left text-sm hover:bg-brand-50',
+                          document.id === activeDocument.id ? 'bg-brand-50 text-slate-900' : 'text-slate-700',
+                        ].join(' ')}
+                      >
+                        <span className="font-mono text-xs">{document.docNumber || '(draft)'}</span>
+                        <span className="truncate">{document.contactName}</span>
+                        <span>{document.date}</span>
+                        <span>{statusLabels[document.status]}</span>
+                        <span className="text-right font-mono"><Money value={buildTotals(document.lines).total} /></span>
+                      </button>
+                    ))}
                 </div>
               ) : null}
 
               <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">Document no.</label>
-                  <Input
-                    value={activeDocument.docNumber}
-                    onChange={(event) => updateCurrentDocument({ docNumber: event.target.value })}
-                  />
+                  <Input value={activeDocument.docNumber || 'Allocated on posting'} readOnly disabled />
                 </div>
 
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">Contact</label>
                   <select
                     value={activeDocument.contactId}
+                    disabled={documentReadOnly}
                     onChange={(event) => updateCurrentDocument({ contactId: event.target.value })}
-                    className="min-h-[44px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100"
+                    className="min-h-[44px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50"
                   >
                     {entityContacts.map((contact) => (
                       <option key={contact.id} value={contact.id}>{contact.name}</option>
                     ))}
+                    {activeContact && !entityContacts.some((contact) => contact.id === activeContact.id) ? (
+                      <option value={activeContact.id}>{activeContact.name}</option>
+                    ) : null}
                   </select>
                 </div>
 
@@ -4028,6 +3924,7 @@ export function AppShell() {
                   <Input
                     type="date"
                     value={activeDocument.date}
+                    disabled={documentReadOnly}
                     onChange={(event) => updateCurrentDocument({ date: event.target.value })}
                   />
                 </div>
@@ -4037,22 +3934,14 @@ export function AppShell() {
                   <Input
                     type="date"
                     value={activeDocument.dueDate}
+                    disabled={documentReadOnly}
                     onChange={(event) => updateCurrentDocument({ dueDate: event.target.value })}
                   />
                 </div>
 
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">Status</label>
-                  <select
-                    value={activeDocument.status}
-                    onChange={(event) => updateCurrentDocument({ status: event.target.value as DocumentStatus })}
-                    className="min-h-[44px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100"
-                  >
-                    <option value="draft">Draft</option>
-                    <option value="awaiting-payment">Awaiting payment</option>
-                    <option value="paid">Paid</option>
-                    <option value="voided">Voided</option>
-                  </select>
+                  <Input value={statusLabels[activeDocument.status]} readOnly disabled />
                 </div>
               </div>
 
@@ -4070,14 +3959,16 @@ export function AppShell() {
                   <div key={line.id} className="grid grid-cols-[1.6fr_0.7fr_0.9fr_1fr_1.1fr_56px] gap-3 border-t border-slate-200 px-4 py-3">
                     <Input
                       value={line.description}
+                      disabled={documentReadOnly}
                       onChange={(event) => updateLine(line.id, { description: event.target.value })}
                       placeholder="Cashew bags"
                     />
                     <Input
                       type="number"
                       min={0}
-                      step="1"
+                      step="any"
                       value={line.quantity}
+                      disabled={documentReadOnly}
                       onChange={(event) => updateLine(line.id, { quantity: Number(event.target.value) || 0 })}
                     />
                     <Input
@@ -4085,23 +3976,28 @@ export function AppShell() {
                       min={0}
                       step="0.01"
                       value={pesewasToCedisInput(line.unitPrice)}
+                      disabled={documentReadOnly}
                       onChange={(event) => updateLine(line.id, { unitPrice: cedisInputToPesewas(event.target.value) })}
                     />
                     <select
                       value={line.accountCode}
+                      disabled={documentReadOnly}
                       onChange={(event) => updateLine(line.id, { accountCode: event.target.value })}
-                      className="min-h-[44px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100"
+                      className="min-h-[44px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50"
                     >
-                      {documentAccountOptions.map((accountCode) => (
-                        <option key={accountCode} value={accountCode}>{accountCode}</option>
-                      ))}
+                      {entityAccounts
+                        .filter((account) => account.isActive && (isPurchaseView ? account.type === 'COST_OF_SALES' || account.type === 'EXPENSE' || account.type === 'ASSET' : account.type === 'INCOME'))
+                        .map((account) => (
+                          <option key={account.code} value={account.code}>{account.code} · {account.name}</option>
+                        ))}
                     </select>
                     <select
                       value={line.vatTreatment}
+                      disabled={documentReadOnly}
                       onChange={(event) =>
                         updateLine(line.id, { vatTreatment: event.target.value as VATTreatment })
                       }
-                      className="min-h-[44px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100"
+                      className="min-h-[44px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50"
                     >
                       <option value="standard">Standard 20%</option>
                       <option value="zero-rated">Zero-rated</option>
@@ -4109,8 +4005,9 @@ export function AppShell() {
                     </select>
                     <button
                       type="button"
+                      disabled={documentReadOnly}
                       onClick={() => removeLine(line.id)}
-                      className="text-slate-400 hover:text-red-600"
+                      className="text-slate-400 hover:text-red-600 disabled:invisible"
                     >
                       ×
                     </button>
@@ -4118,9 +4015,11 @@ export function AppShell() {
                 ))}
               </div>
 
-              <div className="mt-4 flex justify-end">
-                <Button variant="secondary" size="sm" onClick={addLine}>Add line</Button>
-              </div>
+              {!documentReadOnly ? (
+                <div className="mt-4 flex justify-end">
+                  <Button variant="secondary" size="sm" onClick={addLine}>Add line</Button>
+                </div>
+              ) : null}
 
               <div className="mt-6 grid gap-6 xl:grid-cols-[1fr_320px]">
                 <div className="space-y-3">
@@ -4219,7 +4118,7 @@ export function AppShell() {
                   onClick={() => setJournalOpen((current) => !current)}
                   className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-semibold text-slate-700"
                 >
-                  <span>Journal entry</span>
+                  <span>{activeRecord?.journal ? `Posted journal · ${activeRecord.journal.postedAt}` : 'Journal preview'}</span>
                   <span>{journalOpen ? 'Hide' : 'Show'}</span>
                 </button>
 

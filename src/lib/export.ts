@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
+import { documentInclude, documentRecord, postedJournal } from './data/documents';
 import { auditEventRecord, contactRecord, entityRecord, fundRecord, projectRecord, accountRecord } from './data/mappers';
 import { assertNoBigInt } from './data/money';
 import { prisma } from './prisma';
@@ -46,7 +47,7 @@ export async function buildLedgerExport(entityId: string) {
     throw new Error(`Unknown entity ${entityId}`);
   }
 
-  const [accounts, contacts, funds, projects, auditEvents] = await Promise.all([
+  const [accounts, contacts, funds, projects, documents, journalEntries, filings, auditEvents] = await Promise.all([
     prisma.account.findMany({ where: { entityId }, include: { parent: { select: { code: true } } }, orderBy: { code: 'asc' } }),
     prisma.contact.findMany({
       where: { balances: { some: { entityId } } },
@@ -55,20 +56,34 @@ export async function buildLedgerExport(entityId: string) {
     }),
     prisma.fund.findMany({ where: { entityId }, orderBy: { code: 'asc' } }),
     prisma.project.findMany({ where: { entityId }, include: { fund: { select: { classification: true } } }, orderBy: { code: 'asc' } }),
+    prisma.document.findMany({ where: { entityId }, include: documentInclude, orderBy: [{ date: 'asc' }, { createdAt: 'asc' }] }),
+    prisma.journalEntry.findMany({
+      where: { entityId },
+      include: { lines: { include: { account: { select: { code: true, name: true } } } } },
+      orderBy: [{ postedAt: 'asc' }, { createdAt: 'asc' }],
+    }),
+    prisma.taxPeriodFiling.findMany({ where: { entityId }, orderBy: { period: 'asc' } }),
     prisma.auditEvent.findMany({ where: { entityId }, orderBy: { sequence: 'asc' } }),
   ]);
 
   const payload = {
     format: 'sprouted-ledger-export',
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     entity: entityRecord(entity),
     accounts: accounts.map(accountRecord),
     contacts: contacts.map(contactRecord),
     funds: funds.map(fundRecord),
     projects: projects.map(projectRecord),
+    documents: documents.map(documentRecord),
+    journalEntries: journalEntries.map((entry) => ({
+      ...postedJournal(entry),
+      reference: entry.reference,
+      description: entry.description,
+      reversalOfId: entry.reversalOfId,
+    })),
+    filedPeriods: filings.map((filing) => ({ period: filing.period, filedAt: filing.filedAt.toISOString(), filedBy: filing.filedBy })),
     auditEvents: auditEvents.map(auditEventRecord),
-    // Documents and journal entries are added once they are persisted.
   };
 
   // A bigint here means a mapper was bypassed. Fail loudly at the boundary.
@@ -171,6 +186,8 @@ function countRecords(payload: Awaited<ReturnType<typeof buildLedgerExport>>) {
     contacts: payload.contacts.length,
     funds: payload.funds.length,
     projects: payload.projects.length,
+    documents: payload.documents.length,
+    journalEntries: payload.journalEntries.length,
     auditEvents: payload.auditEvents.length,
   };
 }

@@ -10,41 +10,35 @@ import {
 } from '@/lib/accounting-integrity';
 import { accountTypesMap, entityIds, ledgerLines, projects } from '@/lib/report-data';
 import { leviesOnBase, withholdingTaxOn } from '@/lib/ghana-tax';
+import { accountNameMap, buildJournalEntries, journalLinesFor, makeDocument, makeLine, type DocumentFormState } from '@/lib/documents';
 import { seedFunds, seedProjects } from '@/lib/seed-data';
 
 const accountTypes = accountTypesMap();
 
+const chartNames = accountNameMap([
+  { code: '1010', name: 'Trade Receivables' },
+  { code: '2001', name: 'Trade Payables' },
+  { code: '4001', name: 'Grants - Unrestricted' },
+  { code: '5001', name: 'Raw Materials Used' },
+]);
+
+/** A one-line document form, as the editor would hold it. */
+function documentForm(base: number, kind: 'invoice' | 'bill', vatTreatment: 'standard' | 'exempt' = 'standard'): DocumentFormState {
+  const form = makeDocument(kind, 'nana-farmers');
+  form.lines = [{ ...makeLine(kind), quantity: 1, unitPrice: base, vatTreatment }];
+  return form;
+}
+
 /**
- * Build the journal entries the app actually generates for one document and
- * assert each is balanced — this mirrors buildJournalEntries in the shell.
+ * The journal the app actually persists for one document — built by the same
+ * function the posting server function calls, not a copy of it.
  */
 function documentJournal(base: number, kind: 'sale' | 'purchase') {
-  const { vat, nhil, getFund, totalInclTax: total } = leviesOnBase(base);
-
-  if (kind === 'sale') {
-    return {
-      entityId: 'sprouted-roots',
-      lines: [
-        { amount: total, type: 'debit' as const },
-        { amount: base, type: 'credit' as const },
-        { amount: vat, type: 'credit' as const },
-        { amount: nhil, type: 'credit' as const },
-        { amount: getFund, type: 'credit' as const },
-      ],
-    };
-  }
-
-  const wht = withholdingTaxOn(total, 0.05);
+  const isPurchase = kind === 'purchase';
+  const contact = { withholdingTaxStatus: '5%' as const };
   return {
     entityId: 'sprouted-roots',
-    lines: [
-      { amount: base, type: 'debit' as const },
-      { amount: vat, type: 'debit' as const },
-      { amount: nhil, type: 'debit' as const },
-      { amount: getFund, type: 'debit' as const },
-      { amount: total - wht, type: 'credit' as const },
-      { amount: wht, type: 'credit' as const },
-    ],
+    lines: journalLinesFor(documentForm(base, isPurchase ? 'bill' : 'invoice'), isPurchase, contact, chartNames),
   };
 }
 
@@ -272,5 +266,59 @@ describe('Ghana levies stay in whole pesewas', () => {
       expect(journalEntriesBalance([documentJournal(base, 'sale')]), `sale on ${base}`).toBe(true);
       expect(journalEntriesBalance([documentJournal(base, 'purchase')]), `purchase on ${base}`).toBe(true);
     }
+  });
+});
+
+describe('what posting a document actually writes to the ledger', () => {
+  const awkwardBases = [1, 13, 1234, 4567, 99999, 123457];
+
+  it('balances exactly for every base, sale and purchase', () => {
+    for (const base of awkwardBases) {
+      expect(journalEntriesBalance([documentJournal(base, 'sale')]), `sale ${base}`).toBe(true);
+      expect(journalEntriesBalance([documentJournal(base, 'purchase')]), `purchase ${base}`).toBe(true);
+    }
+  });
+
+  it('is whole pesewas on every line', () => {
+    for (const base of awkwardBases) {
+      for (const kind of ['sale', 'purchase'] as const) {
+        for (const line of documentJournal(base, kind).lines) {
+          expect(Number.isInteger(line.amount), `${kind} ${base}: ${line.amount}`).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('carries no zero-amount lines, even though the preview shows them', () => {
+    // An exempt-only invoice previews three zero levy lines so the person can
+    // see every account the posting would touch. The ledger must not hold them.
+    const form = documentForm(50000, 'invoice', 'exempt');
+    const preview = buildJournalEntries(form, false, undefined, chartNames);
+    const persisted = journalLinesFor(form, false, undefined, chartNames);
+
+    expect(preview.filter((line) => line.amount === 0)).toHaveLength(3);
+    expect(persisted.every((line) => line.amount > 0)).toBe(true);
+    expect(persisted).toHaveLength(2); // receivable and revenue only
+    expect(journalEntriesBalance([{ entityId: 'x', lines: persisted }])).toBe(true);
+  });
+
+  it("labels accounts from the entity's own chart, not a hardcoded map", () => {
+    // 4001 is "Grants - Unrestricted" on the charity and "Domestic Sales" on a
+    // manufacturer. The same code must read differently on each.
+    const charity = journalLinesFor(documentForm(1000, 'invoice'), false, undefined, chartNames);
+    const manufacturer = journalLinesFor(documentForm(1000, 'invoice'), false, undefined, accountNameMap([{ code: '4001', name: 'Domestic Sales' }]));
+
+    expect(charity.find((line) => line.accountCode === '4001')?.accountName).toBe('Grants - Unrestricted');
+    expect(manufacturer.find((line) => line.accountCode === '4001')?.accountName).toBe('Domestic Sales');
+  });
+
+  it('withholds on the tax-inclusive total and credits payables net of it', () => {
+    const base = 100000;
+    const { totalInclTax } = leviesOnBase(base);
+    const wht = withholdingTaxOn(totalInclTax, 0.05);
+    const lines = documentJournal(base, 'purchase').lines;
+
+    expect(lines.find((line) => line.accountCode === '2035')?.amount).toBe(wht);
+    expect(lines.find((line) => line.accountCode === '2001')?.amount).toBe(totalInclTax - wht);
   });
 });

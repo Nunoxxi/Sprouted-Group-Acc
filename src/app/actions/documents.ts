@@ -1,0 +1,607 @@
+'use server';
+
+/**
+ * Server Functions for invoices and bills.
+ *
+ * Every function takes an explicit entityId, verifies it, and scopes every
+ * query by it. Changes that matter are made inside one transaction together
+ * with their audit event, so the ledger can never hold a journal without the
+ * event that explains it, or the reverse.
+ *
+ * These are reachable by direct POST with no authentication. `userName` is
+ * whatever the client sent. Auth is the first job after this pass; until
+ * then this must not be deployed anywhere untrusted.
+ *
+ * Server functions dispatch sequentially on the client, so a debounced
+ * autosave queued behind a slow post blocks other actions — the shell
+ * cancels its autosave timer before posting or voiding.
+ */
+
+import { refresh } from 'next/cache';
+
+import { journalEntriesBalance } from '@/lib/accounting-integrity';
+import { recordAuditEvent } from '@/lib/audit';
+import { seedChartForEntity } from '@/lib/data/chart.ts';
+import { documentInclude, documentRecord, kindToPrisma, vatToPrisma } from '@/lib/data/documents';
+import { contactRecord, entityRecord, toPrismaEnum } from '@/lib/data/mappers';
+import { fromMinor } from '@/lib/data/money';
+import type { ContactRecord, DocumentRecord, EntityRecord, EntityType } from '@/lib/data/types';
+import {
+  accountNameMap,
+  journalLinesFor,
+  normalizeDocument,
+  periodOf,
+  type DocumentFormState,
+} from '@/lib/documents';
+import { prisma } from '@/lib/prisma';
+import { accentPalette } from '@/lib/seed-data';
+
+import type { WithholdingTaxStatus } from '@/lib/ghana-tax';
+
+export type ActionResult<T> = { ok: true; value: T } | { ok: false; error: string };
+
+function fail<T>(error: string): ActionResult<T> {
+  return { ok: false, error };
+}
+
+async function requireEntity(entityId: string) {
+  const entity = await prisma.entity.findUnique({ where: { id: entityId }, select: { id: true, name: true } });
+  if (!entity) {
+    throw new Error(`Unknown entity ${entityId}`);
+  }
+  return entity;
+}
+
+function dateOf(value: string): Date {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`Invalid date ${value}`);
+  }
+  return date;
+}
+
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function documentLabel(kind: 'invoice' | 'bill', number: string): string {
+  return `${kind === 'invoice' ? 'Invoice' : 'Bill'} ${number || '(draft)'}`;
+}
+
+// --- drafts ------------------------------------------------------------------------
+
+/**
+ * Create or update a draft. Silently does nothing if the document is no
+ * longer a draft — the editor's autosave can fire after a post, and that
+ * must not be an error.
+ */
+export async function saveDocumentDraft(
+  entityId: string,
+  input: unknown,
+  userName: string,
+): Promise<ActionResult<DocumentRecord>> {
+  await requireEntity(entityId);
+
+  const kind = (input as { kind?: string } | null)?.kind === 'bill' ? 'bill' : 'invoice';
+  const fallbackContact = await prisma.contact.findFirst({ where: { isActive: true }, select: { id: true }, orderBy: { name: 'asc' } });
+  const form = normalizeDocument(input, kind, fallbackContact?.id ?? '');
+
+  if (!form.contactId) {
+    return fail('Choose a contact before saving.');
+  }
+
+  const accounts = await prisma.account.findMany({ where: { entityId, isActive: true }, select: { id: true, code: true } });
+  const accountIdOf = new Map(accounts.map((account) => [account.code, account.id]));
+  for (const line of form.lines) {
+    if (!accountIdOf.has(line.accountCode)) {
+      return fail(`Account ${line.accountCode} is not in this entity's chart.`);
+    }
+  }
+
+  const contact = await prisma.contact.findUnique({ where: { id: form.contactId }, select: { id: true } });
+  if (!contact) {
+    return fail('That contact no longer exists.');
+  }
+
+  const linesData = form.lines.map((line, position) => ({
+    entityId,
+    position,
+    description: line.description,
+    quantity: line.quantity,
+    unitPriceMinor: fromMinor(line.unitPrice),
+    accountId: accountIdOf.get(line.accountCode) as string,
+    vatTreatment: vatToPrisma[line.vatTreatment],
+  }));
+
+  const row = await prisma.$transaction(async (tx) => {
+    if (form.id) {
+      const existing = await tx.document.findFirst({ where: { id: form.id, entityId }, select: { status: true } });
+      if (!existing) {
+        throw new Error('Document not found');
+      }
+      if (existing.status !== 'DRAFT') {
+        // Not an error: the autosave raced a post. Return what is there.
+        return tx.document.findUniqueOrThrow({ where: { id: form.id }, include: documentInclude });
+      }
+
+      await tx.documentLine.deleteMany({ where: { documentId: form.id } });
+      return tx.document.update({
+        where: { id: form.id },
+        data: {
+          contactId: form.contactId,
+          date: dateOf(form.date),
+          dueDate: dateOf(form.dueDate),
+          evatClearanceNumber: form.evatClearanceNumber || null,
+          evatQrCode: form.evatQrCode || null,
+          evatTimestamp: form.evatTimestamp || null,
+          lines: { create: linesData },
+        },
+        include: documentInclude,
+      });
+    }
+
+    return tx.document.create({
+      data: {
+        entityId,
+        kind: kindToPrisma[kind],
+        number: '',
+        contactId: form.contactId,
+        date: dateOf(form.date),
+        dueDate: dateOf(form.dueDate),
+        status: 'DRAFT',
+        evatClearanceNumber: form.evatClearanceNumber || null,
+        evatQrCode: form.evatQrCode || null,
+        evatTimestamp: form.evatTimestamp || null,
+        lines: { create: linesData },
+      },
+      include: documentInclude,
+    });
+  });
+
+  void userName; // drafts are not audited; posting is
+  refresh();
+  return { ok: true, value: documentRecord(row) };
+}
+
+// --- posting -----------------------------------------------------------------------
+
+/**
+ * Post a draft: allocate its number, write a balanced journal dated the
+ * document's date, and record the audit event — all in one transaction.
+ *
+ * The status change is a guarded updateMany on DRAFT, so two concurrent
+ * posts of the same document produce exactly one journal.
+ */
+export async function postDocument(
+  entityId: string,
+  documentId: string,
+  userName: string,
+): Promise<ActionResult<DocumentRecord>> {
+  await requireEntity(entityId);
+
+  const document = await prisma.document.findFirst({
+    where: { id: documentId, entityId },
+    include: { ...documentInclude, contact: true },
+  });
+  if (!document) {
+    return fail('Document not found.');
+  }
+  if (document.status !== 'DRAFT') {
+    return fail('Only a draft can be posted.');
+  }
+  if (document.lines.length === 0) {
+    return fail('Add at least one line before posting.');
+  }
+
+  const period = periodOf(document.date.toISOString());
+  const filed = await prisma.taxPeriodFiling.findUnique({ where: { entityId_period: { entityId, period } } });
+  if (filed) {
+    return fail(`Period ${period} has been filed. Date the document in an open period.`);
+  }
+
+  const accounts = await prisma.account.findMany({ where: { entityId, isActive: true }, select: { id: true, code: true, name: true } });
+  const accountIdOf = new Map(accounts.map((account) => [account.code, account.id]));
+  const names = accountNameMap(accounts);
+
+  const isPurchase = document.kind === 'BILL';
+  const contact = contactRecord({ ...document.contact, balances: [] });
+  const form = documentRecordToForm(documentRecord(document));
+  const lines = journalLinesFor(form, isPurchase, contact, names);
+
+  if (!journalEntriesBalance([{ entityId, lines }])) {
+    // Cannot happen if the builder is correct; refuse loudly rather than
+    // write an unbalanced entry.
+    throw new Error('Journal does not balance; refusing to post');
+  }
+
+  for (const line of lines) {
+    if (!accountIdOf.has(line.accountCode)) {
+      return fail(`Account ${line.accountCode} is not in this entity's chart.`);
+    }
+  }
+
+  const kind = document.kind === 'BILL' ? 'bill' : 'invoice';
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const claimed = await tx.document.updateMany({
+        where: { id: documentId, entityId, status: 'DRAFT' },
+        data: { status: 'AWAITING_PAYMENT' },
+      });
+      if (claimed.count !== 1) {
+        throw new AlreadyPostedError();
+      }
+
+      const counter = await tx.documentCounter.upsert({
+        where: { entityId_kind: { entityId, kind: document.kind } },
+        create: { entityId, kind: document.kind, next: 2 },
+        update: { next: { increment: 1 } },
+        select: { next: true },
+      });
+      const number = `${kind === 'invoice' ? 'INV' : 'BILL'}-${String(counter.next - 1).padStart(4, '0')}`;
+
+      const entry = await tx.journalEntry.create({
+        data: {
+          entityId,
+          kind: 'DOCUMENT',
+          reference: number,
+          description: `${documentLabel(kind, number)} — ${document.contact.name}`,
+          postedAt: document.date,
+          lines: {
+            create: lines.map((line) => ({
+              entityId,
+              accountId: accountIdOf.get(line.accountCode) as string,
+              contactId: document.contactId,
+              amountMinor: fromMinor(line.amount),
+              direction: line.type === 'debit' ? 'MONEY_IN' : 'MONEY_OUT',
+            })),
+          },
+        },
+        select: { id: true },
+      });
+
+      await tx.document.update({
+        where: { id: documentId },
+        data: { number, journalEntryId: entry.id },
+      });
+
+      await recordAuditEvent(
+        {
+          entityId,
+          userName,
+          action: 'POST',
+          resourceType: kind,
+          resourceRef: number,
+          summary: `${documentLabel(kind, number)} posted for ${document.contact.name}`,
+          metadata: { journalEntryId: entry.id, lines: lines.length, total: lines.filter((l) => l.type === 'debit').reduce((s, l) => s + l.amount, 0) },
+        },
+        tx,
+      );
+    });
+  } catch (error) {
+    if (error instanceof AlreadyPostedError) {
+      return fail('This document was already posted.');
+    }
+    throw error;
+  }
+
+  const posted = await prisma.document.findUniqueOrThrow({ where: { id: documentId }, include: documentInclude });
+  refresh();
+  return { ok: true, value: documentRecord(posted) };
+}
+
+class AlreadyPostedError extends Error {}
+
+function documentRecordToForm(record: DocumentRecord): DocumentFormState {
+  return {
+    id: record.id,
+    kind: record.kind,
+    docNumber: record.docNumber,
+    contactId: record.contactId,
+    date: record.date,
+    dueDate: record.dueDate,
+    status: record.status,
+    lines: record.lines.map((line) => ({
+      id: line.id,
+      description: line.description,
+      quantity: line.quantity,
+      unitPrice: line.unitPrice,
+      accountCode: line.accountCode,
+      vatTreatment: line.vatTreatment,
+    })),
+    evatClearanceNumber: record.evatClearanceNumber,
+    evatQrCode: record.evatQrCode,
+    evatTimestamp: record.evatTimestamp,
+  };
+}
+
+// --- paid --------------------------------------------------------------------------
+
+/**
+ * Status and audit only. Posting the cash movement belongs to bank
+ * reconciliation, which is not persisted yet — recorded as a known gap.
+ */
+export async function markDocumentPaid(
+  entityId: string,
+  documentId: string,
+  userName: string,
+): Promise<ActionResult<DocumentRecord>> {
+  await requireEntity(entityId);
+
+  const row = await prisma.$transaction(async (tx) => {
+    const claimed = await tx.document.updateMany({
+      where: { id: documentId, entityId, status: 'AWAITING_PAYMENT' },
+      data: { status: 'PAID' },
+    });
+    if (claimed.count !== 1) {
+      return null;
+    }
+    const document = await tx.document.findUniqueOrThrow({ where: { id: documentId }, include: documentInclude });
+    const kind = document.kind === 'BILL' ? 'bill' : 'invoice';
+    await recordAuditEvent(
+      {
+        entityId,
+        userName,
+        action: 'EDIT',
+        resourceType: kind,
+        resourceRef: document.number,
+        summary: `${documentLabel(kind, document.number)} marked paid`,
+      },
+      tx,
+    );
+    return document;
+  });
+
+  if (!row) {
+    return fail('Only a document awaiting payment can be marked paid.');
+  }
+
+  refresh();
+  return { ok: true, value: documentRecord(row) };
+}
+
+// --- void --------------------------------------------------------------------------
+
+/**
+ * Void a posted document by writing a reversing journal dated today. The
+ * original entry is untouched — nothing is deleted. Refused if today's period
+ * has been filed, because the reversal has to land in an open period.
+ */
+export async function voidDocument(
+  entityId: string,
+  documentId: string,
+  userName: string,
+): Promise<ActionResult<DocumentRecord>> {
+  await requireEntity(entityId);
+
+  const today = todayIso();
+  const filed = await prisma.taxPeriodFiling.findUnique({ where: { entityId_period: { entityId, period: periodOf(today) } } });
+  if (filed) {
+    return fail(`Period ${periodOf(today)} has been filed, so a reversal cannot be dated today.`);
+  }
+
+  const document = await prisma.document.findFirst({
+    where: { id: documentId, entityId },
+    include: { journalEntry: { include: { lines: true } }, contact: { select: { name: true } } },
+  });
+  if (!document) {
+    return fail('Document not found.');
+  }
+  if (document.status === 'VOIDED') {
+    return fail('This document is already voided.');
+  }
+  if (document.status === 'DRAFT' || !document.journalEntry) {
+    return fail('A draft has nothing to reverse; delete its lines instead.');
+  }
+
+  const kind = document.kind === 'BILL' ? 'bill' : 'invoice';
+  const original = document.journalEntry;
+
+  const row = await prisma.$transaction(async (tx) => {
+    const claimed = await tx.document.updateMany({
+      where: { id: documentId, entityId, status: { in: ['AWAITING_PAYMENT', 'PAID'] } },
+      data: { status: 'VOIDED' },
+    });
+    if (claimed.count !== 1) {
+      throw new AlreadyPostedError();
+    }
+
+    const reversal = await tx.journalEntry.create({
+      data: {
+        entityId,
+        kind: 'REVERSAL',
+        reference: document.number,
+        description: `Reversal of ${documentLabel(kind, document.number)} — ${document.contact.name}`,
+        postedAt: dateOf(today),
+        reversalOfId: original.id,
+        lines: {
+          create: original.lines.map((line) => ({
+            entityId,
+            accountId: line.accountId,
+            fundId: line.fundId,
+            projectId: line.projectId,
+            contactId: line.contactId,
+            amountMinor: line.amountMinor,
+            direction: line.direction === 'MONEY_IN' ? 'MONEY_OUT' : 'MONEY_IN',
+          })),
+        },
+      },
+      select: { id: true },
+    });
+
+    await tx.document.update({ where: { id: documentId }, data: { voidEntryId: reversal.id } });
+
+    await recordAuditEvent(
+      {
+        entityId,
+        userName,
+        action: 'VOID',
+        resourceType: kind,
+        resourceRef: document.number,
+        summary: `${documentLabel(kind, document.number)} voided; reversal dated ${today}`,
+        metadata: { reversalOf: original.id, reversalEntryId: reversal.id },
+      },
+      tx,
+    );
+
+    return tx.document.findUniqueOrThrow({ where: { id: documentId }, include: documentInclude });
+  }).catch((error) => {
+    if (error instanceof AlreadyPostedError) return null;
+    throw error;
+  });
+
+  if (!row) {
+    return fail('This document changed while you were voiding it. Reload and try again.');
+  }
+
+  refresh();
+  return { ok: true, value: documentRecord(row) };
+}
+
+// --- periods -----------------------------------------------------------------------
+
+export async function fileTaxPeriod(entityId: string, period: string, userName: string): Promise<ActionResult<string[]>> {
+  await requireEntity(entityId);
+  if (!/^\d{4}-\d{2}$/.test(period)) {
+    return fail('Period must be YYYY-MM.');
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const existing = await tx.taxPeriodFiling.findUnique({ where: { entityId_period: { entityId, period } } });
+    if (existing) return;
+
+    await tx.taxPeriodFiling.create({ data: { entityId, period, filedBy: userName } });
+    await recordAuditEvent(
+      {
+        entityId,
+        userName,
+        action: 'FILE_PERIOD',
+        resourceType: 'vat-period',
+        resourceRef: period,
+        summary: `VAT period ${period} filed and locked`,
+      },
+      tx,
+    );
+  });
+
+  const periods = await prisma.taxPeriodFiling.findMany({ where: { entityId }, select: { period: true }, orderBy: { period: 'asc' } });
+  refresh();
+  return { ok: true, value: periods.map((filing) => filing.period) };
+}
+
+// --- contacts and entities ---------------------------------------------------------
+
+export type NewContactInput = {
+  name: string;
+  type: ContactRecord['type'];
+  category: ContactRecord['category'];
+  tin: string;
+  phone: string;
+  email: string;
+  address: string;
+  withholdingTaxStatus: WithholdingTaxStatus;
+  isFarmerAggregator: boolean;
+};
+
+export async function createContact(input: NewContactInput): Promise<ActionResult<ContactRecord>> {
+  const name = input.name.trim();
+  if (!name) {
+    return fail('A contact needs a name.');
+  }
+
+  const entities = await prisma.entity.findMany({ select: { id: true } });
+
+  const row = await prisma.contact.create({
+    data: {
+      name,
+      type: toPrismaEnum.contactType[input.type],
+      category: toPrismaEnum.contactCategory[input.category],
+      tin: input.tin.trim() || null,
+      phone: input.phone.trim() || null,
+      email: input.email.trim() || null,
+      address: input.address.trim() || null,
+      withholdingTaxStatus: toPrismaEnum.withholdingTaxStatus[input.withholdingTaxStatus],
+      isFarmerAggregator: input.isFarmerAggregator,
+      balances: { create: entities.map((entity) => ({ entityId: entity.id, balanceMinor: BigInt(0) })) },
+    },
+    include: { balances: true },
+  });
+
+  refresh();
+  return { ok: true, value: contactRecord(row) };
+}
+
+export type NewEntityInput = {
+  name: string;
+  type: EntityType;
+  financialYearEnd: string;
+  vatRegistered: boolean;
+  tin: string;
+};
+
+function slugify(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+/**
+ * Create an entity with a full chart of accounts from the template for its
+ * type, plus the group-entity contact the other entities trade with it
+ * through. No schema change is needed for a fourth, fifth or tenth entity.
+ */
+export async function createEntity(input: NewEntityInput): Promise<ActionResult<{ entity: EntityRecord; contact: ContactRecord }>> {
+  const name = input.name.trim();
+  if (!name) {
+    return fail('An entity needs a name.');
+  }
+
+  const base = slugify(name) || 'entity';
+  const existingCount = await prisma.entity.count();
+
+  const result = await prisma.$transaction(async (tx) => {
+    let id = base;
+    for (let suffix = 2; await tx.entity.findUnique({ where: { id }, select: { id: true } }); suffix += 1) {
+      id = `${base}-${suffix}`;
+    }
+
+    const entity = await tx.entity.create({
+      data: {
+        id,
+        code: `SG${String(existingCount + 1).padStart(3, '0')}`,
+        name,
+        type: input.type,
+        financialYearEnd: input.financialYearEnd.trim() || null,
+        vatRegistered: input.vatRegistered,
+        tin: input.tin.trim() || null,
+        accent: accentPalette[existingCount % accentPalette.length],
+      },
+    });
+
+    await seedChartForEntity(tx, entity.id, input.type);
+
+    // Every existing contact gets a zero balance with the new entity, and the
+    // new entity gets a group-entity contact everyone else can trade with.
+    const contacts = await tx.contact.findMany({ select: { id: true } });
+    await tx.contactEntityBalance.createMany({
+      data: contacts.map((contact) => ({ contactId: contact.id, entityId: entity.id, balanceMinor: BigInt(0) })),
+    });
+
+    const allEntities = await tx.entity.findMany({ select: { id: true } });
+    const groupContact = await tx.contact.create({
+      data: {
+        id: `${id}-contact`,
+        name,
+        type: 'SUPPLIER',
+        category: 'GROUP_ENTITY',
+        tin: input.tin.trim() || null,
+        withholdingTaxStatus: 'WHT_5',
+        balances: { create: allEntities.map((e) => ({ entityId: e.id, balanceMinor: BigInt(0) })) },
+      },
+      include: { balances: true },
+    });
+
+    return { entity, groupContact };
+  });
+
+  refresh();
+  return { ok: true, value: { entity: entityRecord(result.entity), contact: contactRecord(result.groupContact) } };
+}

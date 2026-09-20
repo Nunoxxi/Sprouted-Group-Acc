@@ -71,6 +71,68 @@ export type ProjectRecord = {
   isActive: boolean;
 };
 
+export type DocumentKind = 'invoice' | 'bill';
+export type DocumentStatus = 'draft' | 'awaiting-payment' | 'paid' | 'voided';
+export type VatTreatment = 'standard' | 'zero-rated' | 'exempt';
+
+export type DocumentLineRecord = {
+  id: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  accountCode: string;
+  vatTreatment: VatTreatment;
+  projectId: string | null;
+  fundId: string | null;
+};
+
+export type PostedJournalLine = {
+  accountCode: string;
+  accountName: string;
+  amount: number;
+  type: 'debit' | 'credit';
+};
+
+export type PostedJournal = {
+  id: string;
+  kind: 'DOCUMENT' | 'REVERSAL' | 'MANUAL';
+  postedAt: string; // YYYY-MM-DD
+  lines: PostedJournalLine[];
+};
+
+export type DocumentRecord = {
+  id: string;
+  entityId: string;
+  kind: DocumentKind;
+  /** Empty while a draft; allocated by the server on posting. */
+  docNumber: string;
+  contactId: string;
+  contactName: string;
+  date: string;
+  dueDate: string;
+  status: DocumentStatus;
+  lines: DocumentLineRecord[];
+  evatClearanceNumber: string;
+  evatQrCode: string;
+  evatTimestamp: string;
+  /** The persisted journal once posted; null for drafts. */
+  journal: PostedJournal | null;
+  /** The reversing journal once voided; null otherwise. */
+  voidJournal: PostedJournal | null;
+  updatedAt: string;
+};
+
+/** Everything the shell needs on first render, loaded once by the page. */
+export type InitialData = {
+  entities: EntityRecord[];
+  contacts: ContactRecord[];
+  accountsByEntity: Record<string, AccountRecord[]>;
+  fundsByEntity: Record<string, FundRecord[]>;
+  projectsByEntity: Record<string, ProjectRecord[]>;
+  documentsByEntity: Record<string, DocumentRecord[]>;
+  filedPeriodsByEntity: Record<string, string[]>;
+};
+
 export type AuditEventRecord = {
   id: string;
   entityId: string;
