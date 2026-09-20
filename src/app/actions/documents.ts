@@ -158,11 +158,21 @@ async function saveDraft(entityId: string, input: unknown, principal: Principal)
     vatTreatment: vatToPrisma[line.vatTreatment],
   }));
 
+  // The id must belong to *this* entity. One that does not — whether it is
+  // another entity's document or nonsense — is refused the same way, as a
+  // value, before the transaction opens.
+  if (form.id) {
+    const owned = await prisma.document.count({ where: { id: form.id, entityId } });
+    if (owned !== 1) {
+      return fail('Document not found.');
+    }
+  }
+
   const row = await prisma.$transaction(async (tx) => {
     if (form.id) {
       const existing = await tx.document.findFirst({ where: { id: form.id, entityId }, select: { status: true } });
       if (!existing) {
-        throw new Error('Document not found');
+        throw new Error('Document not found'); // raced a concurrent change; unreachable in practice
       }
       if (existing.status !== 'DRAFT') {
         // Not an error: the autosave raced a post. Return what is there.
