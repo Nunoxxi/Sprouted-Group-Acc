@@ -2704,12 +2704,21 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                       const suggestion = getSuggestionsForBankLine(line)[0];
 
                       return (
-                        <button
+                        // A div, not a button: the row holds an Undo button, and a
+                        // button inside a button is invalid HTML (hydration mismatch).
+                        <div
                           key={line.id}
-                          type="button"
+                          role="button"
+                          tabIndex={0}
                           onClick={() => setSelectedBankIndex(index)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              setSelectedBankIndex(index);
+                            }
+                          }}
                           className={[
-                            'w-full rounded-2xl border p-3 text-left transition-colors duration-150 ease-out',
+                            'w-full cursor-pointer rounded-2xl border p-3 text-left transition-colors duration-150 ease-out focus:outline-none focus:ring-2 focus:ring-brand-100',
                             isSelected
                               ? 'border-brand-200 bg-brand-50 shadow-soft'
                               : 'border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-white',
@@ -2766,7 +2775,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                               <span className="font-semibold text-brand-700">{suggestion.confidence}% match</span>
                             </div>
                           ) : null}
-                        </button>
+                        </div>
                       );
                     })}
                   </div>
