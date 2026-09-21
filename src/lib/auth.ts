@@ -21,7 +21,10 @@ import { banReasons, passwordPolicy, roles } from './authz';
 import { sendEmail } from './email';
 import { prisma } from './prisma';
 
-const appUrl = process.env.BETTER_AUTH_URL ?? process.env.APP_URL ?? 'http://localhost:3000';
+// The origin check compares this to the browser's Origin header exactly, so a
+// trailing slash or surrounding whitespace in the env var would refuse every
+// sign-in with "Invalid origin". Normalise rather than trust the paste.
+const appUrl = (process.env.BETTER_AUTH_URL ?? process.env.APP_URL ?? 'http://localhost:3000').trim().replace(/\/+$/, '');
 
 // Admin-plugin permissions: Owners administer users and sessions; every other
 // role has none. Impersonation is deliberately not granted to anyone.
