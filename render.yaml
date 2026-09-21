@@ -14,7 +14,8 @@ services:
     buildCommand: npm ci && npm run build
     preDeployCommand: npx prisma migrate deploy
     startCommand: npm run start
-    healthCheckPath: /
+    # The sign-in page answers 200 without a session; / redirects to it.
+    healthCheckPath: /sign-in
     envVars:
       - key: NODE_VERSION
         value: "24"
