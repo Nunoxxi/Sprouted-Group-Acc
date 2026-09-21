@@ -78,7 +78,7 @@ Beyond those, `scripts/` has no auth test; the full flow (invite → set passwor
 5. **Intercompany** posts hardcoded `1010/4001` and `5001/2001`, ignores VAT, and ignores the chart's dedicated intercompany accounts (`1025–1027`, `2015–2017`).
 6. **Navigation structure** — the single-shell `activeNav` pattern could be split into real routes once persistence exists. The `Inventory` item currently falls through to the bill editor by accident.
 7. **GRA E-VAT** — placeholder fields only; add the integration later without redesigning. The VAT return screen (Tax) is hidden while an entity is unregistered and still reads demo `taxTransactions` when shown; once it reads the ledger it should take `Document.vatApplied` and `importVatMinor` into account. Switching registration off is allowed but there is no deregistration workflow (final return, stock adjustment) — posted documents simply keep the VAT they were posted with.
-8. **Deployment** — `render.yaml` targets Render's Node runtime with `prisma migrate deploy` in `preDeployCommand`. Not yet deployed. On the free plan the disk is ephemeral, so `EXPORT_DIR` needs a Render Disk for exports to persist across deploys.
+8. **Deployment** — `render.yaml` targets Render's Node runtime with `prisma migrate deploy` at the front of `startCommand` (the free tier has no `preDeployCommand`; move it there on a paid instance). Not yet deployed. On the free plan the disk is ephemeral, so `EXPORT_DIR` needs a Render Disk for exports to persist across deploys.
 9. **Prisma 7** changes the generator and adds a config file. Do not bump the major version casually.
 
 ## How to run

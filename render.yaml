@@ -1,8 +1,10 @@
 # Render deployment for the Next.js app.
 #
-# Migrations run in preDeployCommand — once per deploy, only after a
-# successful build — rather than in buildCommand, which would migrate on
-# every build including ones that then fail.
+# Migrations run at the front of startCommand — after a successful build,
+# immediately before the new code serves — rather than in buildCommand,
+# which would migrate on every build including ones that then fail. The
+# free tier has no preDeployCommand; on a paid instance move it there. A
+# failed migration stops the start, so the previous deploy stays live.
 #
 # DATABASE_URL and DIRECT_URL are set in the Render dashboard (sync: false),
 # never in this file. See .env.example for which Supabase string is which.
@@ -12,8 +14,7 @@ services:
     runtime: node
     plan: free
     buildCommand: npm ci && npm run build
-    preDeployCommand: npx prisma migrate deploy
-    startCommand: npm run start
+    startCommand: npx prisma migrate deploy && npm run start
     # The sign-in page answers 200 without a session; / redirects to it.
     healthCheckPath: /sign-in
     envVars:
