@@ -47,6 +47,7 @@ export function entityRecord(row: Entity): EntityRecord {
     type: entityTypeOf(row.type),
     financialYearEnd: row.financialYearEnd ?? '',
     vatRegistered: row.vatRegistered,
+    vatRegisteredFrom: row.vatRegisteredFrom ? row.vatRegisteredFrom.toISOString().slice(0, 10) : null,
     tin: row.tin ?? '',
     accent: row.accent ?? '',
     functionalCurrency: row.functionalCurrency,

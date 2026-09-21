@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import { journalEntriesBalance } from '@/lib/accounting-integrity';
 import { journalLinesFor, makeDocument, type DocumentFormState } from '@/lib/documents';
+
+/** The FX cases run as a VAT-registered entity so levy lines are converted too. */
+const vatOn = { vatApplies: true };
 import {
   convertJournal,
   convertMinor,
@@ -94,7 +97,7 @@ describe('selectRate: the day\'s rate, else the most recent prior with a warning
 
 describe('a foreign invoice posted at one rate', () => {
   const functional = 'GHS';
-  const lines = journalLinesFor(usdInvoice(100000), false, undefined, {});
+  const lines = journalLinesFor(usdInvoice(100000), false, undefined, {}, vatOn);
 
   it('stores both currencies on every line and balances in both', () => {
     const converted = convertJournal(lines, 'USD', functional, '12.5', '1010');
@@ -112,7 +115,7 @@ describe('a foreign invoice posted at one rate', () => {
     // line rounds on its own at 12.345678 and the total drifts by a pesewa.
     const document = makeDocument('invoice', 'c');
     document.lines = [{ id: 'a', description: 'x', quantity: 3, unitPrice: 33333, accountCode: '4005', vatTreatment: 'standard' }];
-    const raw = journalLinesFor(document, false, undefined, {});
+    const raw = journalLinesFor(document, false, undefined, {}, vatOn);
     const naive = raw.map((line) => ({ ...line, functional: convertMinor(line.amount, '12.345678') }));
     const naiveImbalance = naive.reduce((s, l) => s + (l.type === 'debit' ? l.functional : -l.functional), 0);
     expect(naiveImbalance).not.toBe(0); // the case is real
@@ -207,7 +210,7 @@ describe('settled at a different rate: realised FX', () => {
   });
 
   it('full cycle: invoice journal + settlement journal leave the receivable at zero in both currencies', () => {
-    const invoice = convertJournal(journalLinesFor(usdInvoice(100000), false, undefined, {}), 'USD', 'GHS', '12.5', '1010');
+    const invoice = convertJournal(journalLinesFor(usdInvoice(100000), false, undefined, {}, vatOn), 'USD', 'GHS', '12.5', '1010');
     const receivableBook = invoice.find((l) => l.accountCode === '1010')!.functionalAmount;
     const s = settlementFor({ ...base, kind: 'invoice', documentRate: '12.5', settlementRate: '13.0', txnAmount: 100000, bankCurrency: 'USD', remainingBookMinor: receivableBook, isFinal: true });
     const all = [...invoice, ...s.lines];
@@ -243,7 +246,7 @@ describe('period-end revaluation: unrealised FX', () => {
   });
 
   it('the adjustment leaves the foreign balance untouched, so a later revaluation is right', () => {
-    const invoice = convertJournal(journalLinesFor(usdInvoice(100000), false, undefined, {}), 'USD', 'GHS', '12.5', '1010');
+    const invoice = convertJournal(journalLinesFor(usdInvoice(100000), false, undefined, {}, vatOn), 'USD', 'GHS', '12.5', '1010');
     const monetary = new Set(monetaryControlCodes);
     const before = foreignBalancesFrom(invoice, monetary, 'GHS');
     const [first] = revaluationFor(before, { USD: '12.8' }, 'GHS');

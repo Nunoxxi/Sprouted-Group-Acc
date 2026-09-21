@@ -12,10 +12,14 @@ import {
   buildJournalEntries,
   buildTotals,
   controlAccounts,
+  documentTaxFor,
   makeDocument,
   makeLine,
   periodOf,
+  taxableSuppliesOf,
   type DocumentFormState,
+  type DocumentTax,
+  type SaleType,
   type DocumentKind,
   type DocumentLine,
   type DocumentStatus,
@@ -34,6 +38,7 @@ import { CurrencyProvider, ReportMoney, TranslationProvider } from '@/components
 import type { Permission } from '@/lib/authz';
 import { recordPayment as recordPaymentAction } from '@/app/actions/documents';
 import { createBankAccount, previewRevaluation, reverseRevaluation, runRevaluation, setFunctionalCurrency, upsertExchangeRate, type RevaluationPreview } from '@/app/actions/fx';
+import { setVatRegistration } from '@/app/actions/vat';
 import {
   convertJournal,
   convertMinor,
@@ -46,7 +51,10 @@ import {
 } from '@/lib/fx';
 import {
   leviesOnBase,
+  rollingTaxableTurnover,
   roundPesewas,
+  thresholdStatus,
+  VAT_REGISTRATION_THRESHOLD_MINOR,
   withholdingTaxOn,
   type VATTreatment,
   type WithholdingRate,
@@ -106,7 +114,8 @@ const defaultFormValues = {
   name: '',
   type: 'manufacturing' as EntityType,
   financialYearEnd: '31 Dec',
-  vatRegistered: true,
+  vatRegistered: false,
+  vatRegisteredFrom: '',
   tin: '',
 };
 
@@ -362,6 +371,8 @@ function formFrom(record: DocumentRecord): DocumentFormState {
     rate: record.rate,
     rateDate: record.rateDate,
     rateExact: record.rateExact,
+    saleType: record.saleType,
+    importVat: record.importVat,
     lines: record.lines.map((line) => ({
       id: line.id,
       description: line.description,
@@ -603,16 +614,40 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
   // resolve rather than the editor silently swapping to the first in the list.
   const activeContact =
     contacts.find((contact) => contact.id === activeDocument.contactId) ?? entityContacts[0] ?? contacts[0];
-  const activeTotals = buildTotals(activeDocument.lines, isPurchaseView ? activeContact?.withholdingTaxStatus : undefined);
   const entityAccounts = useMemo(() => initialData.accountsByEntity[selectedEntity.id] ?? [], [initialData, selectedEntity.id]);
   const accountNames = useMemo(() => accountNameMap(entityAccounts), [entityAccounts]);
-  const entityDocuments = initialData.documentsByEntity[selectedEntity.id] ?? [];
+  const entityDocuments = useMemo(() => initialData.documentsByEntity[selectedEntity.id] ?? [], [initialData, selectedEntity.id]);
   const activeRecord = activeDocument.id ? entityDocuments.find((document) => document.id === activeDocument.id) : undefined;
-  const previewJournal: JournalLineDraft[] = buildJournalEntries(activeDocument, isPurchaseView, activeContact, accountNames);
+  // VAT applies to a document only if the entity is registered and the document
+  // is dated on or after the registration date. A posted document keeps the
+  // answer it was posted with; a draft takes the current one for its date.
+  const taxOf = (document: Pick<DocumentRecord, 'date' | 'vatApplied' | 'journal'>): DocumentTax =>
+    document.journal ? { vatApplies: document.vatApplied } : documentTaxFor(selectedEntity, document.date);
+  const documentTax: DocumentTax = activeRecord?.journal ? { vatApplies: activeRecord.vatApplied } : documentTaxFor(selectedEntity, activeDocument.date);
+  const activeTotals = buildTotals(activeDocument, isPurchaseView ? activeContact?.withholdingTaxStatus : undefined, documentTax);
+  const previewJournal: JournalLineDraft[] = buildJournalEntries(activeDocument, isPurchaseView, activeContact, accountNames, documentTax);
   const functionalCurrency: Currency = selectedEntity.functionalCurrency;
   const entityRates = initialData.ratesByEntity[selectedEntity.id] ?? [];
   const entityBankAccounts = initialData.bankAccountsByEntity[selectedEntity.id] ?? [];
   const entityRevaluations = initialData.revaluationsByEntity[selectedEntity.id] ?? [];
+  // Rolling twelve-month taxable turnover against the registration threshold,
+  // from posted invoices in the ledger. Shown for every entity, registered or
+  // not: it is the number that decides whether registration is compulsory.
+  const vatThreshold = useMemo(() => {
+    const asOf = new Date().toISOString().slice(0, 10);
+    const supplies = taxableSuppliesOf(entityDocuments, (minor, rate) => convertMinor(minor, rate));
+    const turnover = rollingTaxableTurnover(supplies, asOf);
+    return { asOf, turnover, ...thresholdStatus(turnover) };
+  }, [entityDocuments]);
+  const vatRegistrationLabel = selectedEntity.vatRegistered
+    ? `Registered from ${selectedEntity.vatRegisteredFrom}`
+    : 'Not VAT registered';
+  const [vatForm, setVatForm] = useState({ registeredFrom: '' });
+  // The Tax screen exists only for a registered entity. Choosing an
+  // unregistered entity while on it lands on the dashboard (see the entity
+  // menu); switching registration off happens from Settings, so the Tax
+  // branch below only ever renders for a registered entity.
+  const visibleNavigation = navigationItems.filter((item) => item !== 'Tax' || selectedEntity.vatRegistered);
   // The table's default for this document's currency and date; the document may override it.
   const documentRateQuote = selectRate(entityRates, activeDocument.currency, functionalCurrency, activeDocument.date);
   const documentRate: string | null = activeDocument.currency === functionalCurrency ? '1.0' : (activeDocument.rate ?? documentRateQuote?.rate ?? null);
@@ -1329,6 +1364,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
         type: formValues.type,
         financialYearEnd: formValues.financialYearEnd,
         vatRegistered: formValues.vatRegistered,
+        vatRegisteredFrom: formValues.vatRegisteredFrom,
         tin: formValues.tin,
       });
       if (!result.ok) {
@@ -1426,7 +1462,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
   // rate the bank actually gave. The realised FX difference is shown before
   // it is posted.
   const outstandingTxn = activeRecord
-    ? (activeRecord.kind === 'invoice' ? buildTotals(activeRecord.lines).total : buildTotals(activeRecord.lines, activeContact?.withholdingTaxStatus).netPayable) - activeRecord.paidTxnMinor
+    ? (activeRecord.kind === 'invoice' ? buildTotals(activeRecord, undefined, taxOf(activeRecord)).total : buildTotals(activeRecord, activeContact?.withholdingTaxStatus, taxOf(activeRecord)).netPayable) - activeRecord.paidTxnMinor
     : 0;
   const paymentRateQuote = activeRecord ? selectRate(entityRates, activeRecord.currency, functionalCurrency, paymentForm.date) : null;
   const paymentRate = activeRecord && activeRecord.currency === functionalCurrency ? '1.0' : (paymentForm.rate || paymentRateQuote?.rate || '');
@@ -2308,6 +2344,9 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                     type="button"
                     onClick={() => {
                       setSelectedEntityId(entity.id);
+                      if (activeNav === 'Tax' && !entity.vatRegistered) {
+                        setActiveNav('Dashboard');
+                      }
                       setEntityMenuOpen(false);
                     }}
                     className={[
@@ -2345,7 +2384,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
         </div>
 
         <nav className="mt-6 space-y-1">
-          {navigationItems.map((item) => {
+          {visibleNavigation.map((item) => {
             const active = item === activeNav;
             return (
               <button
@@ -2421,6 +2460,48 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                   </Card>
                 ))}
               </div>
+
+              <Card
+                className={[
+                  'rounded-2xl border',
+                  vatThreshold.level === 'exceeded' || vatThreshold.level === 'critical'
+                    ? 'border-red-300 bg-red-50'
+                    : vatThreshold.level === 'warning'
+                      ? 'border-amber-300 bg-amber-50'
+                      : 'border-slate-200',
+                ].join(' ')}
+              >
+                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">VAT registration threshold</p>
+                    <h2 className="mt-1 text-xl font-semibold text-slate-900">
+                      {vatThreshold.percent}% of GH₵750,000 · {vatRegistrationLabel}
+                    </h2>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Taxable supplies in the twelve months to {vatThreshold.asOf}: <Money value={vatThreshold.turnover} /> of <Money value={VAT_REGISTRATION_THRESHOLD_MINOR} currency="GHS" />. Posted invoices, standard and zero-rated lines; exempt supplies do not count.
+                      {functionalCurrency !== 'GHS' ? ` The threshold is set in GHS; this figure is in ${functionalCurrency}.` : ''}
+                    </p>
+                    <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-white ring-1 ring-slate-200">
+                      <div
+                        className={[
+                          'h-full rounded-full',
+                          vatThreshold.level === 'clear' ? 'bg-emerald-500' : vatThreshold.level === 'warning' ? 'bg-amber-500' : 'bg-red-600',
+                        ].join(' ')}
+                        style={{ width: `${Math.min(vatThreshold.percent, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                  {vatThreshold.level !== 'clear' ? (
+                    <div className={['max-w-sm rounded-xl px-4 py-3 text-sm font-medium', vatThreshold.level === 'warning' ? 'bg-amber-100 text-amber-900' : 'bg-red-100 text-red-900'].join(' ')}>
+                      {vatThreshold.level === 'exceeded'
+                        ? `${selectedEntity.name} has passed the GH₵750,000 threshold. Registration for VAT is compulsory — switch it on under Settings with the date GRA gives you.`
+                        : vatThreshold.level === 'critical'
+                          ? `Warning: ${selectedEntity.name} is above 90% of the VAT registration threshold. Prepare to register.`
+                          : `Warning: ${selectedEntity.name} is above 75% of the VAT registration threshold.`}
+                    </div>
+                  ) : null}
+                </div>
+              </Card>
 
               <Card className="rounded-2xl">
                 <div className="flex items-start justify-between gap-4 pb-4">
@@ -3930,6 +4011,44 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
               </Card>
 
               <Card className="rounded-2xl">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">VAT</p>
+                <h3 className="mt-1 text-xl font-semibold text-slate-900">{vatRegistrationLabel}</h3>
+                <p className="mt-1 text-sm text-slate-600">
+                  {selectedEntity.vatRegistered
+                    ? `VAT is calculated on ${selectedEntity.name}'s invoices and bills dated on or after ${selectedEntity.vatRegisteredFrom}: 15% VAT, 2.5% NHIL and 2.5% GETFund on the same base. Documents dated earlier, and anything already posted, are not touched. Input tax on purchases and import VAT are recoverable from that date. The VAT return is under Tax.`
+                    : `No VAT is calculated for ${selectedEntity.name}. Invoices and bills are gross, VAT a supplier charges is part of the cost of the item, import VAT paid at the port is part of the cost of the goods, and there is no VAT return. Switching registration on applies VAT to documents dated on or after the date you enter — never to earlier ones.`}
+                </p>
+                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  <span className="font-semibold">Check the category.</span> Suppliers of goods must register once taxable supplies pass GH₵750,000 in any twelve months (tracked on the dashboard). <span className="font-semibold">Suppliers of services are required to register regardless of turnover.</span> If {selectedEntity.name} supplies services — programmes delivered for a fee, processing for others — the threshold does not apply and it should be registered now.
+                </div>
+                {allowed('entity:configure') ? (
+                  selectedEntity.vatRegistered ? (
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <Button size="sm" variant="secondary" disabled={settingsPending} onClick={() => runSetting(`VAT registration switched off for ${selectedEntity.name}.`, () => setVatRegistration(selectedEntity.id, { registered: false }))}>
+                        Switch VAT off
+                      </Button>
+                      <span className="text-xs text-slate-500">Posted documents keep the VAT they were posted with.</span>
+                    </div>
+                  ) : (
+                    <div className="mt-3 flex flex-wrap items-end gap-3">
+                      <div>
+                        <label className="mb-1.5 block text-sm font-medium text-slate-700">Registration effective from</label>
+                        <Input type="date" value={vatForm.registeredFrom} onChange={(event) => setVatForm({ registeredFrom: event.target.value })} />
+                      </div>
+                      <Button
+                        size="sm"
+                        disabled={settingsPending || !vatForm.registeredFrom}
+                        onClick={() => runSetting(`VAT registration switched on for ${selectedEntity.name} from ${vatForm.registeredFrom}.`, () => setVatRegistration(selectedEntity.id, { registered: true, registeredFrom: vatForm.registeredFrom }))}
+                      >
+                        Switch VAT on
+                      </Button>
+                      <span className="text-xs text-slate-500">Applies to documents dated on or after this date only.</span>
+                    </div>
+                  )
+                ) : null}
+              </Card>
+
+              <Card className="rounded-2xl">
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Exchange rates</p>
@@ -4341,7 +4460,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                         <span className="truncate">{document.contactName}</span>
                         <span>{document.date}</span>
                         <span>{statusLabels[document.status]}</span>
-                        <span className="text-right font-mono"><Money value={buildTotals(document.lines).total} currency={document.currency} /></span>
+                        <span className="text-right font-mono"><Money value={buildTotals(document, undefined, taxOf(document)).total} currency={document.currency} /></span>
                       </button>
                     ))}
                 </div>
@@ -4435,15 +4554,59 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                     <Input value={statusLabels[activeDocument.status]} readOnly disabled />
                   </div>
                 )}
+
+                {!isPurchaseView ? (
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">Sale</label>
+                    <select
+                      value={activeDocument.saleType}
+                      disabled={documentReadOnly}
+                      onChange={(event) => updateCurrentDocument({ saleType: event.target.value as SaleType })}
+                      className="min-h-[44px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50"
+                    >
+                      <option value="domestic">Domestic</option>
+                      <option value="export">Export</option>
+                    </select>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {documentTax.vatApplies
+                        ? activeDocument.saleType === 'export' ? 'Export: zero-rated.' : 'Domestic: VAT charged per line.'
+                        : 'Exports will be zero-rated once registered; nothing changes yet.'}
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">Import VAT paid at entry ({activeDocument.currency})</label>
+                    <Input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={pesewasToCedisInput(activeDocument.importVat)}
+                      disabled={documentReadOnly}
+                      onChange={(event) => updateCurrentDocument({ importVat: cedisInputToPesewas(event.target.value) })}
+                    />
+                    <p className="mt-1 text-xs text-slate-500">
+                      {documentTax.vatApplies ? 'Recoverable: posted to input tax.' : 'Not recoverable while unregistered: posted to the cost of the goods.'}
+                    </p>
+                  </div>
+                )}
               </div>
+
+              {!documentTax.vatApplies ? (
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                  <span className="font-medium text-slate-900">No VAT on this {isPurchaseView ? 'bill' : 'invoice'}.</span>{' '}
+                  {selectedEntity.vatRegistered
+                    ? `${selectedEntity.name} is VAT registered from ${selectedEntity.vatRegisteredFrom}; this document is dated before that, so it is not taxed.`
+                    : `${selectedEntity.name} is not VAT registered. Amounts are gross${isPurchaseView ? ' — any VAT the supplier charged is part of the cost' : ''}. The supply type per line only feeds the registration threshold tracker.`}
+                </div>
+              ) : null}
 
               <div className="mt-6 rounded-2xl border border-slate-200 overflow-hidden">
                 <div className="grid grid-cols-[1.6fr_0.7fr_0.9fr_1fr_1.1fr_56px] gap-3 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                   <span>Description</span>
                   <span>Qty</span>
-                  <span>Unit price (GHS)</span>
+                  <span>Unit price ({activeDocument.currency})</span>
                   <span>Account</span>
-                  <span>VAT</span>
+                  <span>{documentTax.vatApplies ? 'VAT' : 'Supply type'}</span>
                   <span />
                 </div>
 
@@ -4491,7 +4654,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                       }
                       className="min-h-[44px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50"
                     >
-                      <option value="standard">Standard 20%</option>
+                      <option value="standard">{documentTax.vatApplies ? 'Standard 20%' : 'Taxable'}</option>
                       <option value="zero-rated">Zero-rated</option>
                       <option value="exempt">Exempt</option>
                     </select>
@@ -4530,12 +4693,15 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
 
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <div className="space-y-2 text-sm text-slate-700">
-                    {[
-                      ['Subtotal', activeTotals.subtotal],
-                      ['VAT (15%)', activeTotals.vat],
-                      ['NHIL (2.5%)', activeTotals.nhil],
-                      ['GETFund (2.5%)', activeTotals.getFund],
-                    ].map(([label, amount]) => (
+                    {(documentTax.vatApplies
+                      ? [
+                          ['Subtotal', activeTotals.subtotal],
+                          ['VAT (15%)', activeTotals.vat],
+                          ['NHIL (2.5%)', activeTotals.nhil],
+                          ['GETFund (2.5%)', activeTotals.getFund],
+                        ]
+                      : [['Subtotal (gross)', activeTotals.subtotal]]
+                    ).map(([label, amount]) => (
                       <div key={label as string} className="flex items-start justify-between">
                         <span>{label}</span>
                         <FxAmount amount={amount as number} currency={activeDocument.currency} functional={documentIsForeign ? toFunctional(amount as number) : null} functionalCurrency={functionalCurrency} />
@@ -4551,6 +4717,12 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                           <span>Withholding tax</span>
                           <FxAmount amount={activeTotals.withholdingTax} currency={activeDocument.currency} functional={documentIsForeign ? toFunctional(activeTotals.withholdingTax) : null} functionalCurrency={functionalCurrency} />
                         </div>
+                        {activeTotals.importVat > 0 ? (
+                          <div className="flex items-start justify-between">
+                            <span>Import VAT at entry{documentTax.vatApplies ? '' : ' (to cost)'}</span>
+                            <FxAmount amount={activeTotals.importVat} currency={activeDocument.currency} functional={documentIsForeign ? toFunctional(activeTotals.importVat) : null} functionalCurrency={functionalCurrency} />
+                          </div>
+                        ) : null}
                         <div className="flex items-start justify-between text-base font-semibold text-slate-900">
                           <span>Net payable</span>
                           <FxAmount amount={activeTotals.netPayable} currency={activeDocument.currency} functional={documentIsForeign ? toFunctional(activeTotals.netPayable) : null} functionalCurrency={functionalCurrency} large />
@@ -4822,9 +4994,19 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                     }
                     className="min-h-[44px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100"
                   >
-                    <option value="registered">Registered</option>
                     <option value="unregistered">Unregistered</option>
+                    <option value="registered">Registered</option>
                   </select>
+                  {formValues.vatRegistered ? (
+                    <div className="mt-2">
+                      <label className="mb-1.5 block text-sm font-medium text-slate-700">Registered from</label>
+                      <Input
+                        type="date"
+                        value={formValues.vatRegisteredFrom}
+                        onChange={(event) => setFormValues((current) => ({ ...current, vatRegisteredFrom: event.target.value }))}
+                      />
+                    </div>
+                  ) : null}
                 </div>
 
                 <div>

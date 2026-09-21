@@ -31,7 +31,10 @@ model Entity {
   name               String
   type               String // 'programs' | 'manufacturing'
   financialYearEnd   String?
+  /// VAT registration is per entity, off by default. VAT is calculated only
+  /// for this entity and only on documents dated on or after vatRegisteredFrom.
   vatRegistered      Boolean  @default(false)
+  vatRegisteredFrom  DateTime? @db.Date
   tin                String?
   accent             String?
   /// The currency the books are kept and reported in. Per entity, never global.
@@ -473,6 +476,13 @@ enum VatTreatment {
   EXEMPT
 }
 
+/// Invoices only. Exports are zero-rated once the entity is VAT registered;
+/// the flag exists now so sales are classified before that day.
+enum SaleType {
+  DOMESTIC
+  EXPORT
+}
+
 model Document {
   id                  String         @id @default(cuid())
   entityId            String
@@ -493,6 +503,13 @@ model Document {
   rateExact           Boolean        @default(true)
   /// Settled so far, in the document currency.
   paidTxnMinor        BigInt         @default(0)
+  saleType            SaleType       @default(DOMESTIC)
+  /// Bills only: VAT paid at the point of entry on an import, document currency.
+  importVatMinor      BigInt         @default(0)
+  /// Whether VAT was calculated on this document — fixed at posting from the
+  /// entity's registration and the document date, so a later registration
+  /// never changes how a posted document reads.
+  vatApplied          Boolean        @default(false)
   evatClearanceNumber String?
   evatQrCode          String?
   evatTimestamp       String?

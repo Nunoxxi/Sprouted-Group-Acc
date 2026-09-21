@@ -15,7 +15,7 @@ These are not preferences. Breaking one is a bug, not a style disagreement.
 - Every record carries an `entityId`, and every query is entity-scoped **by default** — failing closed, not falling back to all entities. Adding a fourth entity must require no schema change.
 - Accounting is double-entry. Every transaction posts balanced money in and money out to a journal. Nothing is hard-deleted; corrections are reversing entries.
 - Money is stored as **integer minor units** (pesewas, cents), never floating point. Each entity keeps its books in its own functional currency (GHS by default); every journal line also carries its transaction currency, amount and the rate used, fixed at posting. Rates are exact decimals applied with integer arithmetic.
-- Ghana VAT is 20% effective: 15% VAT + 2.5% NHIL + 2.5% GETFund, all on the same base, all recoverable as input tax. They are assessed and recovered separately, so each is rounded independently. This rule lives in `src/lib/ghana-tax.ts` and must not be reimplemented anywhere else.
+- Ghana VAT is 20% effective: 15% VAT + 2.5% NHIL + 2.5% GETFund, all on the same base, all recoverable as input tax. They are assessed and recovered separately, so each is rounded independently. This rule lives in `src/lib/ghana-tax.ts` and must not be reimplemented anywhere else. **VAT registration is per entity and off by default** — none of the group is registered yet. While an entity is unregistered nothing is taxed and VAT on purchases is part of the cost; when an Owner switches it on with a date, VAT applies to that entity's documents dated on or after that date, never earlier.
 - Users are not accountants. The interface says "money in" and "money out", never "debit" and "credit".
 
 ## Stack
@@ -92,7 +92,7 @@ public/               Static assets
 
 The files worth reading first in `src/lib/`:
 
-- **`ghana-tax.ts`** — the statutory levy rule. Single source of truth, shared by the document form, the journal builder, the tax report and the tests.
+- **`ghana-tax.ts`** — the statutory levy rule, the registration rule (`vatAppliesOn`) and the GHS 750,000 threshold. Single source of truth, shared by the document form, the journal builder, the tax report and the tests.
 - **`data/money.ts`** — `toMinor` / `fromMinor`. Money is `BigInt` in Postgres and `number` everywhere else; this is the only place the two meet.
 - **`accounting-integrity.ts`** — the invariants the books must satisfy (journals balance, trial balance nets to zero, balance sheet balances, intercompany postings mirror faithfully). Exercised by the tests; the shell does not import it.
 - **`seed-data.ts`** — the demo entities, contacts, funds and projects. The seed writes them; nothing else defines them.

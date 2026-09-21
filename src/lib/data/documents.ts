@@ -11,6 +11,7 @@ import type {
   JournalEntry,
   JournalLine,
   VatTreatment as PrismaVatTreatment,
+  SaleType as PrismaSaleType,
   Account,
   Contact,
 } from '@prisma/client';
@@ -29,6 +30,7 @@ import type {
   PaymentRecord,
   PostedJournal,
   RevaluationRecord,
+  SaleType,
   VatTreatment,
 } from './types';
 import type { BankAccount, ExchangeRate, Payment, Revaluation } from '@prisma/client';
@@ -61,6 +63,9 @@ export const vatToPrisma: Record<VatTreatment, PrismaVatTreatment> = {
   'zero-rated': 'ZERO_RATED',
   exempt: 'EXEMPT',
 };
+
+const saleTypeToRecord: Record<PrismaSaleType, SaleType> = { DOMESTIC: 'domestic', EXPORT: 'export' };
+export const saleTypeToPrisma: Record<SaleType, PrismaSaleType> = { domestic: 'DOMESTIC', export: 'EXPORT' };
 
 // --- row → record --------------------------------------------------------------
 
@@ -157,6 +162,9 @@ export function documentRecord(row: DocumentRow): DocumentRecord {
     rateDate: row.rateDate ? isoDate(row.rateDate) : null,
     rateExact: row.rateExact,
     paidTxnMinor: toMinor(row.paidTxnMinor),
+    saleType: saleTypeToRecord[row.saleType],
+    importVat: toMinor(row.importVatMinor),
+    vatApplied: row.vatApplied,
     lines: [...row.lines]
       .sort((a, b) => a.position - b.position)
       .map((line) => ({

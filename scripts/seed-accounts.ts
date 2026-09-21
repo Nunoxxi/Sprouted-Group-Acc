@@ -31,7 +31,8 @@ async function main() {
           name: entity.name,
           type: entity.type,
           financialYearEnd: entity.financialYearEnd,
-          vatRegistered: entity.vatRegistered,
+          // vatRegistered / vatRegisteredFrom are deliberately not here: registration
+          // is a live setting an Owner switches on, and a re-seed must not undo it.
           tin: entity.tin,
           accent: entity.accent,
           functionalCurrency: entity.functionalCurrency,
@@ -43,6 +44,7 @@ async function main() {
           type: entity.type,
           financialYearEnd: entity.financialYearEnd,
           vatRegistered: entity.vatRegistered,
+          vatRegisteredFrom: entity.vatRegisteredFrom ? new Date(entity.vatRegisteredFrom) : null,
           tin: entity.tin,
           accent: entity.accent,
           functionalCurrency: entity.functionalCurrency,

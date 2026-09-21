@@ -19,6 +19,8 @@ export type EntityRecord = {
   type: EntityType;
   financialYearEnd: string;
   vatRegistered: boolean;
+  /** YYYY-MM-DD from which VAT applies; null while unregistered. */
+  vatRegisteredFrom: string | null;
   tin: string;
   accent: string;
   /** The currency the books are kept in. Per entity. */
@@ -78,6 +80,7 @@ export type ProjectRecord = {
 export type DocumentKind = 'invoice' | 'bill';
 export type DocumentStatus = 'draft' | 'awaiting-payment' | 'paid' | 'voided';
 export type VatTreatment = 'standard' | 'zero-rated' | 'exempt';
+export type SaleType = 'domestic' | 'export';
 
 export type DocumentLineRecord = {
   id: string;
@@ -128,6 +131,12 @@ export type DocumentRecord = {
   rateExact: boolean;
   /** Settled so far, in the document currency. */
   paidTxnMinor: number;
+  /** Invoices: domestic or export. Bills are always 'domestic'. */
+  saleType: SaleType;
+  /** Bills: import VAT paid at the point of entry, document currency minor units. */
+  importVat: number;
+  /** Whether VAT was calculated on this document. Fixed at posting; while a draft, the current answer for its date. */
+  vatApplied: boolean;
   lines: DocumentLineRecord[];
   payments: PaymentRecord[];
   evatClearanceNumber: string;

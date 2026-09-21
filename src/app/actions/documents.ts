@@ -26,7 +26,7 @@ import { recordAuditEvent } from '@/lib/audit';
 import type { Permission, Principal } from '@/lib/authz';
 import { authorizationFailure, requireEntityAccess, requirePermission } from '@/lib/dal';
 import { ensureDefaultBankAccount, seedChartForEntity } from '@/lib/data/chart.ts';
-import { documentInclude, documentRecord, kindToPrisma, vatToPrisma } from '@/lib/data/documents';
+import { documentInclude, documentRecord, kindToPrisma, saleTypeToPrisma, vatToPrisma } from '@/lib/data/documents';
 import { contactRecord, entityRecord, rateText, toPrismaEnum } from '@/lib/data/mappers';
 import { fromMinor, toMinor } from '@/lib/data/money';
 import type { ContactRecord, DocumentRecord, EntityRecord, EntityType } from '@/lib/data/types';
@@ -34,6 +34,7 @@ import {
   accountNameMap,
   buildTotals,
   controlAccounts,
+  documentTaxFor,
   journalLinesFor,
   normalizeDocument,
   periodOf,
@@ -86,11 +87,17 @@ async function withPermission<T>(permission: Permission, run: (principal: Princi
 }
 
 async function requireEntity(entityId: string) {
-  const entity = await prisma.entity.findUnique({ where: { id: entityId }, select: { id: true, name: true, functionalCurrency: true } });
+  const entity = await prisma.entity.findUnique({
+    where: { id: entityId },
+    select: { id: true, name: true, functionalCurrency: true, vatRegistered: true, vatRegisteredFrom: true },
+  });
   if (!entity) {
     throw new Error(`Unknown entity ${entityId}`);
   }
-  return entity;
+  return {
+    ...entity,
+    vatRegisteredFrom: entity.vatRegisteredFrom ? entity.vatRegisteredFrom.toISOString().slice(0, 10) : null,
+  };
 }
 
 function dateOf(value: string): Date {
@@ -203,6 +210,15 @@ async function saveDraft(entityId: string, input: unknown, principal: Principal)
     return fail('That contact no longer exists.');
   }
 
+  // Sale type is an invoice thing and import VAT a bill thing; normalizeDocument
+  // has already zeroed whichever does not apply to this kind.
+  const vatFields = {
+    saleType: saleTypeToPrisma[form.saleType],
+    importVatMinor: fromMinor(form.importVat),
+    // Recorded for the draft's date now, fixed at posting.
+    vatApplied: documentTaxFor(entity, form.date).vatApplies,
+  };
+
   const linesData = form.lines.map((line, position) => ({
     entityId,
     position,
@@ -245,6 +261,7 @@ async function saveDraft(entityId: string, input: unknown, principal: Principal)
           evatQrCode: form.evatQrCode || null,
           evatTimestamp: form.evatTimestamp || null,
           ...rateFields,
+          ...vatFields,
           lastEditedById: principal.userId,
           lines: { create: linesData },
         },
@@ -265,6 +282,7 @@ async function saveDraft(entityId: string, input: unknown, principal: Principal)
         evatQrCode: form.evatQrCode || null,
         evatTimestamp: form.evatTimestamp || null,
         ...rateFields,
+        ...vatFields,
         createdById: principal.userId,
         lastEditedById: principal.userId,
         lines: { create: linesData },
@@ -322,7 +340,11 @@ async function post(entityId: string, documentId: string, principal: Principal):
   const isPurchase = document.kind === 'BILL';
   const contact = contactRecord({ ...document.contact, balances: [] });
   const form = documentRecordToForm(documentRecord(document));
-  const txnLines = journalLinesFor(form, isPurchase, contact, names);
+  // Whether VAT applies is decided here, from the entity's registration and
+  // the document's date — never from the draft's earlier answer — and stored
+  // on the document with the journal.
+  const tax = documentTaxFor(entity, form.date);
+  const txnLines = journalLinesFor(form, isPurchase, contact, names, tax);
 
   if (!journalEntriesBalance([{ entityId, lines: txnLines }])) {
     // Cannot happen if the builder is correct; refuse loudly rather than
@@ -391,6 +413,7 @@ async function post(entityId: string, documentId: string, principal: Principal):
           rate: decimalOf(rateInfo.rate),
           rateDate: dateOf(rateInfo.rateDate),
           rateExact: rateInfo.rateExact,
+          vatApplied: tax.vatApplies,
         },
       });
 
@@ -408,6 +431,9 @@ async function post(entityId: string, documentId: string, principal: Principal):
             lines: lines.length,
             currency: form.currency,
             rate: rateInfo.rate,
+            vatApplied: tax.vatApplies,
+            saleType: form.saleType,
+            importVat: form.importVat,
             total: lines.filter((l) => l.type === 'debit').reduce((s, l) => s + l.functionalAmount, 0),
           },
         },
@@ -441,6 +467,8 @@ function documentRecordToForm(record: DocumentRecord): DocumentFormState {
     rate: record.rate,
     rateDate: record.rateDate,
     rateExact: record.rateExact,
+    saleType: record.saleType,
+    importVat: record.importVat,
     lines: record.lines.map((line) => ({
       id: line.id,
       description: line.description,
@@ -503,7 +531,8 @@ async function settle(entityId: string, input: PaymentInput, principal: Principa
   const kind = document.kind === 'BILL' ? 'bill' : 'invoice';
   const form = documentRecordToForm(documentRecord(document));
   const contact = contactRecord({ ...document.contact, balances: [] });
-  const totals = buildTotals(form.lines, kind === 'bill' ? contact.withholdingTaxStatus : undefined);
+  // The regime fixed at posting, not today's: registering later must not change what is owed.
+  const totals = buildTotals(form, kind === 'bill' ? contact.withholdingTaxStatus : undefined, { vatApplies: document.vatApplied });
   const owedTxn = kind === 'invoice' ? totals.total : totals.netPayable;
   const paidSoFar = toMinor(document.paidTxnMinor);
   const outstanding = owedTxn - paidSoFar;
@@ -829,6 +858,8 @@ export type NewEntityInput = {
   type: EntityType;
   financialYearEnd: string;
   vatRegistered: boolean;
+  /** YYYY-MM-DD; required when vatRegistered. */
+  vatRegisteredFrom?: string;
   tin: string;
 };
 
@@ -851,6 +882,11 @@ async function addEntity(input: NewEntityInput): Promise<ActionResult<{ entity: 
     return fail('An entity needs a name.');
   }
 
+  const registeredFrom = input.vatRegistered ? (input.vatRegisteredFrom ?? '').trim() : '';
+  if (input.vatRegistered && !/^\d{4}-\d{2}-\d{2}$/.test(registeredFrom)) {
+    return fail('A VAT-registered entity needs its registration date (YYYY-MM-DD).');
+  }
+
   const base = slugify(name) || 'entity';
   const existingCount = await prisma.entity.count();
 
@@ -868,6 +904,7 @@ async function addEntity(input: NewEntityInput): Promise<ActionResult<{ entity: 
         type: input.type,
         financialYearEnd: input.financialYearEnd.trim() || null,
         vatRegistered: input.vatRegistered,
+        vatRegisteredFrom: input.vatRegistered ? dateOf(registeredFrom) : null,
         tin: input.tin.trim() || null,
         accent: accentPalette[existingCount % accentPalette.length],
       },

@@ -15,6 +15,9 @@ import { seedFunds, seedProjects } from '@/lib/seed-data';
 
 const accountTypes = accountTypesMap();
 
+/** These cases assume a VAT-registered entity; registration itself is covered in vat-registration.test.ts. */
+const vatOn = { vatApplies: true };
+
 const chartNames = accountNameMap([
   { code: '1010', name: 'Trade Receivables' },
   { code: '2001', name: 'Trade Payables' },
@@ -38,7 +41,7 @@ function documentJournal(base: number, kind: 'sale' | 'purchase') {
   const contact = { withholdingTaxStatus: '5%' as const };
   return {
     entityId: 'sprouted-roots',
-    lines: journalLinesFor(documentForm(base, isPurchase ? 'bill' : 'invoice'), isPurchase, contact, chartNames),
+    lines: journalLinesFor(documentForm(base, isPurchase ? 'bill' : 'invoice'), isPurchase, contact, chartNames, vatOn),
   };
 }
 
@@ -293,8 +296,8 @@ describe('what posting a document actually writes to the ledger', () => {
     // An exempt-only invoice previews three zero levy lines so the person can
     // see every account the posting would touch. The ledger must not hold them.
     const form = documentForm(50000, 'invoice', 'exempt');
-    const preview = buildJournalEntries(form, false, undefined, chartNames);
-    const persisted = journalLinesFor(form, false, undefined, chartNames);
+    const preview = buildJournalEntries(form, false, undefined, chartNames, vatOn);
+    const persisted = journalLinesFor(form, false, undefined, chartNames, vatOn);
 
     expect(preview.filter((line) => line.amount === 0)).toHaveLength(3);
     expect(persisted.every((line) => line.amount > 0)).toBe(true);
@@ -305,8 +308,8 @@ describe('what posting a document actually writes to the ledger', () => {
   it("labels accounts from the entity's own chart, not a hardcoded map", () => {
     // 4001 is "Grants - Unrestricted" on the charity and "Domestic Sales" on a
     // manufacturer. The same code must read differently on each.
-    const charity = journalLinesFor(documentForm(1000, 'invoice'), false, undefined, chartNames);
-    const manufacturer = journalLinesFor(documentForm(1000, 'invoice'), false, undefined, accountNameMap([{ code: '4001', name: 'Domestic Sales' }]));
+    const charity = journalLinesFor(documentForm(1000, 'invoice'), false, undefined, chartNames, vatOn);
+    const manufacturer = journalLinesFor(documentForm(1000, 'invoice'), false, undefined, accountNameMap([{ code: '4001', name: 'Domestic Sales' }]), vatOn);
 
     expect(charity.find((line) => line.accountCode === '4001')?.accountName).toBe('Grants - Unrestricted');
     expect(manufacturer.find((line) => line.accountCode === '4001')?.accountName).toBe('Domestic Sales');

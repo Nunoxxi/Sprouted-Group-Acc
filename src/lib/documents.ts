@@ -10,13 +10,31 @@ import { isCurrency, type Currency } from './fx';
 import {
   leviesOnBase,
   roundPesewas,
+  splitImportLevies,
+  vatAppliesOn,
   withholdingRateOf,
   withholdingTaxOn,
+  type TaxableSupply,
+  type VatRegistration,
   type VATTreatment,
   type WithholdingTaxStatus,
 } from './ghana-tax';
 
 export type DocumentKind = 'invoice' | 'bill';
+/** Domestic or export sale. Exports are zero-rated once the entity is registered; until then the flag changes nothing. */
+export type SaleType = 'domestic' | 'export';
+export const saleTypes: SaleType[] = ['domestic', 'export'];
+
+/**
+ * Whether VAT is calculated on a document. Decided once from the entity's
+ * registration and the document date; fixed on the document at posting so a
+ * later registration never rewrites what a posted document charged.
+ */
+export type DocumentTax = { vatApplies: boolean };
+
+export function documentTaxFor(entity: VatRegistration, date: string): DocumentTax {
+  return { vatApplies: vatAppliesOn(entity, date) };
+}
 export type DocumentStatus = 'draft' | 'awaiting-payment' | 'paid' | 'voided';
 
 export type DocumentLine = {
@@ -46,6 +64,10 @@ export type DocumentFormState = {
   rateDate: string | null;
   /** False when the rate is a fallback from an earlier date or a manual override. */
   rateExact: boolean;
+  /** Invoices only; bills are always 'domestic'. */
+  saleType: SaleType;
+  /** Bills only: VAT paid at the point of entry on an import, in the document currency (pesewas/cents). */
+  importVat: number;
   lines: DocumentLine[];
   evatClearanceNumber: string;
   evatQrCode: string;
@@ -105,6 +127,8 @@ export function makeDocument(kind: DocumentKind, contactId: string, currency: Cu
     rate: currency === 'GHS' ? '1.0' : null,
     rateDate: null,
     rateExact: true,
+    saleType: 'domestic',
+    importVat: 0,
     lines: [makeLine(kind)],
     evatClearanceNumber: '',
     evatQrCode: '',
@@ -161,6 +185,8 @@ export function normalizeDocument(value: unknown, kind: DocumentKind, fallbackCo
     rate: typeof draft.rate === 'string' && draft.rate.trim() ? draft.rate.trim() : null,
     rateDate: typeof draft.rateDate === 'string' && draft.rateDate ? draft.rateDate : null,
     rateExact: typeof draft.rateExact === 'boolean' ? draft.rateExact : true,
+    saleType: kind === 'invoice' && draft.saleType === 'export' ? 'export' : 'domestic',
+    importVat: kind === 'bill' && typeof draft.importVat === 'number' && Number.isInteger(draft.importVat) && draft.importVat > 0 ? draft.importVat : 0,
     lines: lines.length > 0 ? lines : fresh.lines,
     evatClearanceNumber: asText(draft.evatClearanceNumber),
     evatQrCode: asText(draft.evatQrCode),
@@ -168,26 +194,70 @@ export function normalizeDocument(value: unknown, kind: DocumentKind, fallbackCo
   };
 }
 
-export function lineTaxBreakdown(line: DocumentLine) {
-  // Each line is its own tax point, so levies are rounded per line and then
-  // summed — rounding the summed base instead would disagree with the invoice.
-  return leviesOnBase(roundPesewas(line.quantity * line.unitPrice), line.vatTreatment);
+/**
+ * The VAT treatment a line is actually taxed at. While the entity is not
+ * registered (or the document predates registration) nothing is taxed,
+ * whatever the line says: the treatment is kept as a classification, for the
+ * threshold tracker and for the day registration takes effect. Once VAT
+ * applies, an export sale is zero-rated as a whole.
+ */
+export function effectiveTreatment(
+  line: Pick<DocumentLine, 'vatTreatment'>,
+  document: Pick<DocumentFormState, 'kind' | 'saleType'>,
+  tax: DocumentTax,
+): VATTreatment {
+  if (!tax.vatApplies) {
+    return 'exempt';
+  }
+  if (document.kind === 'invoice' && document.saleType === 'export') {
+    return 'zero-rated';
+  }
+  return line.vatTreatment;
 }
 
-export function buildTotals(lines: DocumentLine[], withholdingTaxStatus?: WithholdingTaxStatus) {
-  const lineSummaries = lines.map(lineTaxBreakdown);
+export function lineTaxBreakdown(line: DocumentLine, treatment: VATTreatment = line.vatTreatment) {
+  // Each line is its own tax point, so levies are rounded per line and then
+  // summed — rounding the summed base instead would disagree with the invoice.
+  return leviesOnBase(roundPesewas(line.quantity * line.unitPrice), treatment);
+}
+
+type TotalsInput = Pick<DocumentFormState, 'kind' | 'lines' | 'saleType' | 'importVat'>;
+
+export type DocumentTotals = {
+  subtotal: number;
+  vat: number;
+  nhil: number;
+  getFund: number;
+  totalTax: number;
+  /** The supplier's or customer's document total: subtotal plus levies. */
+  total: number;
+  /** Bills only: VAT paid at the port on an import. Not part of `total`, never subject to withholding. */
+  importVat: number;
+  withholdingTax: number;
+  /** Bills: total less withholding, plus import VAT — what leaves the bank. Invoices: equals `total`. */
+  netPayable: number;
+};
+
+/**
+ * Document totals under a tax regime. `tax.vatApplies` is required, not
+ * defaulted: a caller that forgets it must not silently charge (or fail to
+ * charge) VAT.
+ */
+export function buildTotals(document: TotalsInput, withholdingTaxStatus: WithholdingTaxStatus | undefined, tax: DocumentTax): DocumentTotals {
+  const lineSummaries = document.lines.map((line) => lineTaxBreakdown(line, effectiveTreatment(line, document, tax)));
   const subtotal = lineSummaries.reduce((sum, line) => sum + line.base, 0);
   const vat = lineSummaries.reduce((sum, line) => sum + line.vat, 0);
   const nhil = lineSummaries.reduce((sum, line) => sum + line.nhil, 0);
   const getFund = lineSummaries.reduce((sum, line) => sum + line.getFund, 0);
   const totalTax = vat + nhil + getFund;
   const total = subtotal + totalTax;
+  const importVat = document.kind === 'bill' ? document.importVat : 0;
 
   const withheldRate = withholdingRateOf(withholdingTaxStatus);
   const withholdingTax = withholdingTaxOn(total, withheldRate);
-  const netPayable = Math.max(total - withholdingTax, 0);
+  const netPayable = Math.max(total - withholdingTax, 0) + importVat;
 
-  return { subtotal, vat, nhil, getFund, totalTax, total, withholdingTax, netPayable };
+  return { subtotal, vat, nhil, getFund, totalTax, total, importVat, withholdingTax, netPayable };
 }
 
 /** Code → name lookup from an entity's chart. */
@@ -196,19 +266,46 @@ export function accountNameMap(accounts: Pick<AccountRecord, 'code' | 'name'>[])
 }
 
 /**
+ * Spread an amount across accounts in proportion to their bases, whole
+ * pesewas, remainder on the largest — so import VAT lands on the same cost
+ * accounts as the goods it was paid on.
+ */
+function allocateProRata(amount: number, baseByAccount: Record<string, number>): Record<string, number> {
+  const entries = Object.entries(baseByAccount).filter(([, base]) => base > 0);
+  const totalBase = entries.reduce((sum, [, base]) => sum + base, 0);
+  if (amount <= 0 || entries.length === 0 || totalBase <= 0) {
+    return {};
+  }
+  const allocated: Record<string, number> = {};
+  let remaining = amount;
+  for (const [code, base] of entries) {
+    const share = roundPesewas((amount * base) / totalBase);
+    allocated[code] = share;
+    remaining -= share;
+  }
+  const largest = entries.reduce((best, entry) => (entry[1] > best[1] ? entry : best))[0];
+  allocated[largest] += remaining;
+  return allocated;
+}
+
+/**
  * The full journal for a document, including zero-amount levy lines — what
  * the editor previews so a person can see every account the posting touches.
  * Account names come from the entity's own chart, so the same code reads
  * "Grants - Unrestricted" on the charity and "Domestic Sales" on a
  * manufacturer.
+ *
+ * With VAT not applying there are no levy lines at all, not even zero ones:
+ * the document has no VAT on it.
  */
 export function buildJournalEntries(
   documentState: DocumentFormState,
   isPurchase: boolean,
   contact: Pick<ContactRecord, 'withholdingTaxStatus'> | undefined,
   accountNames: Record<string, string>,
+  tax: DocumentTax,
 ): JournalLineDraft[] {
-  const totals = buildTotals(documentState.lines, isPurchase ? contact?.withholdingTaxStatus : undefined);
+  const totals = buildTotals(documentState, isPurchase ? contact?.withholdingTaxStatus : undefined, tax);
   const entries: JournalLineDraft[] = [];
   const nameOf = (code: string, fallback: string) => accountNames[code] ?? fallback;
 
@@ -218,7 +315,7 @@ export function buildJournalEntries(
 
   const baseByAccount = documentState.lines.reduce(
     (accumulator, line) => {
-      const summary = lineTaxBreakdown(line);
+      const summary = lineTaxBreakdown(line, effectiveTreatment(line, documentState, tax));
       accumulator[line.accountCode] = (accumulator[line.accountCode] ?? 0) + summary.base;
       return accumulator;
     },
@@ -232,19 +329,43 @@ export function buildJournalEntries(
       entries.push({ accountCode, accountName: nameOf(accountCode, 'Revenue'), amount, type: 'credit' });
     }
 
-    entries.push({ accountCode: controlAccounts.vatOutput, accountName: nameOf(controlAccounts.vatOutput, 'VAT Output Tax Payable'), amount: totals.vat, type: 'credit' });
-    entries.push({ accountCode: controlAccounts.nhilOutput, accountName: nameOf(controlAccounts.nhilOutput, 'NHIL Payable'), amount: totals.nhil, type: 'credit' });
-    entries.push({ accountCode: controlAccounts.getFundOutput, accountName: nameOf(controlAccounts.getFundOutput, 'GETFund Payable'), amount: totals.getFund, type: 'credit' });
+    if (tax.vatApplies) {
+      entries.push({ accountCode: controlAccounts.vatOutput, accountName: nameOf(controlAccounts.vatOutput, 'VAT Output Tax Payable'), amount: totals.vat, type: 'credit' });
+      entries.push({ accountCode: controlAccounts.nhilOutput, accountName: nameOf(controlAccounts.nhilOutput, 'NHIL Payable'), amount: totals.nhil, type: 'credit' });
+      entries.push({ accountCode: controlAccounts.getFundOutput, accountName: nameOf(controlAccounts.getFundOutput, 'GETFund Payable'), amount: totals.getFund, type: 'credit' });
+    }
   } else {
-    for (const [accountCode, amount] of Object.entries(baseByAccount)) {
-      entries.push({ accountCode, accountName: nameOf(accountCode, 'Expense'), amount, type: 'debit' });
+    if (tax.vatApplies) {
+      for (const [accountCode, amount] of Object.entries(baseByAccount)) {
+        entries.push({ accountCode, accountName: nameOf(accountCode, 'Expense'), amount, type: 'debit' });
+      }
+
+      // Registered: the levies on the purchase and any import VAT paid at the
+      // port are input tax, recoverable against output tax on the return.
+      const importLevies = splitImportLevies(totals.importVat);
+      entries.push({ accountCode: controlAccounts.vatInput, accountName: nameOf(controlAccounts.vatInput, 'VAT Input Tax Recoverable'), amount: totals.vat + importLevies.vat, type: 'debit' });
+      entries.push({ accountCode: controlAccounts.nhilInput, accountName: nameOf(controlAccounts.nhilInput, 'NHIL Input Tax Recoverable'), amount: totals.nhil + importLevies.nhil, type: 'debit' });
+      entries.push({ accountCode: controlAccounts.getFundInput, accountName: nameOf(controlAccounts.getFundInput, 'GETFund Input Tax Recoverable'), amount: totals.getFund + importLevies.getFund, type: 'debit' });
+    } else {
+      // UNREGISTERED: VAT PAID ON PURCHASES IS NOT RECOVERABLE.
+      //
+      // An unregistered entity cannot claim input tax, so the VAT a supplier
+      // charged is simply part of what the item cost. The gross amount — the
+      // supplier's total including VAT, which is what the unit price holds
+      // when no VAT is calculated — goes to the expense or inventory account
+      // of the line, and import VAT paid at the port goes to the same cost
+      // accounts pro rata. No line is posted to 1101/1102/1103.
+      //
+      // This reverses the moment registration takes effect: for a document
+      // dated on or after the registration date, `tax.vatApplies` is true
+      // and the branch above posts the levies to input tax instead.
+      const importVatByAccount = allocateProRata(totals.importVat, baseByAccount);
+      for (const [accountCode, amount] of Object.entries(baseByAccount)) {
+        entries.push({ accountCode, accountName: nameOf(accountCode, 'Expense'), amount: amount + (importVatByAccount[accountCode] ?? 0), type: 'debit' });
+      }
     }
 
-    entries.push({ accountCode: controlAccounts.vatInput, accountName: nameOf(controlAccounts.vatInput, 'VAT Input Tax Recoverable'), amount: totals.vat, type: 'debit' });
-    entries.push({ accountCode: controlAccounts.nhilInput, accountName: nameOf(controlAccounts.nhilInput, 'NHIL Input Tax Recoverable'), amount: totals.nhil, type: 'debit' });
-    entries.push({ accountCode: controlAccounts.getFundInput, accountName: nameOf(controlAccounts.getFundInput, 'GETFund Input Tax Recoverable'), amount: totals.getFund, type: 'debit' });
-
-    entries.push({ accountCode: controlAccounts.payables, accountName: nameOf(controlAccounts.payables, 'Trade Payables'), amount: Math.max(totals.total - totals.withholdingTax, 0), type: 'credit' });
+    entries.push({ accountCode: controlAccounts.payables, accountName: nameOf(controlAccounts.payables, 'Trade Payables'), amount: totals.netPayable, type: 'credit' });
 
     if (totals.withholdingTax > 0) {
       entries.push({ accountCode: controlAccounts.withholdingPayable, accountName: nameOf(controlAccounts.withholdingPayable, 'Withholding Tax Payable'), amount: totals.withholdingTax, type: 'credit' });
@@ -267,8 +388,33 @@ export function journalLinesFor(
   isPurchase: boolean,
   contact: Pick<ContactRecord, 'withholdingTaxStatus'> | undefined,
   accountNames: Record<string, string>,
+  tax: DocumentTax,
 ): JournalLineDraft[] {
-  return buildJournalEntries(documentState, isPurchase, contact, accountNames).filter((line) => line.amount > 0);
+  return buildJournalEntries(documentState, isPurchase, contact, accountNames, tax).filter((line) => line.amount > 0);
+}
+
+/**
+ * The taxable supplies a set of documents contributes to the registration
+ * threshold: posted (not voided, not draft) invoices, each line that is not
+ * exempt, at its base in the entity's functional currency. Zero-rated
+ * supplies count — they are taxable at 0%; exempt ones are not taxable.
+ * The line's own treatment is used whether or not VAT was charged, because
+ * the question is what the entity *would* have to register for.
+ */
+export function taxableSuppliesOf(
+  documents: Pick<DocumentFormState, 'kind' | 'status' | 'date' | 'lines' | 'rate'>[],
+  toFunctional: (minor: number, rate: string) => number,
+): TaxableSupply[] {
+  const supplies: TaxableSupply[] = [];
+  for (const document of documents) {
+    if (document.kind !== 'invoice' || document.status === 'draft' || document.status === 'voided') continue;
+    const base = document.lines
+      .filter((line) => line.vatTreatment !== 'exempt')
+      .reduce((sum, line) => sum + roundPesewas(line.quantity * line.unitPrice), 0);
+    if (base <= 0) continue;
+    supplies.push({ date: document.date, baseMinor: toFunctional(base, document.rate ?? '1.0') });
+  }
+  return supplies;
 }
 
 /** YYYY-MM of a YYYY-MM-DD date string. */
