@@ -109,6 +109,7 @@ import * as fxActions from '@/app/actions/fx';
 import * as vatActions from '@/app/actions/vat';
 import * as entityActions from '@/app/actions/entities';
 import * as inventoryActions from '@/app/actions/inventory';
+import * as tradingActions from '@/app/actions/trading';
 import * as userActions from '@/app/actions/users';
 import * as auditRoute from '@/app/api/audit/route';
 import * as backupsRoute from '@/app/api/backups/route';
@@ -180,6 +181,22 @@ const inventoryCalls: Record<keyof typeof inventoryActions, Call> = {
   writeDownToNrv: () => inventoryActions.writeDownToNrv(FORBIDDEN_ENTITY, { itemId: 'item-1', period: '2026-09', date: '2026-09-30' }),
 };
 
+/** Every trading Server Function, invoked against the forbidden entity. */
+const tradingCalls: Record<keyof typeof tradingActions, Call> = {
+  saveCommodity: () => tradingActions.saveCommodity(FORBIDDEN_ENTITY, { code: 'RCN', name: 'Raw cashew', kind: 'cashew', gramsPerBag: 80000, shrinkageTolerancePct: 2 }),
+  saveGrade: () => tradingActions.saveGrade(FORBIDDEN_ENTITY, { commodityId: 'c', grade: 'Standard' }),
+  saveAgent: () => tradingActions.saveAgent(FORBIDDEN_ENTITY, { name: 'Ama' }),
+  setFloatAgeLimit: () => tradingActions.setFloatAgeLimit(FORBIDDEN_ENTITY, 14),
+  advanceFloat: () => tradingActions.advanceFloat(FORBIDDEN_ENTITY, { agentId: 'a', date: '2026-09-21', amountMinor: 100, bankAccountId: 'b' }),
+  returnFloatCash: () => tradingActions.returnFloatCash(FORBIDDEN_ENTITY, { floatId: 'f', date: '2026-09-21', amountMinor: 100, bankAccountId: 'b' }),
+  reconcileFloat: () => tradingActions.reconcileFloat(FORBIDDEN_ENTITY, 'f'),
+  syncAgentPurchases: () => tradingActions.syncAgentPurchases(FORBIDDEN_ENTITY, [{ clientRef: 'x', agentId: 'a', date: '2026-09-21', farmerName: 'F', itemId: 'i', grams: 1, priceMinor: 1, paymentMethod: 'cash' }]),
+  postAgentPurchases: () => tradingActions.postAgentPurchases(FORBIDDEN_ENTITY, ['p']),
+  rejectAgentPurchase: () => tradingActions.rejectAgentPurchase(FORBIDDEN_ENTITY, 'p', 'no'),
+  assignPurchaseFloat: () => tradingActions.assignPurchaseFloat(FORBIDDEN_ENTITY, 'p', 'f'),
+  recordWeighOut: () => tradingActions.recordWeighOut(FORBIDDEN_ENTITY, { lotId: 'l', date: '2026-09-21', gramsOut: 1 }),
+};
+
 /** Every user-management Server Function. Owner-only, so any other role is refused. */
 const userCalls: Record<keyof typeof userActions, Call> = {
   listUsers: () => userActions.listUsers(),
@@ -240,6 +257,8 @@ describe('coverage', () => {
     expect(exportedEntity.sort()).toEqual(Object.keys(entityCalls).sort());
     const exportedInventory = Object.keys(inventoryActions).filter((k) => typeof (inventoryActions as Record<string, unknown>)[k] === 'function');
     expect(exportedInventory.sort()).toEqual(Object.keys(inventoryCalls).sort());
+    const exportedTrading = Object.keys(tradingActions).filter((k) => typeof (tradingActions as Record<string, unknown>)[k] === 'function');
+    expect(exportedTrading.sort()).toEqual(Object.keys(tradingCalls).sort());
   });
 
   it('every Route Handler method has a case', () => {
@@ -251,7 +270,7 @@ describe('coverage', () => {
 // --- signed out --------------------------------------------------------------------
 
 describe('signed out', () => {
-  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...userCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...userCalls })) {
     if (!call) continue;
     it(`${name} is refused without touching the database`, async () => {
       expect(isRefusal(await call())).toBe(true);
@@ -271,7 +290,7 @@ describe('signed out', () => {
 describe('an Accountant on Sprouted Roots asking for Oikazi', () => {
   beforeEach(() => signIn({ role: 'accountant' }, [GRANTED_ENTITY]));
 
-  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls })) {
     if (!call) continue;
     it(`${name} is refused and reads nothing`, async () => {
       const result = await call();
@@ -327,7 +346,7 @@ describe('a Viewer with access to Oikazi', () => {
   }
 
   it('cannot touch rates, banks, the functional currency, revaluation or VAT registration, even on their own entity', async () => {
-    for (const [name, call] of Object.entries({ ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls })) {
+    for (const [name, call] of Object.entries({ ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls })) {
       if (name === 'listExchangeRates') continue; // reading the rate table is reports:view
       dbCalls.length = 0;
       const result = await call();

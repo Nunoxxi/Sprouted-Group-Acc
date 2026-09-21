@@ -16,19 +16,22 @@ import { Money } from '@/components/ui/money';
 import {
   adjustStock,
   postStockCount,
-  saveItem,
   saveLocation,
   saveStockCount,
   setNrvPrice,
   transferStock,
   writeDownToNrv,
 } from '@/app/actions/inventory';
+import { recordWeighOut, saveCommodity, saveGrade } from '@/app/actions/trading';
+import { bagsOf, commodityKindLabels, commodityKinds, qualityFieldsFor, shrinkageSplit, type CommodityKind } from '@/lib/trading';
 import type { Permission } from '@/lib/authz';
 import type {
   AccountRecord,
+  CommodityRecord,
   EntityRecord,
   InventoryLedgerRow,
   ItemRecord,
+  LotRecord,
   NrvPriceRecord,
   StockBalanceRecord,
   StockCountRecord,
@@ -38,10 +41,7 @@ import type {
 import {
   adjustmentReasons,
   averageCostPerKg,
-  categoriesFor,
-  categoryLabels,
   countDifferences,
-  defaultAccountCodeFor,
   formatInUnit,
   formatKg,
   fromGrams,
@@ -53,7 +53,6 @@ import {
   toGrams,
   unitLabels,
   type AdjustmentReason,
-  type ItemCategory,
   type StockPosition,
   type StockUnit,
 } from '@/lib/inventory';
@@ -62,6 +61,8 @@ type Props = {
   entity: EntityRecord;
   accounts: AccountRecord[];
   items: ItemRecord[];
+  commodities: CommodityRecord[];
+  lots: LotRecord[];
   locations: StockLocationRecord[];
   balances: StockBalanceRecord[];
   movements: StockMovementRecord[];
@@ -71,16 +72,16 @@ type Props = {
   allowed: (permission: Permission) => boolean;
 };
 
-type Tab = 'Stock' | 'Items' | 'Locations' | 'Movements' | 'Counts' | 'NRV';
-const tabs: Tab[] = ['Stock', 'Items', 'Locations', 'Movements', 'Counts', 'NRV'];
+type Tab = 'Stock' | 'Commodities' | 'Lots' | 'Locations' | 'Movements' | 'Counts' | 'NRV';
+const tabs: Tab[] = ['Stock', 'Commodities', 'Lots', 'Locations', 'Movements', 'Counts', 'NRV'];
 
 const selectClass = 'min-h-[44px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50';
 const label = 'mb-1.5 block text-sm font-medium text-slate-700';
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const currentPeriod = () => todayIso().slice(0, 7);
-const kindLabels: Record<StockMovementRecord['kind'], string> = { receipt: 'Receipt', 'receipt-reversal': 'Receipt reversed', transfer: 'Transfer', adjustment: 'Adjustment', 'write-down': 'Write-down' };
+const kindLabels: Record<StockMovementRecord['kind'], string> = { receipt: 'Receipt', 'receipt-reversal': 'Receipt reversed', transfer: 'Transfer', adjustment: 'Adjustment', 'write-down': 'Write-down', 'landed-cost': 'Landed cost', shrinkage: 'Shrinkage' };
 
-export function InventoryPanel({ entity, accounts, items, locations, balances, movements, counts, nrvPrices, ledger, allowed }: Props) {
+export function InventoryPanel({ entity, accounts, items, commodities, lots, locations, balances, movements, counts, nrvPrices, ledger, allowed }: Props) {
   const [tab, setTab] = useState<Tab>('Stock');
   const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const [pending, startTransition] = useTransition();
@@ -132,8 +133,10 @@ export function InventoryPanel({ entity, accounts, items, locations, balances, m
 
   // --- forms -------------------------------------------------------------------------
 
-  const blankItem = { id: '', code: '', name: '', category: categoriesFor(entity.type)[0] as ItemCategory, baseUnit: 'kg' as StockUnit, kgPerBag: '', kgPerCarton: '', accountCode: '' };
-  const [itemForm, setItemForm] = useState(blankItem);
+  const blankCommodity = { id: '', code: '', name: '', kind: 'cashew' as CommodityKind, kgPerBag: '', tolerance: '2' };
+  const [commodityForm, setCommodityForm] = useState(blankCommodity);
+  const [gradeForms, setGradeForms] = useState<Record<string, string>>({});
+  const [weighForm, setWeighForm] = useState({ lotId: '', gramsOut: '', date: todayIso(), note: '' });
   const [locationForm, setLocationForm] = useState({ id: '', code: '', name: '', accountCode: '' });
   const [transferForm, setTransferForm] = useState({ itemId: '', fromLocationId: '', toLocationId: '', quantity: '', unit: 'kg' as StockUnit, date: todayIso(), note: '' });
   const [adjustForm, setAdjustForm] = useState({ itemId: '', locationId: '', quantity: '', unit: 'kg' as StockUnit, reason: 'count-difference' as AdjustmentReason, date: todayIso(), note: '', unitCost: '' });
@@ -161,7 +164,8 @@ export function InventoryPanel({ entity, accounts, items, locations, balances, m
             countedGrams = null;
           }
         }
-        return { item, expectedGrams: expected, countedGrams, position: positionByItem.get(item.id) ?? { quantityGrams: 0, valueMinor: 0 } };
+        const here = balances.find((b) => b.itemId === item.id && b.locationId === countLocation.id);
+        return { item, expectedGrams: expected, countedGrams, position: here ? { quantityGrams: here.quantityGrams, valueMinor: here.valueMinor } : { quantityGrams: 0, valueMinor: 0 } };
       })
     : [];
   const countPreview = countDifferences(countRows.map((row) => ({ itemId: row.item.id, expectedGrams: row.expectedGrams, countedGrams: row.countedGrams, position: row.position })));
@@ -255,13 +259,13 @@ export function InventoryPanel({ entity, accounts, items, locations, balances, m
 
           <Card className="rounded-2xl">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">On hand</p>
-            <h3 className="mt-1 text-xl font-semibold text-slate-900">Stock by item and location</h3>
+            <h3 className="mt-1 text-xl font-semibold text-slate-900">Stock by grade and location</h3>
             {activeItems.length === 0 ? (
-              <p className="mt-3 text-sm text-slate-600">No items yet. Add them under Items, then receive stock by posting a bill whose lines name the item and the location.</p>
+              <p className="mt-3 text-sm text-slate-600">No grades yet. Add a commodity and its grades under Commodities, then receive stock through a bill or a field purchase.</p>
             ) : (
               <div className="mt-4 overflow-x-auto">
                 <div className="grid min-w-[760px] grid-cols-[1.4fr_1fr_1fr_0.9fr_1fr] gap-3 rounded-t-xl bg-slate-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                  <span>Item</span><span>Location</span><span className="text-right">Quantity</span><span className="text-right">Avg cost / kg</span><span className="text-right">Value</span>
+                  <span>Grade</span><span>Location</span><span className="text-right">Quantity</span><span className="text-right">Avg cost / kg</span><span className="text-right">Value</span>
                 </div>
                 {activeItems.map((item) => {
                   const position = positionByItem.get(item.id) ?? { quantityGrams: 0, valueMinor: 0 };
@@ -270,7 +274,7 @@ export function InventoryPanel({ entity, accounts, items, locations, balances, m
                   return (
                     <div key={item.id} className="border-t border-slate-200">
                       <div className="grid grid-cols-[1.4fr_1fr_1fr_0.9fr_1fr] gap-3 px-4 py-2 text-sm">
-                        <span><span className="font-mono text-xs text-slate-500">{item.code}</span> <span className="font-medium text-slate-900">{item.name}</span><span className="ml-2 text-[10px] uppercase tracking-[0.12em] text-slate-500">{categoryLabels[item.category]}</span></span>
+                        <span><span className="font-mono text-xs text-slate-500">{item.code}</span> <span className="font-medium text-slate-900">{item.name}</span></span>
                         <span className="text-slate-500">all locations</span>
                         <span className="text-right font-mono text-slate-900">{formatKg(position.quantityGrams)}<span className="block text-[11px] text-slate-500">{item.baseUnit !== 'kg' ? formatInUnit(position.quantityGrams, item) : ''}</span></span>
                         <span className="text-right font-mono">{avg === null ? '—' : <Money value={avg} />}</span>
@@ -281,7 +285,7 @@ export function InventoryPanel({ entity, accounts, items, locations, balances, m
                           <span />
                           <span>{locationById.get(row.locationId)?.name ?? row.locationId}{locationById.get(row.locationId)?.accountCode ? ` · ${locationById.get(row.locationId)?.accountCode}` : ''}</span>
                           <span className="text-right font-mono">{formatKg(row.quantityGrams)}</span>
-                          <span />
+                          <span className="text-right font-mono">{averageCostPerKg(row) === null ? '—' : <Money value={averageCostPerKg(row) as number} />}</span>
                           <span className="text-right font-mono"><Money value={row.valueMinor} /></span>
                         </div>
                       ))}
@@ -294,77 +298,146 @@ export function InventoryPanel({ entity, accounts, items, locations, balances, m
         </>
       ) : null}
 
-      {/* ---------------------------------------------------------------- Items */}
-      {tab === 'Items' ? (
-        <div className="grid gap-6 xl:grid-cols-[1fr_380px]">
+      {/* ---------------------------------------------------------------- Commodities */}
+      {tab === 'Commodities' ? (
+        <div className="grid gap-6 xl:grid-cols-[1fr_400px]">
           <Card className="rounded-2xl">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Items</p>
-            <h3 className="mt-1 text-xl font-semibold text-slate-900">{items.length} item{items.length === 1 ? '' : 's'}</h3>
-            <div className="mt-4 divide-y divide-slate-200">
-              {items.map((item) => (
-                <div key={item.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-                  <div>
-                    <span className="font-mono text-xs text-slate-500">{item.code}</span> <span className="font-medium text-slate-900">{item.name}</span>
-                    <div className="text-xs text-slate-500">
-                      {categoryLabels[item.category]} · counted in {unitLabels[item.baseUnit]}
-                      {item.gramsPerBag ? ` · ${item.gramsPerBag / 1000} kg/bag` : ''}{item.gramsPerCarton ? ` · ${item.gramsPerCarton / 1000} kg/carton` : ''} · {item.accountCode} {item.accountName}{item.isActive ? '' : ' · inactive'}
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Commodities</p>
+            <h3 className="mt-1 text-xl font-semibold text-slate-900">What {entity.name} trades, and its grades</h3>
+            <p className="mt-1 text-sm text-slate-600">Stock of the same grade is interchangeable, so cost is a weighted average per grade per location. Lots keep the origin and quality.</p>
+            <div className="mt-4 space-y-4">
+              {commodities.map((commodity) => {
+                const grades = items.filter((item) => item.commodityId === commodity.id);
+                return (
+                  <div key={commodity.id} className="rounded-xl border border-slate-200 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm"><span className="font-mono text-xs text-slate-500">{commodity.code}</span> <span className="font-medium text-slate-900">{commodity.name}</span> <span className="text-xs text-slate-500">· {commodityKindLabels[commodity.kind]}{commodity.isActive ? '' : ' · inactive'}</span></div>
+                        <div className="mt-1 text-xs text-slate-600">{commodity.gramsPerBag / 1000} kg per bag · shrinkage tolerance {commodity.shrinkageTolerancePct}% of weight in</div>
+                      </div>
+                      {allowed('inventory:manage') ? <Button size="sm" variant="ghost" onClick={() => setCommodityForm({ id: commodity.id, code: commodity.code, name: commodity.name, kind: commodity.kind, kgPerBag: String(commodity.gramsPerBag / 1000), tolerance: String(commodity.shrinkageTolerancePct) })}>Edit</Button> : null}
                     </div>
+                    <div className="mt-3 divide-y divide-slate-100 text-sm">
+                      {grades.map((grade) => {
+                        const position = positionByItem.get(grade.id) ?? { quantityGrams: 0, valueMinor: 0 };
+                        return (
+                          <div key={grade.id} className="flex items-center justify-between gap-3 py-1.5">
+                            <span><span className="font-mono text-xs text-slate-500">{grade.code}</span> {grade.grade}{grade.isActive ? '' : <span className="text-xs text-slate-500"> · inactive</span>}<span className="ml-2 text-xs text-slate-500">{grade.accountCode}</span></span>
+                            <span className="font-mono text-xs text-slate-600">{formatKg(position.quantityGrams)} · <Money value={position.valueMinor} /></span>
+                          </div>
+                        );
+                      })}
+                      {grades.length === 0 ? <p className="py-1.5 text-xs text-slate-500">No grades yet.</p> : null}
+                    </div>
+                    {allowed('inventory:manage') ? (
+                      <div className="mt-3 flex items-end gap-2">
+                        <div className="flex-1"><label className={label}>New grade</label><Input value={gradeForms[commodity.id] ?? ''} placeholder={commodity.kind === 'cocoa' ? 'Grade 1' : 'Standard'} onChange={(e) => setGradeForms({ ...gradeForms, [commodity.id]: e.target.value })} /></div>
+                        <Button size="sm" variant="secondary" disabled={pending || !(gradeForms[commodity.id] ?? '').trim()} onClick={() => run(`Grade added to ${commodity.code}.`, () => saveGrade(entity.id, { commodityId: commodity.id, grade: gradeForms[commodity.id] ?? '' }), () => setGradeForms({ ...gradeForms, [commodity.id]: '' }))}>Add grade</Button>
+                      </div>
+                    ) : null}
                   </div>
-                  {allowed('inventory:manage') ? (
-                    <Button size="sm" variant="ghost" onClick={() => setItemForm({ id: item.id, code: item.code, name: item.name, category: item.category, baseUnit: item.baseUnit, kgPerBag: item.gramsPerBag ? String(item.gramsPerBag / 1000) : '', kgPerCarton: item.gramsPerCarton ? String(item.gramsPerCarton / 1000) : '', accountCode: item.accountCode })}>Edit</Button>
-                  ) : null}
-                </div>
-              ))}
-              {items.length === 0 ? <p className="py-2 text-sm text-slate-600">No items yet.</p> : null}
+                );
+              })}
+              {commodities.length === 0 ? <p className="text-sm text-slate-600">No commodities yet. Add raw cashew nuts or cocoa beans on the right, then its grades.</p> : null}
             </div>
           </Card>
           {allowed('inventory:manage') ? (
             <Card className="rounded-2xl">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{itemForm.id ? 'Edit item' : 'New item'}</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{commodityForm.id ? 'Edit commodity' : 'New commodity'}</p>
               <div className="mt-3 space-y-3">
                 <div className="grid grid-cols-[110px_1fr] gap-3">
-                  <div><label className={label}>Code</label><Input value={itemForm.code} onChange={(e) => setItemForm({ ...itemForm, code: e.target.value })} placeholder="RCN" /></div>
-                  <div><label className={label}>Name</label><Input value={itemForm.name} onChange={(e) => setItemForm({ ...itemForm, name: e.target.value })} placeholder="Raw cashew nuts" /></div>
+                  <div><label className={label}>Code</label><Input value={commodityForm.code} onChange={(e) => setCommodityForm({ ...commodityForm, code: e.target.value })} placeholder="RCN" /></div>
+                  <div><label className={label}>Name</label><Input value={commodityForm.name} onChange={(e) => setCommodityForm({ ...commodityForm, name: e.target.value })} placeholder="Raw cashew nuts" /></div>
                 </div>
                 <div>
-                  <label className={label}>Category</label>
-                  <select value={itemForm.category} className={selectClass} onChange={(e) => { const category = e.target.value as ItemCategory; setItemForm({ ...itemForm, category, accountCode: defaultAccountCodeFor(entity.type, category) }); }}>
-                    {categoriesFor(entity.type).map((category) => <option key={category} value={category}>{categoryLabels[category]}</option>)}
+                  <label className={label}>Kind (decides the quality fields)</label>
+                  <select value={commodityForm.kind} className={selectClass} onChange={(e) => setCommodityForm({ ...commodityForm, kind: e.target.value as CommodityKind })}>
+                    {commodityKinds.map((kind) => <option key={kind} value={kind}>{commodityKindLabels[kind]}</option>)}
                   </select>
                 </div>
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <label className={label}>Counted in</label>
-                    <select value={itemForm.baseUnit} className={selectClass} onChange={(e) => setItemForm({ ...itemForm, baseUnit: e.target.value as StockUnit })}>
-                      {stockUnits.map((unit) => <option key={unit} value={unit}>{unitLabels[unit]}</option>)}
-                    </select>
-                  </div>
-                  <div><label className={label}>kg per bag</label><Input type="number" min={0} step="0.001" value={itemForm.kgPerBag} onChange={(e) => setItemForm({ ...itemForm, kgPerBag: e.target.value })} placeholder="80" /></div>
-                  <div><label className={label}>kg per carton</label><Input type="number" min={0} step="0.001" value={itemForm.kgPerCarton} onChange={(e) => setItemForm({ ...itemForm, kgPerCarton: e.target.value })} placeholder="12.5" /></div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className={label}>kg per bag</label><Input type="number" inputMode="decimal" min={0} step="0.001" value={commodityForm.kgPerBag} onChange={(e) => setCommodityForm({ ...commodityForm, kgPerBag: e.target.value })} placeholder="80" /></div>
+                  <div><label className={label}>Shrinkage tolerance %</label><Input type="number" inputMode="decimal" min={0} max={50} step="0.1" value={commodityForm.tolerance} onChange={(e) => setCommodityForm({ ...commodityForm, tolerance: e.target.value })} placeholder="2" /></div>
                 </div>
-                <div>
-                  <label className={label}>Carried in account</label>
-                  <select value={itemForm.accountCode || defaultAccountCodeFor(entity.type, itemForm.category)} className={selectClass} onChange={(e) => setItemForm({ ...itemForm, accountCode: e.target.value })}>
-                    {inventoryAccounts.map((account) => <option key={account.code} value={account.code}>{account.code} · {account.name}</option>)}
-                  </select>
-                </div>
-                <p className="text-xs text-slate-500">Everything is stored in kilograms; bags, cartons and tonnes convert through these factors. A tonne is always 1,000 kg.</p>
+                <p className="text-xs text-slate-500">Weight loss at a weigh-out up to the tolerance (of the lot&rsquo;s weight in) stays in the cost of the remaining stock; anything beyond it posts to 5045 Stock Loss.</p>
                 <div className="flex justify-end gap-2">
-                  {itemForm.id ? <Button variant="secondary" size="sm" onClick={() => setItemForm(blankItem)}>Cancel</Button> : null}
-                  <Button size="sm" disabled={pending} onClick={() => run(`Item ${itemForm.code.toUpperCase()} saved.`, () => saveItem(entity.id, {
-                    id: itemForm.id || undefined, code: itemForm.code, name: itemForm.name, category: itemForm.category, baseUnit: itemForm.baseUnit,
-                    gramsPerBag: itemForm.kgPerBag ? Math.round(Number(itemForm.kgPerBag) * 1000) : null,
-                    gramsPerCarton: itemForm.kgPerCarton ? Math.round(Number(itemForm.kgPerCarton) * 1000) : null,
-                    accountCode: itemForm.accountCode || defaultAccountCodeFor(entity.type, itemForm.category),
-                  }), () => setItemForm(blankItem))}>
-                    {itemForm.id ? 'Save changes' : 'Add item'}
-                  </Button>
+                  {commodityForm.id ? <Button variant="secondary" size="sm" onClick={() => setCommodityForm(blankCommodity)}>Cancel</Button> : null}
+                  <Button size="sm" disabled={pending} onClick={() => run(`Commodity ${commodityForm.code.toUpperCase()} saved.`, () => saveCommodity(entity.id, { id: commodityForm.id || undefined, code: commodityForm.code, name: commodityForm.name, kind: commodityForm.kind, gramsPerBag: Math.round(Number(commodityForm.kgPerBag) * 1000), shrinkageTolerancePct: Number(commodityForm.tolerance || 0) }), () => setCommodityForm(blankCommodity))}>{commodityForm.id ? 'Save changes' : 'Add commodity'}</Button>
                 </div>
               </div>
             </Card>
           ) : null}
         </div>
       ) : null}
+
+      {/* ---------------------------------------------------------------- Lots */}
+      {tab === 'Lots' ? (
+        <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
+          <Card className="rounded-2xl">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Lots</p>
+            <h3 className="mt-1 text-xl font-semibold text-slate-900">Origin and quality of every purchase</h3>
+            <div className="mt-4 overflow-x-auto">
+              <div className="grid min-w-[980px] grid-cols-[110px_90px_1.2fr_1.2fr_1fr_1.3fr_1fr_1fr] gap-3 rounded-t-xl bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                <span>Lot</span><span>Date</span><span>Grade · where</span><span>From</span><span>Origin</span><span>Quality</span><span className="text-right">Weight in</span><span className="text-right">Now · landed</span>
+              </div>
+              {lots.map((lot) => {
+                const item = itemById.get(lot.itemId);
+                const commodity = commodities.find((c) => c.id === lot.commodityId);
+                const fields = qualityFieldsFor(commodity?.kind ?? 'other');
+                return (
+                  <button key={lot.id} type="button" onClick={() => setWeighForm({ lotId: lot.id, gramsOut: '', date: todayIso(), note: '' })} className={['grid min-w-[980px] w-full grid-cols-[110px_90px_1.2fr_1.2fr_1fr_1.3fr_1fr_1fr] gap-3 border-t border-slate-200 px-3 py-2 text-left text-sm hover:bg-slate-50', weighForm.lotId === lot.id ? 'bg-brand-50' : ''].join(' ')}>
+                    <span className="font-mono text-xs">{lot.lotRef}</span>
+                    <span>{lot.date}</span>
+                    <span>{item?.name ?? lot.itemId}<span className="block text-xs text-slate-500">{locationById.get(lot.locationId)?.name}</span></span>
+                    <span>{lot.farmerName || lot.supplierName || '—'}</span>
+                    <span className="text-xs text-slate-600">{[lot.community, lot.district].filter(Boolean).join(', ') || '—'}</span>
+                    <span className="text-xs text-slate-600">{fields.map((f) => { const v = lot.quality[f.key]; return v === null || v === undefined ? null : `${f.label} ${v}${f.unit ? ' ' + f.unit : ''}`; }).filter(Boolean).join(' · ') || '—'}</span>
+                    <span className="text-right font-mono">{formatKg(lot.gramsIn)}<span className="block text-[11px] text-slate-500">{commodity ? `${bagsOf(lot.gramsIn, commodity.gramsPerBag).toFixed(1)} bags` : ''}</span></span>
+                    <span className="text-right font-mono">{formatKg(lot.gramsIn - lot.gramsShrunk)}<span className="block text-[11px] text-slate-500">{lot.landedCostMinor ? <>+<Money value={lot.landedCostMinor} /> landed</> : ''}</span></span>
+                  </button>
+                );
+              })}
+              {lots.length === 0 ? <p className="px-3 py-3 text-sm text-slate-600">No lots yet. Every bill line or field purchase that receives a grade creates one.</p> : null}
+            </div>
+          </Card>
+          <Card className="rounded-2xl">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Weigh-out</p>
+            <h3 className="mt-1 text-xl font-semibold text-slate-900">Record weight out</h3>
+            {(() => {
+              const lot = lots.find((l) => l.id === weighForm.lotId);
+              const commodity = lot ? commodities.find((c) => c.id === lot.commodityId) : undefined;
+              if (!lot || !commodity) return <p className="mt-3 text-sm text-slate-600">Choose a lot on the left.</p>;
+              const gramsOut = weighForm.gramsOut.trim() ? Math.round(Number(weighForm.gramsOut) * 1000) : null;
+              let preview: ReturnType<typeof shrinkageSplit> | null = null;
+              let previewError: string | null = null;
+              if (gramsOut !== null) {
+                try { preview = shrinkageSplit(lot.gramsIn, lot.gramsShrunk, gramsOut, commodity.shrinkageTolerancePct); } catch (error) { previewError = (error as Error).message; }
+              }
+              return (
+                <div className="mt-3 space-y-3 text-sm">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="font-medium text-slate-900">{lot.lotRef} · {itemById.get(lot.itemId)?.name}</div>
+                    <div className="text-xs text-slate-600">Weight in {formatKg(lot.gramsIn)} · shrunk so far {formatKg(lot.gramsShrunk)} · tolerance {commodity.shrinkageTolerancePct}% = {formatKg(Math.floor((lot.gramsIn * commodity.shrinkageTolerancePct) / 100))}</div>
+                  </div>
+                  <div><label className={label}>Weight out now — kg</label><Input type="number" inputMode="decimal" min={0} step="0.001" value={weighForm.gramsOut} disabled={!allowed('stock:post')} onChange={(e) => setWeighForm({ ...weighForm, gramsOut: e.target.value })} /></div>
+                  <div><label className={label}>Date</label><Input type="date" value={weighForm.date} disabled={!allowed('stock:post')} onChange={(e) => setWeighForm({ ...weighForm, date: e.target.value })} /></div>
+                  <div><label className={label}>Note</label><Input value={weighForm.note} disabled={!allowed('stock:post')} onChange={(e) => setWeighForm({ ...weighForm, note: e.target.value })} /></div>
+                  {previewError ? <p className="text-xs text-red-700">{previewError}</p> : null}
+                  {preview ? (
+                    <div className="rounded-xl border border-slate-200 p-3 text-xs">
+                      <div className="flex justify-between"><span>Lost at this weigh-out</span><span className="font-mono">{formatKg(preview.lossGrams)}</span></div>
+                      <div className="flex justify-between text-slate-600"><span>Within tolerance — absorbed into remaining stock</span><span className="font-mono">{formatKg(preview.normalGrams)}</span></div>
+                      <div className={['flex justify-between', preview.abnormalGrams > 0 ? 'font-semibold text-red-800' : 'text-slate-600'].join(' ')}><span>Beyond tolerance — to 5045 Stock Loss</span><span className="font-mono">{formatKg(preview.abnormalGrams)}</span></div>
+                    </div>
+                  ) : null}
+                  {allowed('stock:post') ? <div className="flex justify-end"><Button size="sm" disabled={pending || !preview || preview.lossGrams === 0} onClick={() => run('Weigh-out recorded.', () => recordWeighOut(entity.id, { lotId: lot.id, date: weighForm.date, gramsOut: gramsOut ?? 0, note: weighForm.note }), () => setWeighForm({ ...weighForm, gramsOut: '', note: '' }))}>Record weigh-out</Button></div> : null}
+                </div>
+              );
+            })()}
+          </Card>
+        </div>
+      ) : null}
+
 
       {/* ---------------------------------------------------------------- Locations */}
       {tab === 'Locations' ? (

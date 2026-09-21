@@ -195,7 +195,7 @@ export async function saveItem(entityId: string, input: ItemInput): Promise<Acti
       if (!code || !name) return fail('An item needs a code and a name.');
       if (!itemCategories.includes(input.category)) return fail('Unknown category.');
       if (!categoriesFor(entityType).includes(input.category)) {
-        return fail(`${entity.name} holds raw produce in transit only; it cannot carry ${input.category.replace('-', ' ')} stock.`);
+        return fail(entityType === 'programs' ? `${entity.name} is an impact programme and holds no stock.` : `${entity.name} trades raw commodities; it cannot carry ${input.category.replace('-', ' ')} stock.`);
       }
       if (!stockUnits.includes(input.baseUnit)) return fail('Unknown unit.');
       const gramsPerBag = input.gramsPerBag === null ? null : Math.round(input.gramsPerBag);
@@ -306,11 +306,10 @@ export async function transferStock(entityId: string, input: TransferInput): Pro
         const grams = toGrams(input.quantity, input.unit, factorsOf(item));
         if (grams <= 0) return null;
 
-        // Value at the item's average across all locations, capped by what this location holds.
-        const position = await positionOf(tx, item.id);
+        // Costing is per grade per location: value at the sending location's own average.
         const here = await balanceAt(tx, item.id, from.id);
         if (grams > here.quantityGrams) throw new StockRefusal(`Only ${formatKg(here.quantityGrams)} of ${item.code} at ${from.name}; cannot move ${formatKg(grams)}.`);
-        const value = grams === here.quantityGrams ? here.valueMinor : valueOf(grams, position);
+        const value = valueOf(grams, here);
 
         await moveBalance(tx, entityId, item.id, from.id, -grams, -value);
         await moveBalance(tx, entityId, item.id, to.id, grams, value);
@@ -371,12 +370,12 @@ export async function adjustStock(entityId: string, input: AdjustmentInput): Pro
         const grams = toGrams(input.quantity, input.unit, factorsOf(item));
         if (grams === 0) return null;
 
-        const position = await positionOf(tx, item.id);
+        // Costing is per grade per location: this location's own average.
+        const position = await balanceAt(tx, item.id, location.id);
         let value: number;
         if (grams < 0) {
-          const here = await balanceAt(tx, item.id, location.id);
-          if (-grams > here.quantityGrams) throw new StockRefusal(`Only ${formatKg(here.quantityGrams)} of ${item.code} at ${location.name}; cannot remove ${formatKg(-grams)}.`);
-          value = -(-grams === here.quantityGrams ? here.valueMinor : issue(position, -grams).valueMinor);
+          if (-grams > position.quantityGrams) throw new StockRefusal(`Only ${formatKg(position.quantityGrams)} of ${item.code} at ${location.name}; cannot remove ${formatKg(-grams)}.`);
+          value = -issue(position, -grams).valueMinor;
         } else if (position.quantityGrams > 0) {
           value = Number((BigInt(position.valueMinor) * BigInt(grams) * 2n + BigInt(position.quantityGrams)) / (BigInt(position.quantityGrams) * 2n));
         } else if (input.unitCostMinorPerKg && input.unitCostMinorPerKg > 0) {
@@ -489,7 +488,7 @@ export async function postStockCount(entityId: string, countId: string): Promise
           const expectedNow = (await balanceAt(tx, item.id, draft.locationId)).quantityGrams;
           const counted = line.countedGrams === null ? null : toMinor(line.countedGrams);
           lineData.push({ itemId: item.id, expectedGrams: fromMinor(expectedNow), countedGrams: line.countedGrams });
-          const [difference] = countDifferences([{ itemId: item.id, expectedGrams: expectedNow, countedGrams: counted, position: await positionOf(tx, item.id) }]);
+          const [difference] = countDifferences([{ itemId: item.id, expectedGrams: expectedNow, countedGrams: counted, position: await balanceAt(tx, item.id, draft.locationId) }]);
           if (!difference) continue;
           if (difference.unvalued) throw new StockRefusal(`${item.code}: stock was found but there is no cost on hand to value it. Receive it through a bill or adjust it with a cost per kg first.`);
 

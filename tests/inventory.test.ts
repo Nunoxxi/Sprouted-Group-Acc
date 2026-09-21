@@ -58,9 +58,9 @@ describe('units', () => {
     expect(formatInUnit(6_400_000, rcn)).toBe('80 bags');
   });
 
-  it('Roots holds raw produce only; manufacturers hold every category, each in its own account', () => {
-    expect(categoriesFor('programs')).toEqual(['raw-material']);
-    expect(categoriesFor('manufacturing')).toHaveLength(5);
+  it('traders hold raw material only; Roots holds nothing; each category has its own account', () => {
+    expect(categoriesFor('programs')).toEqual([]);
+    expect(categoriesFor('manufacturing')).toEqual(['raw-material']);
     expect(defaultAccountCodeFor('manufacturing', 'raw-material')).toBe('1030');
     expect(defaultAccountCodeFor('manufacturing', 'packaging')).toBe('1035');
     expect(defaultAccountCodeFor('manufacturing', 'work-in-progress')).toBe('1040');

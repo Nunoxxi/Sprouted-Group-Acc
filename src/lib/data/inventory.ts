@@ -62,6 +62,7 @@ const reasonToRecord: Record<PrismaAdjustmentReason, AdjustmentReason> = {
   DAMAGE: 'damage',
   SPOILAGE: 'spoilage',
   NRV_WRITE_DOWN: 'nrv-write-down',
+  ABNORMAL_LOSS: 'abnormal-loss',
 };
 export const reasonToPrisma: Record<AdjustmentReason, PrismaAdjustmentReason> = {
   'count-difference': 'COUNT_DIFFERENCE',
@@ -69,6 +70,7 @@ export const reasonToPrisma: Record<AdjustmentReason, PrismaAdjustmentReason> = 
   damage: 'DAMAGE',
   spoilage: 'SPOILAGE',
   'nrv-write-down': 'NRV_WRITE_DOWN',
+  'abnormal-loss': 'ABNORMAL_LOSS',
 };
 
 const kindToRecord: Record<PrismaMovementKind, StockMovementRecord['kind']> = {
@@ -77,6 +79,8 @@ const kindToRecord: Record<PrismaMovementKind, StockMovementRecord['kind']> = {
   TRANSFER: 'transfer',
   ADJUSTMENT: 'adjustment',
   WRITE_DOWN: 'write-down',
+  LANDED_COST: 'landed-cost',
+  SHRINKAGE: 'shrinkage',
 };
 
 // --- row → record --------------------------------------------------------------
@@ -100,6 +104,8 @@ export function itemRecord(row: Item & { account: Pick<Account, 'code' | 'name'>
     gramsPerCarton: row.gramsPerCarton,
     accountCode: row.account.code,
     accountName: row.account.name,
+    commodityId: row.commodityId,
+    grade: row.grade ?? '',
     isActive: row.isActive,
   };
 }
@@ -131,6 +137,7 @@ export function movementRecord(
     note: row.note ?? '',
     documentId: row.documentId,
     stockCountId: row.stockCountId,
+    lotId: row.lotId,
     journal: row.journalEntry ? postedJournal(row.journalEntry) : null,
     createdByName: row.createdBy?.name ?? '',
     createdAt: row.createdAt.toISOString(),

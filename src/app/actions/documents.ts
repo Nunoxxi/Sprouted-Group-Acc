@@ -31,6 +31,8 @@ import { contactRecord, entityRecord, rateText, toPrismaEnum } from '@/lib/data/
 import { fromMinor, toMinor } from '@/lib/data/money';
 import { moveBalance, StockRefusal } from '@/lib/data/stock';
 import { unitToRecord } from '@/lib/data/inventory';
+import { landedToPrisma } from '@/lib/data/trading';
+import { allocateByWeight } from '@/lib/trading';
 import { allocateReceiptValues, formatKg, toGrams } from '@/lib/inventory';
 import { roundPesewas } from '@/lib/ghana-tax';
 import type { ContactRecord, DocumentRecord, EntityRecord, EntityType } from '@/lib/data/types';
@@ -239,6 +241,22 @@ async function saveDraft(entityId: string, input: unknown, principal: Principal)
     if (item.account.code !== line.accountCode) return fail(`${item.code} is carried in ${item.account.code}; post the line there.`);
     if (!line.locationId || !locationIdSet.has(line.locationId)) return fail(`Choose where ${item.code} is received.`);
     if (!(line.quantity > 0)) return fail(`Enter the quantity of ${item.code} received.`);
+    if (line.landedCostKind) return fail('A line either receives stock or is a landed cost, not both.');
+  }
+  // A landed-cost line is spread over lots of this entity and posts to the
+  // account those lots are carried in, so the charge lands in stock value.
+  const landedLotIds = [...new Set(form.lines.flatMap((line) => (line.landedCostKind ? line.landedCostLotIds : [])))];
+  const landedLots = landedLotIds.length ? await prisma.lot.findMany({ where: { id: { in: landedLotIds }, entityId }, include: { item: { include: { account: { select: { code: true } } } }, location: { include: { account: { select: { code: true } } } } } }) : [];
+  const lotById = new Map(landedLots.map((lot) => [lot.id, lot]));
+  for (const line of form.lines) {
+    if (!line.landedCostKind) continue;
+    if (line.landedCostLotIds.length === 0) return fail('Choose the lots a landed cost relates to.');
+    for (const lotId of line.landedCostLotIds) {
+      const lot = lotById.get(lotId);
+      if (!lot) return fail('A landed cost names a lot that does not belong to this entity.');
+      const carriedIn = lot.location.account?.code ?? lot.item.account.code;
+      if (carriedIn !== line.accountCode) return fail(`Lot ${lot.lotRef} is carried in ${carriedIn}; post the landed cost there.`);
+    }
   }
 
   const linesData = form.lines.map((line, position) => ({
@@ -251,6 +269,12 @@ async function saveDraft(entityId: string, input: unknown, principal: Principal)
     vatTreatment: vatToPrisma[line.vatTreatment],
     itemId: line.itemId,
     locationId: line.locationId,
+    landedCostKind: line.landedCostKind ? landedToPrisma[line.landedCostKind] : null,
+    lotRef: line.lotRef.trim() || null,
+    community: line.community.trim() || null,
+    district: line.district.trim() || null,
+    qualityJson: Object.keys(line.quality).length ? JSON.stringify(line.quality) : null,
+    landedCostLots: line.landedCostKind ? { create: line.landedCostLotIds.map((lotId) => ({ entityId, lotId })) } : undefined,
   }));
 
   // The id must belong to *this* entity. One that does not — whether it is
@@ -274,6 +298,7 @@ async function saveDraft(entityId: string, input: unknown, principal: Principal)
         return tx.document.findUniqueOrThrow({ where: { id: form.id }, include: documentInclude });
       }
 
+      await tx.landedCostAllocation.deleteMany({ where: { documentLine: { documentId: form.id } } });
       await tx.documentLine.deleteMany({ where: { documentId: form.id } });
       return tx.document.update({
         where: { id: form.id },
@@ -470,14 +495,63 @@ async function post(entityId: string, documentId: string, principal: Principal):
           if (grams <= 0) throw new StockRefusal(`${item.code}: the quantity rounds to nothing.`);
           const value = shares[line.id] ?? 0;
           await moveBalance(tx, entityId, item.id, line.locationId as string, grams, value);
-          await tx.stockMovement.create({
+          const movement = await tx.stockMovement.create({
             data: {
               entityId, kind: 'RECEIPT', date: document.date, itemId: item.id, toLocationId: line.locationId,
               quantityGrams: fromMinor(grams), valueMinor: fromMinor(value),
               documentId, documentLineId: line.id, journalEntryId: entry.id, createdById: principal.userId,
               note: `${documentLabel(kind, number)}: ${formatKg(grams)} ${item.name}`,
             },
+            select: { id: true },
           });
+          // Every receipt of a commodity grade is a lot: origin and quality for traceability, quantity only.
+          if (item.commodityId) {
+            const quality = line.qualityJson ? (JSON.parse(line.qualityJson) as Record<string, unknown>) : {};
+            const lotRef = line.lotRef?.trim() || `${number}-${line.position + 1}`;
+            const lot = await tx.lot.create({
+              data: {
+                entityId, commodityId: item.commodityId, itemId: item.id, locationId: line.locationId as string, lotRef, date: document.date,
+                supplierContactId: document.contactId, community: line.community, district: line.district,
+                kor: typeof quality.kor === 'number' ? new Prisma.Decimal(quality.kor) : null,
+                moisturePct: typeof quality.moisturePct === 'number' ? new Prisma.Decimal(quality.moisturePct) : null,
+                nutCount: typeof quality.nutCount === 'number' ? Math.round(quality.nutCount) : null,
+                cocoaGrade: typeof quality.cocoaGrade === 'string' ? quality.cocoaGrade : null,
+                beanCount: typeof quality.beanCount === 'number' ? Math.round(quality.beanCount) : null,
+                gramsIn: fromMinor(grams), documentLineId: line.id, createdById: principal.userId,
+              },
+              select: { id: true },
+            });
+            await tx.stockMovement.update({ where: { id: movement.id }, data: { lotId: lot.id } });
+          }
+        }
+      }
+
+      // Landed cost: each such line's functional share of its account's debit is
+      // spread per kilogram over the lots it names — value up, quantity unchanged.
+      const landedLines = document.lines.filter((line) => line.landedCostKind && line.landedCostLots.length > 0);
+      if (landedLines.length > 0) {
+        const codesTouched = new Set(landedLines.map((line) => line.account.code));
+        const functionalByAccount: Record<string, number> = {};
+        for (const line of lines) {
+          if (line.type === 'debit' && codesTouched.has(line.accountCode)) functionalByAccount[line.accountCode] = (functionalByAccount[line.accountCode] ?? 0) + line.functionalAmount;
+        }
+        const lineShares = allocateReceiptValues(
+          document.lines.filter((line) => codesTouched.has(line.account.code)).map((line) => ({ lineId: line.id, accountCode: line.account.code, baseMinor: roundPesewas(line.quantity * toMinor(line.unitPriceMinor)) })),
+          functionalByAccount,
+        );
+        for (const line of landedLines) {
+          const lots = await tx.lot.findMany({ where: { id: { in: line.landedCostLots.map((a) => a.lotId) }, entityId }, select: { id: true, itemId: true, locationId: true, gramsIn: true, lotRef: true } });
+          const shares = allocateByWeight(lineShares[line.id] ?? 0, lots.map((lot) => ({ key: lot.id, grams: toMinor(lot.gramsIn) })));
+          for (const lot of lots) {
+            const share = shares[lot.id] ?? 0;
+            if (share === 0) continue;
+            await moveBalance(tx, entityId, lot.itemId, lot.locationId, 0, share);
+            await tx.lot.update({ where: { id: lot.id }, data: { landedCostMinor: { increment: fromMinor(share) } } });
+            await tx.landedCostAllocation.update({ where: { documentLineId_lotId: { documentLineId: line.id, lotId: lot.id } }, data: { valueMinor: fromMinor(share) } });
+            await tx.stockMovement.create({
+              data: { entityId, kind: 'LANDED_COST', date: document.date, itemId: lot.itemId, toLocationId: lot.locationId, quantityGrams: 0n, valueMinor: fromMinor(share), lotId: lot.id, documentId, documentLineId: line.id, journalEntryId: entry.id, createdById: principal.userId, note: `${documentLabel(kind, number)}: ${line.landedCostKind?.toLowerCase()} on lot ${lot.lotRef}` },
+            });
+          }
         }
       }
 
@@ -545,6 +619,12 @@ function documentRecordToForm(record: DocumentRecord): DocumentFormState {
       vatTreatment: line.vatTreatment,
       itemId: line.itemId,
       locationId: line.locationId,
+      landedCostKind: line.landedCostKind,
+      landedCostLotIds: line.landedCostLotIds,
+      lotRef: line.lotRef,
+      community: line.community,
+      district: line.district,
+      quality: line.quality,
     })),
     evatClearanceNumber: record.evatClearanceNumber,
     evatQrCode: record.evatQrCode,
@@ -814,7 +894,7 @@ async function voidPosted(entityId: string, documentId: string, principal: Princ
     // at, so stock and the reversed ledger stay equal. If it has since been
     // moved or consumed, the void is refused rather than taking a location
     // negative — adjust the stock first.
-    const receipts = await tx.stockMovement.findMany({ where: { documentId, kind: 'RECEIPT', reversedBy: null }, include: { item: { select: { code: true } } } });
+    const receipts = await tx.stockMovement.findMany({ where: { documentId, kind: { in: ['RECEIPT', 'LANDED_COST'] }, reversedBy: null }, include: { item: { select: { code: true } } } });
     for (const receipt of receipts) {
       const grams = toMinor(receipt.quantityGrams);
       const value = toMinor(receipt.valueMinor);
@@ -827,10 +907,13 @@ async function voidPosted(entityId: string, documentId: string, principal: Princ
       await tx.stockMovement.create({
         data: {
           entityId, kind: 'RECEIPT_REVERSAL', date: dateOf(today), itemId: receipt.itemId, fromLocationId: receipt.toLocationId,
-          quantityGrams: fromMinor(-grams), valueMinor: fromMinor(-value), documentId, documentLineId: receipt.documentLineId,
+          quantityGrams: fromMinor(-grams), valueMinor: fromMinor(-value), documentId, documentLineId: receipt.documentLineId, lotId: receipt.lotId,
           journalEntryId: reversal.id, reversesId: receipt.id, createdById: principal.userId, note: `Void of ${documentLabel(kind, number)}`,
         },
       });
+      if (receipt.lotId && receipt.kind === 'LANDED_COST') {
+        await tx.lot.update({ where: { id: receipt.lotId }, data: { landedCostMinor: { decrement: fromMinor(value) } } });
+      }
     }
 
     await recordAuditEvent(

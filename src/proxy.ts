@@ -29,5 +29,6 @@ export function proxy(request: NextRequest) {
 export const config = {
   // Pages only. API routes answer 401 themselves (a redirect is the wrong
   // reply to a fetch), and /api/auth must stay reachable to sign in at all.
-  matcher: ['/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:png|svg|ico|jpg|webp)$).*)'],
+  // The field form's service worker and manifest must load without a session too.
+  matcher: ['/((?!api|_next/static|_next/image|favicon.ico|field-sw\\.js|manifest\\.webmanifest|.*\\.(?:png|svg|ico|jpg|webp)$).*)'],
 };

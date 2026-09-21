@@ -7,6 +7,7 @@
 
 import type { AccountRecord, ContactRecord } from './data/types';
 import { isCurrency, type Currency } from './fx';
+import { landedCostKinds, type LandedCostKind, type Quality } from './trading';
 import {
   leviesOnBase,
   roundPesewas,
@@ -47,6 +48,14 @@ export type DocumentLine = {
   /** Bills: the stock item this line receives and where. Quantity is then in the item's base unit. */
   itemId: string | null;
   locationId: string | null;
+  /** Bills: a charge capitalised into stock, spread per kg over these lots. */
+  landedCostKind: LandedCostKind | null;
+  landedCostLotIds: string[];
+  /** Bills: origin and quality of the lot a stock line creates. */
+  lotRef: string;
+  community: string;
+  district: string;
+  quality: Quality;
 };
 
 export type DocumentFormState = {
@@ -114,6 +123,12 @@ export function makeLine(kind: DocumentKind = 'invoice'): DocumentLine {
     vatTreatment: 'standard',
     itemId: null,
     locationId: null,
+    landedCostKind: null,
+    landedCostLotIds: [],
+    lotRef: '',
+    community: '',
+    district: '',
+    quality: {},
   };
 }
 
@@ -167,7 +182,25 @@ export function normalizeLine(value: unknown, kind: DocumentKind): DocumentLine 
       : fresh.vatTreatment,
     itemId: kind === 'bill' && typeof line.itemId === 'string' && line.itemId ? line.itemId : null,
     locationId: kind === 'bill' && typeof line.locationId === 'string' && line.locationId ? line.locationId : null,
+    landedCostKind: kind === 'bill' && landedCostKinds.includes(line.landedCostKind as LandedCostKind) ? (line.landedCostKind as LandedCostKind) : null,
+    landedCostLotIds: kind === 'bill' && Array.isArray(line.landedCostLotIds) ? line.landedCostLotIds.filter((id): id is string => typeof id === 'string' && id.length > 0) : [],
+    lotRef: asText(line.lotRef),
+    community: asText(line.community),
+    district: asText(line.district),
+    quality: normalizeQuality(line.quality),
   };
+}
+
+function normalizeQuality(value: unknown): Quality {
+  const raw = (value ?? {}) as Record<string, unknown>;
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  const quality: Quality = {};
+  if (num(raw.kor) !== null) quality.kor = num(raw.kor);
+  if (num(raw.moisturePct) !== null) quality.moisturePct = num(raw.moisturePct);
+  if (num(raw.nutCount) !== null) quality.nutCount = num(raw.nutCount);
+  if (typeof raw.cocoaGrade === 'string' && raw.cocoaGrade.trim()) quality.cocoaGrade = raw.cocoaGrade.trim();
+  if (num(raw.beanCount) !== null) quality.beanCount = num(raw.beanCount);
+  return quality;
 }
 
 /**

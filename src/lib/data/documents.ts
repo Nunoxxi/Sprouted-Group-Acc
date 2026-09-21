@@ -34,7 +34,9 @@ import type {
   VatTreatment,
 } from './types';
 import type { BankAccount, ExchangeRate, Payment, Revaluation } from '@prisma/client';
+import type { Quality } from '../trading';
 import { loadInventoryData } from './inventory';
+import { landedCostKindOf, loadTradingData } from './trading';
 
 // --- enum translations -------------------------------------------------------
 
@@ -141,7 +143,7 @@ export function revaluationRecord(row: Revaluation & { journalEntry: JournalRow;
 
 export type DocumentRow = Document & {
   contact: Pick<Contact, 'name'>;
-  lines: (DocumentLine & { account: Pick<Account, 'code'> })[];
+  lines: (DocumentLine & { account: Pick<Account, 'code'>; landedCostLots: { lotId: string }[] })[];
   journalEntry: JournalRow | null;
   voidEntry: JournalRow | null;
   payments: PaymentRow[];
@@ -179,6 +181,12 @@ export function documentRecord(row: DocumentRow): DocumentRecord {
         fundId: line.fundId,
         itemId: line.itemId,
         locationId: line.locationId,
+        landedCostKind: landedCostKindOf(line.landedCostKind),
+        landedCostLotIds: line.landedCostLots.map((allocation) => allocation.lotId),
+        lotRef: line.lotRef ?? '',
+        community: line.community ?? '',
+        district: line.district ?? '',
+        quality: line.qualityJson ? (JSON.parse(line.qualityJson) as Quality) : {},
       })),
     evatClearanceNumber: row.evatClearanceNumber ?? '',
     evatQrCode: row.evatQrCode ?? '',
@@ -192,7 +200,7 @@ export function documentRecord(row: DocumentRow): DocumentRecord {
 
 export const documentInclude = {
   contact: { select: { name: true } },
-  lines: { include: { account: { select: { code: true } } } },
+  lines: { include: { account: { select: { code: true } }, landedCostLots: { select: { lotId: true } } } },
   journalEntry: { include: { lines: { include: { account: { select: { code: true, name: true } } } } } },
   voidEntry: { include: { lines: { include: { account: { select: { code: true, name: true } } } } } },
   payments: {
@@ -274,5 +282,6 @@ export async function loadInitialData(principal: Principal): Promise<InitialData
     bankAccountsByEntity: withAllEntities(groupBy(bankAccounts.map(bankAccountRecord), (account) => account.entityId)),
     revaluationsByEntity: withAllEntities(groupBy(revaluations.map((row) => ({ entityId: row.entityId, ...revaluationRecord(row) })), (row) => row.entityId)),
     ...(await loadInventoryData(entityScope, entityIds)),
+    ...(await loadTradingData(entityScope, entityIds)),
   };
 }

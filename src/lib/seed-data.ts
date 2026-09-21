@@ -22,6 +22,7 @@ export const seedEntities: EntityRecord[] = [
     emailFrom: '',
     accent: accentPalette[0],
     functionalCurrency: 'GHS',
+    floatAgeLimitDays: 14,
   },
   {
     id: 'sprouted-crafts',
@@ -35,6 +36,7 @@ export const seedEntities: EntityRecord[] = [
     emailFrom: '',
     accent: accentPalette[1],
     functionalCurrency: 'GHS',
+    floatAgeLimitDays: 14,
   },
   {
     id: 'oikazi',
@@ -48,6 +50,7 @@ export const seedEntities: EntityRecord[] = [
     emailFrom: '',
     accent: accentPalette[2],
     functionalCurrency: 'GHS',
+    floatAgeLimitDays: 14,
   },
 ];
 

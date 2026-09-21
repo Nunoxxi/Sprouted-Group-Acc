@@ -35,7 +35,9 @@ import {
 } from '@/app/actions/documents';
 import { SignOutButton } from '@/components/auth/sign-out-button';
 import { InventoryPanel } from '@/components/app/inventory-panel';
-import { inventoryAccountCategory, unitLabels } from '@/lib/inventory';
+import { formatKg, inventoryAccountCategory, unitLabels } from '@/lib/inventory';
+import { BuyingPanel } from '@/components/app/buying-panel';
+import { agentFloatSummaries, floatPosition, holdsStock, landedCostKinds, landedCostLabels, qualityFieldsFor, type LandedCostKind } from '@/lib/trading';
 import { CurrencyProvider, ReportMoney, TranslationProvider } from '@/components/ui/money';
 import type { Permission } from '@/lib/authz';
 import { recordPayment as recordPaymentAction } from '@/app/actions/documents';
@@ -72,6 +74,7 @@ const navigationItems = [
   'Intercompany',
   'Tax',
   'Inventory',
+  'Buying',
   'Reports',
   'Settings',
 ] as const;
@@ -385,6 +388,12 @@ function formFrom(record: DocumentRecord): DocumentFormState {
       vatTreatment: line.vatTreatment,
       itemId: line.itemId,
       locationId: line.locationId,
+      landedCostKind: line.landedCostKind,
+      landedCostLotIds: line.landedCostLotIds,
+      lotRef: line.lotRef,
+      community: line.community,
+      district: line.district,
+      quality: line.quality,
     })),
     evatClearanceNumber: record.evatClearanceNumber,
     evatQrCode: record.evatQrCode,
@@ -637,6 +646,15 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
   const entityRevaluations = initialData.revaluationsByEntity[selectedEntity.id] ?? [];
   const entityItems = initialData.itemsByEntity[selectedEntity.id] ?? [];
   const entityLocations = initialData.locationsByEntity[selectedEntity.id] ?? [];
+  const entityCommodities = initialData.commoditiesByEntity[selectedEntity.id] ?? [];
+  const entityLots = initialData.lotsByEntity[selectedEntity.id] ?? [];
+  const entityHoldsStock = holdsStock(selectedEntity.type);
+  // Outstanding float per agent, for the dashboard: red when older than the entity's limit.
+  const floatSummaries = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const floats = (initialData.floatsByEntity[selectedEntity.id] ?? []).map((f) => ({ agentId: f.agentId, status: f.status, position: floatPosition({ amountMinor: f.amountMinor, date: f.date }, f.purchasedMinor, f.returns.reduce((sum, r) => sum + r.amountMinor, 0), today, selectedEntity.floatAgeLimitDays) }));
+    return agentFloatSummaries(initialData.agentsByEntity[selectedEntity.id] ?? [], floats).filter((summary) => summary.openFloats > 0 || summary.outstandingMinor !== 0);
+  }, [initialData, selectedEntity.id, selectedEntity.floatAgeLimitDays]);
   // Rolling twelve-month taxable turnover against the registration threshold,
   // from posted invoices in the ledger. Shown for every entity, registered or
   // not: it is the number that decides whether registration is compulsory.
@@ -658,7 +676,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
   // unregistered entity while on it lands on the dashboard (see the entity
   // menu); switching registration off happens from Settings, so the Tax
   // branch below only ever renders for a registered entity.
-  const visibleNavigation = navigationItems.filter((item) => item !== 'Tax' || selectedEntity.vatRegistered);
+  const visibleNavigation = navigationItems.filter((item) => (item !== 'Tax' || selectedEntity.vatRegistered) && ((item !== 'Inventory' && item !== 'Buying') || holdsStock(selectedEntity.type)));
   // The table's default for this document's currency and date; the document may override it.
   const documentRateQuote = selectRate(entityRates, activeDocument.currency, functionalCurrency, activeDocument.date);
   const documentRate: string | null = activeDocument.currency === functionalCurrency ? '1.0' : (activeDocument.rate ?? documentRateQuote?.rate ?? null);
@@ -2355,7 +2373,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                     type="button"
                     onClick={() => {
                       setSelectedEntityId(entity.id);
-                      if (activeNav === 'Tax' && !entity.vatRegistered) {
+                      if ((activeNav === 'Tax' && !entity.vatRegistered) || ((activeNav === 'Inventory' || activeNav === 'Buying') && !holdsStock(entity.type))) {
                         setActiveNav('Dashboard');
                       }
                       setEntityMenuOpen(false);
@@ -2513,6 +2531,28 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                   ) : null}
                 </div>
               </Card>
+
+              {entityHoldsStock ? (
+                <Card className={['rounded-2xl', floatSummaries.some((summary) => summary.overdue) ? 'border-red-300 bg-red-50' : ''].join(' ')}>
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Buying agents</p>
+                      <h2 className="mt-1 text-xl font-semibold text-slate-900">Outstanding float</h2>
+                      <p className="mt-1 text-sm text-slate-600">Advanced less purchases posted less cash returned. Red after {selectedEntity.floatAgeLimitDays} days.</p>
+                    </div>
+                    <Button size="sm" variant="secondary" onClick={() => setActiveNav('Buying')}>Open buying</Button>
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    {floatSummaries.map((summary) => (
+                      <div key={summary.agentId} className={['rounded-xl border p-3', summary.overdue ? 'border-red-400 bg-white' : 'border-slate-200 bg-slate-50'].join(' ')}>
+                        <div className="flex items-center justify-between gap-2"><span className="text-sm font-medium text-slate-900">{summary.agentName}</span>{summary.overdue ? <span className="rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white">{summary.oldestAgeDays} days</span> : <span className="text-xs text-slate-500">{summary.oldestAgeDays} days</span>}</div>
+                        <div className={['mt-1 font-mono text-xl tabular-nums', summary.overdue ? 'text-red-800' : 'text-slate-900'].join(' ')}><Money value={summary.outstandingMinor} /></div>
+                      </div>
+                    ))}
+                    {floatSummaries.length === 0 ? <p className="text-sm text-slate-600">No float outstanding.</p> : null}
+                  </div>
+                </Card>
+              ) : null}
 
               <Card className="rounded-2xl">
                 <div className="flex items-start justify-between gap-4 pb-4">
@@ -4427,12 +4467,27 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
               entity={selectedEntity}
               accounts={entityAccounts}
               items={entityItems}
+              commodities={entityCommodities}
+              lots={entityLots}
               locations={entityLocations}
               balances={initialData.stockBalancesByEntity[selectedEntity.id] ?? []}
               movements={initialData.stockMovementsByEntity[selectedEntity.id] ?? []}
               counts={initialData.stockCountsByEntity[selectedEntity.id] ?? []}
               nrvPrices={initialData.nrvPricesByEntity[selectedEntity.id] ?? []}
               ledger={initialData.inventoryLedgerByEntity[selectedEntity.id] ?? []}
+              allowed={allowed}
+            />
+          ) : activeNav === 'Buying' ? (
+            <BuyingPanel
+              key={selectedEntity.id}
+              entity={selectedEntity}
+              agents={initialData.agentsByEntity[selectedEntity.id] ?? []}
+              floats={initialData.floatsByEntity[selectedEntity.id] ?? []}
+              purchases={initialData.agentPurchasesByEntity[selectedEntity.id] ?? []}
+              items={entityItems}
+              commodities={entityCommodities}
+              locations={entityLocations}
+              bankAccounts={entityBankAccounts}
               allowed={allowed}
             />
           ) : (
@@ -4721,45 +4776,115 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                     >
                       ×
                     </button>
-                    {isPurchaseView && (line.itemId || entityAccounts.find((account) => account.code === line.accountCode)?.category === inventoryAccountCategory) ? (
-                      <div className="col-span-6 -mt-1 grid gap-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2 md:grid-cols-[1.4fr_1fr_1.6fr]">
-                        <div>
-                          <label className="mb-1 block text-xs font-medium text-slate-600">Stock item received</label>
-                          <select
-                            value={line.itemId ?? ''}
-                            disabled={documentReadOnly}
-                            onChange={(event) => {
-                              const item = entityItems.find((candidate) => candidate.id === event.target.value);
-                              // The item decides the account: the line posts where the stock is carried.
-                              updateLine(line.id, item ? { itemId: item.id, accountCode: item.accountCode, locationId: line.locationId ?? entityLocations.find((location) => location.isActive)?.id ?? null } : { itemId: null, locationId: null });
-                            }}
-                            className="min-h-[40px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50"
-                          >
-                            <option value="">Not stock — expense only</option>
-                            {entityItems.filter((item) => item.isActive).map((item) => (
-                              <option key={item.id} value={item.id}>{item.code} · {item.name} ({unitLabels[item.baseUnit]})</option>
-                            ))}
-                          </select>
+                    {isPurchaseView && entityHoldsStock ? (
+                      <div className="col-span-6 -mt-1 space-y-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2">
+                        <div className="grid gap-3 md:grid-cols-[1.4fr_1fr_1.6fr]">
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-slate-600">Stock</label>
+                            <select
+                              value={line.itemId ? `item:${line.itemId}` : line.landedCostKind ? `landed:${line.landedCostKind}` : ''}
+                              disabled={documentReadOnly}
+                              onChange={(event) => {
+                                const [mode, value] = event.target.value.split(':');
+                                if (mode === 'item') {
+                                  const item = entityItems.find((candidate) => candidate.id === value);
+                                  // The grade decides the account: the line posts where the stock is carried.
+                                  if (item) updateLine(line.id, { itemId: item.id, accountCode: item.accountCode, locationId: line.locationId ?? entityLocations.find((location) => location.isActive)?.id ?? null, landedCostKind: null, landedCostLotIds: [] });
+                                } else if (mode === 'landed') {
+                                  // A landed cost posts to the account the lots are carried in; the server checks each lot.
+                                  updateLine(line.id, { landedCostKind: value as LandedCostKind, itemId: null, locationId: null, accountCode: entityItems.find((item) => item.isActive)?.accountCode ?? '1030', lotRef: '', community: '', district: '', quality: {} });
+                                } else {
+                                  updateLine(line.id, { itemId: null, locationId: null, landedCostKind: null, landedCostLotIds: [], lotRef: '', community: '', district: '', quality: {} });
+                                }
+                              }}
+                              className="min-h-[40px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50"
+                            >
+                              <option value="">Not stock — expense only</option>
+                              <optgroup label="Receive a grade (creates a lot)">
+                                {entityItems.filter((item) => item.isActive).map((item) => (
+                                  <option key={item.id} value={`item:${item.id}`}>{item.name} ({unitLabels[item.baseUnit]})</option>
+                                ))}
+                              </optgroup>
+                              <optgroup label="Capitalise into stock (landed cost)">
+                                {landedCostKinds.map((kind) => <option key={kind} value={`landed:${kind}`}>{landedCostLabels[kind]}</option>)}
+                              </optgroup>
+                            </select>
+                          </div>
+                          {line.itemId ? (
+                            <div>
+                              <label className="mb-1 block text-xs font-medium text-slate-600">Received at</label>
+                              <select
+                                value={line.locationId ?? ''}
+                                disabled={documentReadOnly}
+                                onChange={(event) => updateLine(line.id, { locationId: event.target.value || null })}
+                                className="min-h-[40px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50"
+                              >
+                                <option value="">Choose…</option>
+                                {entityLocations.filter((location) => location.isActive).map((location) => (
+                                  <option key={location.id} value={location.id}>{location.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                          ) : <div />}
+                          <p className="self-end pb-2 text-xs text-slate-500">
+                            {line.itemId
+                              ? `Qty in ${unitLabels[entityItems.find((item) => item.id === line.itemId)?.baseUnit ?? 'kg']}; price per ${unitLabels[entityItems.find((item) => item.id === line.itemId)?.baseUnit ?? 'kg'].replace(/s$/, '')}. Posting receives the stock at this cost and records the lot.`
+                              : line.landedCostKind
+                                ? 'Spread per kilogram over the lots ticked below; their value rises, quantity does not.'
+                                : entityAccounts.find((account) => account.code === line.accountCode)?.category === inventoryAccountCategory
+                                  ? 'This account holds stock. Name the grade, or the ledger will carry value that stock does not.'
+                                  : ''}
+                          </p>
                         </div>
-                        <div>
-                          <label className="mb-1 block text-xs font-medium text-slate-600">Received at</label>
-                          <select
-                            value={line.locationId ?? ''}
-                            disabled={documentReadOnly || !line.itemId}
-                            onChange={(event) => updateLine(line.id, { locationId: event.target.value || null })}
-                            className="min-h-[40px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50"
-                          >
-                            <option value="">Choose…</option>
-                            {entityLocations.filter((location) => location.isActive).map((location) => (
-                              <option key={location.id} value={location.id}>{location.name}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <p className="self-end pb-2 text-xs text-slate-500">
-                          {line.itemId
-                            ? `Qty is in ${unitLabels[entityItems.find((item) => item.id === line.itemId)?.baseUnit ?? 'kg']}; unit price per ${unitLabels[entityItems.find((item) => item.id === line.itemId)?.baseUnit ?? 'kg'].replace(/s$/, '')}. Posting the bill receives the stock at this line's cost.`
-                            : 'This account holds stock. Name the item, or the ledger will carry value that stock does not.'}
-                        </p>
+                        {line.itemId ? (
+                          <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_2fr]">
+                            <div><label className="mb-1 block text-xs font-medium text-slate-600">Lot ref (optional)</label><Input className="min-h-[40px]" value={line.lotRef} disabled={documentReadOnly} placeholder="auto if blank" onChange={(event) => updateLine(line.id, { lotRef: event.target.value })} /></div>
+                            <div><label className="mb-1 block text-xs font-medium text-slate-600">Community</label><Input className="min-h-[40px]" value={line.community} disabled={documentReadOnly} onChange={(event) => updateLine(line.id, { community: event.target.value })} /></div>
+                            <div><label className="mb-1 block text-xs font-medium text-slate-600">District</label><Input className="min-h-[40px]" value={line.district} disabled={documentReadOnly} onChange={(event) => updateLine(line.id, { district: event.target.value })} /></div>
+                            <div className="grid grid-cols-3 gap-2">
+                              {qualityFieldsFor(entityCommodities.find((commodity) => commodity.id === entityItems.find((item) => item.id === line.itemId)?.commodityId)?.kind ?? 'other').map((field) => (
+                                <div key={field.key}>
+                                  <label className="mb-1 block text-xs font-medium text-slate-600">{field.label}{field.unit ? ` (${field.unit})` : ''}</label>
+                                  <Input
+                                    className="min-h-[40px]"
+                                    type={field.kind === 'number' ? 'number' : 'text'}
+                                    inputMode={field.kind === 'number' ? 'decimal' : undefined}
+                                    step="any"
+                                    value={line.quality[field.key] ?? ''}
+                                    disabled={documentReadOnly}
+                                    onChange={(event) => {
+                                      const raw = event.target.value;
+                                      const next = { ...line.quality };
+                                      if (raw === '') delete next[field.key];
+                                      else if (field.kind === 'number') (next as Record<string, unknown>)[field.key] = Number(raw);
+                                      else (next as Record<string, unknown>)[field.key] = raw;
+                                      updateLine(line.id, { quality: next });
+                                    }}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                        {line.landedCostKind ? (
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-slate-600">Relates to these lots</label>
+                            <div className="grid gap-1 md:grid-cols-2 xl:grid-cols-3">
+                              {entityLots.slice(0, 60).map((lot) => (
+                                <label key={lot.id} className="flex items-center gap-2 text-xs text-slate-700">
+                                  <input
+                                    type="checkbox"
+                                    disabled={documentReadOnly}
+                                    checked={line.landedCostLotIds.includes(lot.id)}
+                                    onChange={(event) => updateLine(line.id, { landedCostLotIds: event.target.checked ? [...line.landedCostLotIds, lot.id] : line.landedCostLotIds.filter((id) => id !== lot.id) })}
+                                  />
+                                  <span className="font-mono">{lot.lotRef}</span> {lot.date} · {entityItems.find((item) => item.id === lot.itemId)?.name} · {formatKg(lot.gramsIn)}
+                                </label>
+                              ))}
+                              {entityLots.length === 0 ? <span className="text-xs text-slate-500">No lots yet to spread this over.</span> : null}
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
                     ) : null}
                   </div>

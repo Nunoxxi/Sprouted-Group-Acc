@@ -42,6 +42,8 @@ model Entity {
   accent             String?
   /// The currency the books are kept and reported in. Per entity, never global.
   functionalCurrency Currency  @default(GHS)
+  /// A buying agent's open float older than this is flagged on the dashboard.
+  floatAgeLimitDays  Int       @default(14)
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
@@ -68,6 +70,13 @@ model Entity {
   stockCounts      StockCount[]
   stockCountLines  StockCountLine[]
   nrvPrices        NrvPrice[]
+  commodities      Commodity[]
+  lots             Lot[]
+  landedCosts      LandedCostAllocation[]
+  buyingAgents     BuyingAgent[]
+  floatAdvances    FloatAdvance[]
+  floatReturns     FloatReturn[]
+  agentPurchases   AgentPurchase[]
 }
 
 // Append-only. Events form a hash chain per entity ordered by `sequence`, which
@@ -142,6 +151,8 @@ enum WithholdingTaxStatus {
 // Contacts are shared across the group — the same supplier trades with all
 // three entities. Entity scoping happens on ContactEntityBalance and Document.
 model Contact {
+  lots Lot[]
+
   id                   String               @id @default(cuid())
   name                 String
   type                 ContactType
@@ -224,6 +235,12 @@ model User {
   stockCounts          StockCount[]       @relation("StockCountCreatedBy")
   postedStockCounts    StockCount[]       @relation("StockCountPostedBy")
   nrvPrices            NrvPrice[]
+  lots                 Lot[]
+  floatAdvances        FloatAdvance[]     @relation("FloatCreatedBy")
+  reconciledFloats     FloatAdvance[]     @relation("FloatReconciledBy")
+  floatReturns         FloatReturn[]
+  agentPurchases       AgentPurchase[]    @relation("PurchaseCreatedBy")
+  postedPurchases      AgentPurchase[]    @relation("PurchasePostedBy")
 
   @@index([deactivatedAt])
 }
@@ -384,6 +401,9 @@ model JournalEntry {
   revaluationReversal Revaluation?    @relation("RevaluationReversal")
   stockMovements      StockMovement[]
   stockCount          StockCount?
+  floatAdvance        FloatAdvance?
+  floatReturn         FloatReturn?
+  agentPurchase       AgentPurchase?
 
   @@index([entityId, postedAt])
   @@index([entityId, kind])
@@ -555,7 +575,7 @@ model Document {
 }
 
 model DocumentLine {
-  id             String       @id @default(cuid())
+  id             String          @id @default(cuid())
   documentId     String
   entityId       String
   position       Int
@@ -563,7 +583,7 @@ model DocumentLine {
   quantity       Float // not money: 1.5 kg is a legitimate quantity
   unitPriceMinor BigInt
   accountId      String
-  vatTreatment   VatTreatment @default(STANDARD)
+  vatTreatment   VatTreatment    @default(STANDARD)
   projectId      String?
   fundId         String?
   /// Bills only: the stock item this line receives, and where. Set when the
@@ -571,15 +591,24 @@ model DocumentLine {
   /// receipt. `quantity` is then in the item's base unit.
   itemId         String?
   locationId     String?
+  /// A charge capitalised into stock (transport, bags, ...), spread per kg over the lots it relates to.
+  landedCostKind LandedCostKind?
+  /// Origin and quality of the lot a stock line receives; all optional.
+  lotRef         String?
+  community      String?
+  district       String?
+  qualityJson    String?
 
-  document Document        @relation(fields: [documentId], references: [id])
-  entity   Entity          @relation(fields: [entityId], references: [id])
-  account  Account         @relation(fields: [accountId], references: [id])
-  project  Project?        @relation(fields: [projectId], references: [id])
-  fund     Fund?           @relation(fields: [fundId], references: [id])
-  item     Item?           @relation(fields: [itemId], references: [id])
-  location StockLocation?  @relation(fields: [locationId], references: [id])
-  receipts StockMovement[]
+  document       Document               @relation(fields: [documentId], references: [id])
+  entity         Entity                 @relation(fields: [entityId], references: [id])
+  account        Account                @relation(fields: [accountId], references: [id])
+  project        Project?               @relation(fields: [projectId], references: [id])
+  fund           Fund?                  @relation(fields: [fundId], references: [id])
+  item           Item?                  @relation(fields: [itemId], references: [id])
+  location       StockLocation?         @relation(fields: [locationId], references: [id])
+  receipts       StockMovement[]
+  lot            Lot?
+  landedCostLots LandedCostAllocation[]
 
   @@index([documentId, position])
   @@index([entityId, accountId])
@@ -641,6 +670,9 @@ model ExchangeRate {
 }
 
 model BankAccount {
+  floatAdvances FloatAdvance[]
+  floatReturns  FloatReturn[]
+
   id        String   @id @default(cuid())
   entityId  String
   name      String
@@ -739,6 +771,8 @@ enum StockMovementKind {
   TRANSFER
   ADJUSTMENT
   WRITE_DOWN
+  LANDED_COST
+  SHRINKAGE
 }
 
 enum AdjustmentReason {
@@ -747,6 +781,7 @@ enum AdjustmentReason {
   DAMAGE
   SPOILAGE
   NRV_WRITE_DOWN
+  ABNORMAL_LOSS
 }
 
 enum StockCountStatus {
@@ -766,17 +801,23 @@ model Item {
   gramsPerCarton Int?
   /// The inventory GL account this item's stock is carried in.
   accountId      String
+  /// A trading item is one grade of a commodity; costing runs per item per location.
+  commodityId    String?
+  grade          String?
   isActive       Boolean      @default(true)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
-  entity        Entity           @relation(fields: [entityId], references: [id])
-  account       Account          @relation(fields: [accountId], references: [id])
-  balances      StockBalance[]
-  movements     StockMovement[]
-  countLines    StockCountLine[]
-  nrvPrices     NrvPrice[]
-  documentLines DocumentLine[]
+  entity         Entity           @relation(fields: [entityId], references: [id])
+  account        Account          @relation(fields: [accountId], references: [id])
+  balances       StockBalance[]
+  movements      StockMovement[]
+  countLines     StockCountLine[]
+  nrvPrices      NrvPrice[]
+  documentLines  DocumentLine[]
+  commodity      Commodity?       @relation(fields: [commodityId], references: [id])
+  lots           Lot[]
+  agentPurchases AgentPurchase[]
 
   @@unique([entityId, code])
   @@index([entityId, category])
@@ -794,13 +835,16 @@ model StockLocation {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  entity        Entity          @relation(fields: [entityId], references: [id])
-  account       Account?        @relation(fields: [accountId], references: [id])
-  balances      StockBalance[]
-  movementsFrom StockMovement[] @relation("MovementFrom")
-  movementsTo   StockMovement[] @relation("MovementTo")
-  counts        StockCount[]
-  documentLines DocumentLine[]
+  entity         Entity          @relation(fields: [entityId], references: [id])
+  account        Account?        @relation(fields: [accountId], references: [id])
+  balances       StockBalance[]
+  movementsFrom  StockMovement[] @relation("MovementFrom")
+  movementsTo    StockMovement[] @relation("MovementTo")
+  counts         StockCount[]
+  documentLines  DocumentLine[]
+  lots           Lot[]
+  agents         BuyingAgent[]
+  agentPurchases AgentPurchase[]
 
   @@unique([entityId, code])
 }
@@ -845,6 +889,7 @@ model StockMovement {
   documentId     String?
   documentLineId String?
   stockCountId   String?
+  lotId          String?
   journalEntryId String?
   reversesId     String?           @unique
   createdById    String?
@@ -856,6 +901,7 @@ model StockMovement {
   toLocation   StockLocation? @relation("MovementTo", fields: [toLocationId], references: [id])
   documentLine DocumentLine?  @relation(fields: [documentLineId], references: [id])
   stockCount   StockCount?    @relation(fields: [stockCountId], references: [id])
+  lot          Lot?           @relation(fields: [lotId], references: [id])
   journalEntry JournalEntry?  @relation(fields: [journalEntryId], references: [id])
   reverses     StockMovement? @relation("MovementReversal", fields: [reversesId], references: [id])
   reversedBy   StockMovement? @relation("MovementReversal")
@@ -924,4 +970,241 @@ model NrvPrice {
   createdBy User?  @relation(fields: [createdById], references: [id])
 
   @@unique([entityId, itemId, period])
+}
+
+// --- trading: commodities, lots, landed cost, agents and floats -------------------
+//
+// Sprouted Crafts trades raw cashew nuts and Oikazi trades cocoa beans;
+// neither processes anything. Stock of the same grade is interchangeable,
+// so cost is a weighted average per commodity × grade × location (an Item
+// is one grade of a commodity; StockBalance already keys on item and
+// location). Lots carry origin and quality for traceability and never
+// carry cost.
+
+enum CommodityKind {
+  CASHEW
+  COCOA
+  OTHER
+}
+
+model Commodity {
+  id                    String        @id @default(cuid())
+  entityId              String
+  code                  String
+  name                  String
+  kind                  CommodityKind @default(OTHER)
+  /// Bought and sold by the bag: grams in one bag of this commodity.
+  gramsPerBag           Int
+  /// Moisture shrinkage up to this percentage of weight in is normal and stays in
+  /// the cost of the remaining stock; beyond it is stock loss expense.
+  shrinkageTolerancePct Decimal       @default(2) @db.Decimal(6, 3)
+  isActive              Boolean       @default(true)
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  entity Entity @relation(fields: [entityId], references: [id])
+  items  Item[]
+  lots   Lot[]
+
+  @@unique([entityId, code])
+}
+
+/// One purchase of one grade, for traceability and quality. Quantity only;
+/// cost lives on the grade's balance.
+model Lot {
+  id                String   @id @default(cuid())
+  entityId          String
+  commodityId       String
+  itemId            String
+  locationId        String
+  lotRef            String
+  date              DateTime
+  supplierContactId String?
+  farmerName        String?
+  community         String?
+  district          String?
+  /// Cashew: outturn (KOR, lb/80kg bag), moisture %, nut count per kg.
+  kor               Decimal? @db.Decimal(6, 2)
+  moisturePct       Decimal? @db.Decimal(5, 2)
+  nutCount          Int?
+  /// Cocoa: grade, moisture %, bean count per 100 g.
+  cocoaGrade        String?
+  beanCount         Int?
+  gramsIn           BigInt
+  /// Cumulative weight recorded out at weigh-outs (shrinkage), not sales.
+  gramsShrunk       BigInt   @default(0)
+  landedCostMinor   BigInt   @default(0)
+  documentLineId    String?  @unique
+  note              String?
+  createdById       String?
+  createdAt         DateTime @default(now())
+
+  entity        Entity                 @relation(fields: [entityId], references: [id])
+  commodity     Commodity              @relation(fields: [commodityId], references: [id])
+  item          Item                   @relation(fields: [itemId], references: [id])
+  location      StockLocation          @relation(fields: [locationId], references: [id])
+  supplier      Contact?               @relation(fields: [supplierContactId], references: [id])
+  documentLine  DocumentLine?          @relation(fields: [documentLineId], references: [id])
+  createdBy     User?                  @relation(fields: [createdById], references: [id])
+  movements     StockMovement[]
+  landedCosts   LandedCostAllocation[]
+  agentPurchase AgentPurchase?
+
+  @@unique([entityId, lotRef])
+  @@index([entityId, date])
+  @@index([entityId, itemId])
+}
+
+enum LandedCostKind {
+  TRANSPORT
+  BAGS
+  LOADING
+  FUMIGATION
+  LEVY
+  COMMISSION
+}
+
+/// A landed-cost bill line's share for one lot: chosen at draft time, valued
+/// at posting pro rata by the lot's weight in.
+model LandedCostAllocation {
+  id             String @id @default(cuid())
+  entityId       String
+  documentLineId String
+  lotId          String
+  valueMinor     BigInt @default(0)
+
+  entity       Entity       @relation(fields: [entityId], references: [id])
+  documentLine DocumentLine @relation(fields: [documentLineId], references: [id])
+  lot          Lot          @relation(fields: [lotId], references: [id])
+
+  @@unique([documentLineId, lotId])
+}
+
+model BuyingAgent {
+  id                String   @id @default(cuid())
+  entityId          String
+  name              String
+  phone             String?
+  /// Where this agent's purchases are received by default.
+  defaultLocationId String?
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+
+  entity          Entity          @relation(fields: [entityId], references: [id])
+  defaultLocation StockLocation?  @relation(fields: [defaultLocationId], references: [id])
+  floats          FloatAdvance[]
+  purchases       AgentPurchase[]
+
+  @@index([entityId])
+}
+
+enum FloatStatus {
+  OPEN
+  RECONCILED
+}
+
+/// Cash advanced to an agent to buy from farmers: a receivable until the
+/// purchases posted plus cash returned equal the amount advanced.
+model FloatAdvance {
+  id             String      @id @default(cuid())
+  entityId       String
+  agentId        String
+  date           DateTime
+  amountMinor    BigInt
+  bankAccountId  String
+  status         FloatStatus @default(OPEN)
+  journalEntryId String?     @unique
+  reconciledAt   DateTime?
+  reconciledById String?
+  createdById    String?
+  createdAt      DateTime    @default(now())
+
+  entity       Entity          @relation(fields: [entityId], references: [id])
+  agent        BuyingAgent     @relation(fields: [agentId], references: [id])
+  bankAccount  BankAccount     @relation(fields: [bankAccountId], references: [id])
+  journalEntry JournalEntry?   @relation(fields: [journalEntryId], references: [id])
+  createdBy    User?           @relation("FloatCreatedBy", fields: [createdById], references: [id])
+  reconciledBy User?           @relation("FloatReconciledBy", fields: [reconciledById], references: [id])
+  purchases    AgentPurchase[]
+  returns      FloatReturn[]
+
+  @@index([entityId, status])
+}
+
+model FloatReturn {
+  id             String   @id @default(cuid())
+  entityId       String
+  floatId        String
+  date           DateTime
+  amountMinor    BigInt
+  bankAccountId  String
+  journalEntryId String?  @unique
+  createdById    String?
+  createdAt      DateTime @default(now())
+
+  entity       Entity        @relation(fields: [entityId], references: [id])
+  float        FloatAdvance  @relation(fields: [floatId], references: [id])
+  bankAccount  BankAccount   @relation(fields: [bankAccountId], references: [id])
+  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id])
+  createdBy    User?         @relation(fields: [createdById], references: [id])
+}
+
+enum PaymentMethod {
+  CASH
+  MOBILE_MONEY
+}
+
+enum AgentPurchaseStatus {
+  PENDING
+  POSTED
+  REJECTED
+}
+
+/// A purchase an agent made from a farmer, entered on a phone (possibly
+/// offline) and synced. clientRef makes a resend harmless. Posting it
+/// receives the stock against the agent's float and creates the lot.
+model AgentPurchase {
+  id             String              @id @default(cuid())
+  entityId       String
+  agentId        String
+  floatId        String?
+  clientRef      String
+  date           DateTime
+  farmerName     String
+  community      String?
+  district       String?
+  itemId         String
+  locationId     String
+  bags           Decimal?            @db.Decimal(10, 2)
+  grams          BigInt
+  priceMinor     BigInt
+  paymentMethod  PaymentMethod       @default(CASH)
+  kor            Decimal?            @db.Decimal(6, 2)
+  moisturePct    Decimal?            @db.Decimal(5, 2)
+  nutCount       Int?
+  cocoaGrade     String?
+  beanCount      Int?
+  note           String?
+  status         AgentPurchaseStatus @default(PENDING)
+  rejectReason   String?
+  lotId          String?             @unique
+  journalEntryId String?             @unique
+  syncedAt       DateTime            @default(now())
+  createdById    String?
+  postedById     String?
+  postedAt       DateTime?
+
+  entity       Entity        @relation(fields: [entityId], references: [id])
+  agent        BuyingAgent   @relation(fields: [agentId], references: [id])
+  float        FloatAdvance? @relation(fields: [floatId], references: [id])
+  item         Item          @relation(fields: [itemId], references: [id])
+  location     StockLocation @relation(fields: [locationId], references: [id])
+  lot          Lot?          @relation(fields: [lotId], references: [id])
+  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id])
+  createdBy    User?         @relation("PurchaseCreatedBy", fields: [createdById], references: [id])
+  postedBy     User?         @relation("PurchasePostedBy", fields: [postedById], references: [id])
+
+  @@unique([entityId, clientRef])
+  @@index([entityId, status])
+  @@index([agentId, status])
 }

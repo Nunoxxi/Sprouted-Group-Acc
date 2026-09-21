@@ -7,6 +7,7 @@
 import type { Permission, Role } from '../authz';
 import type { Currency } from '../fx';
 import type { AdjustmentReason, ItemCategory, StockUnit } from '../inventory';
+import type { CommodityKind, LandedCostKind, Quality } from '../trading';
 import type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus } from './enums';
 
 export type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus };
@@ -28,6 +29,8 @@ export type EntityRecord = {
   accent: string;
   /** The currency the books are kept in. Per entity. */
   functionalCurrency: Currency;
+  /** An agent's open float older than this many days is flagged. */
+  floatAgeLimitDays: number;
 };
 
 export type ContactRecord = {
@@ -99,6 +102,14 @@ export type DocumentLineRecord = {
   /** Bills: the stock item received by this line and where; quantity is then in the item's base unit. */
   itemId: string | null;
   locationId: string | null;
+  /** Bills: a charge capitalised into stock, spread per kg over the lots listed. */
+  landedCostKind: LandedCostKind | null;
+  landedCostLotIds: string[];
+  /** Bills: origin and quality of the lot a stock line creates. */
+  lotRef: string;
+  community: string;
+  district: string;
+  quality: Quality;
 };
 
 export type PostedJournalLine = {
@@ -228,7 +239,99 @@ export type ItemRecord = {
   gramsPerCarton: number | null;
   accountCode: string;
   accountName: string;
+  /** The commodity this item is a grade of, for trading entities. */
+  commodityId: string | null;
+  grade: string;
   isActive: boolean;
+};
+
+export type CommodityRecord = {
+  id: string;
+  entityId: string;
+  code: string;
+  name: string;
+  kind: CommodityKind;
+  gramsPerBag: number;
+  shrinkageTolerancePct: number;
+  isActive: boolean;
+};
+
+export type LotRecord = {
+  id: string;
+  entityId: string;
+  commodityId: string;
+  itemId: string;
+  locationId: string;
+  lotRef: string;
+  date: string;
+  supplierContactId: string | null;
+  supplierName: string;
+  farmerName: string;
+  community: string;
+  district: string;
+  quality: Quality;
+  gramsIn: number;
+  gramsShrunk: number;
+  landedCostMinor: number;
+  documentId: string | null;
+  agentPurchaseId: string | null;
+  note: string;
+  createdByName: string;
+};
+
+export type BuyingAgentRecord = {
+  id: string;
+  entityId: string;
+  name: string;
+  phone: string;
+  defaultLocationId: string | null;
+  isActive: boolean;
+};
+
+export type FloatReturnRecord = { id: string; date: string; amountMinor: number; bankAccountId: string; journal: PostedJournal | null };
+
+export type FloatAdvanceRecord = {
+  id: string;
+  entityId: string;
+  agentId: string;
+  date: string;
+  amountMinor: number;
+  bankAccountId: string;
+  status: 'open' | 'reconciled';
+  journal: PostedJournal | null;
+  returns: FloatReturnRecord[];
+  /** Posted purchases charged to this float, minor units. */
+  purchasedMinor: number;
+  reconciledAt: string | null;
+  reconciledByName: string | null;
+  createdByName: string;
+};
+
+export type AgentPurchaseRecord = {
+  id: string;
+  entityId: string;
+  agentId: string;
+  floatId: string | null;
+  clientRef: string;
+  date: string;
+  farmerName: string;
+  community: string;
+  district: string;
+  itemId: string;
+  locationId: string;
+  bags: number | null;
+  grams: number;
+  priceMinor: number;
+  paymentMethod: 'cash' | 'mobile-money';
+  quality: Quality;
+  note: string;
+  status: 'pending' | 'posted' | 'rejected';
+  rejectReason: string;
+  lotId: string | null;
+  journal: PostedJournal | null;
+  syncedAt: string;
+  createdByName: string;
+  postedByName: string | null;
 };
 
 export type StockLocationRecord = {
@@ -251,7 +354,7 @@ export type StockBalanceRecord = {
 export type StockMovementRecord = {
   id: string;
   entityId: string;
-  kind: 'receipt' | 'receipt-reversal' | 'transfer' | 'adjustment' | 'write-down';
+  kind: 'receipt' | 'receipt-reversal' | 'transfer' | 'adjustment' | 'write-down' | 'landed-cost' | 'shrinkage';
   date: string;
   itemId: string;
   itemCode: string;
@@ -264,6 +367,7 @@ export type StockMovementRecord = {
   note: string;
   documentId: string | null;
   stockCountId: string | null;
+  lotId: string | null;
   journal: PostedJournal | null;
   createdByName: string;
   createdAt: string;
@@ -318,6 +422,11 @@ export type InitialData = {
   stockCountsByEntity: Record<string, StockCountRecord[]>;
   nrvPricesByEntity: Record<string, NrvPriceRecord[]>;
   inventoryLedgerByEntity: Record<string, InventoryLedgerRow[]>;
+  commoditiesByEntity: Record<string, CommodityRecord[]>;
+  lotsByEntity: Record<string, LotRecord[]>;
+  agentsByEntity: Record<string, BuyingAgentRecord[]>;
+  floatsByEntity: Record<string, FloatAdvanceRecord[]>;
+  agentPurchasesByEntity: Record<string, AgentPurchaseRecord[]>;
 };
 
 export type AuditEventRecord = {

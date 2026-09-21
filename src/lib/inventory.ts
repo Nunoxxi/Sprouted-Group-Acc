@@ -77,11 +77,13 @@ export function formatInUnit(grams: number, item: UnitFactors): string {
 // --- which entities hold what ----------------------------------------------------------
 
 /**
- * Sprouted Roots does not hold processed stock: raw produce in transit only.
- * Manufacturers hold every category.
+ * Sprouted Crafts and Oikazi trade raw commodities and process nothing, so
+ * they hold raw material only; Sprouted Roots is an impact programme and
+ * holds no stock at all. The other categories stay defined for a future
+ * entity that does process.
  */
 export function categoriesFor(entityType: EntityType): ItemCategory[] {
-  return entityType === 'programs' ? ['raw-material'] : itemCategories;
+  return entityType === 'programs' ? [] : ['raw-material'];
 }
 
 /** The inventory account an item of this category is carried in, by chart. */
@@ -106,14 +108,16 @@ export function defaultAccountCodeFor(entityType: EntityType, category: ItemCate
 export const inventoryAccountCategory = 'inventory';
 export const inventoryAccounts = { adjustments: '5030', writeDowns: '5035' } as const;
 
-export type AdjustmentReason = 'count-difference' | 'moisture-loss' | 'damage' | 'spoilage' | 'nrv-write-down';
-export const adjustmentReasons: AdjustmentReason[] = ['count-difference', 'moisture-loss', 'damage', 'spoilage'];
+export type AdjustmentReason = 'count-difference' | 'moisture-loss' | 'damage' | 'spoilage' | 'nrv-write-down' | 'abnormal-loss';
+/** Reasons a person may choose; moisture loss is recorded by weigh-out, and abnormal loss is what it produces. */
+export const adjustmentReasons: AdjustmentReason[] = ['count-difference', 'damage', 'spoilage'];
 export const reasonLabels: Record<AdjustmentReason, string> = {
   'count-difference': 'Count difference',
-  'moisture-loss': 'Moisture loss',
+  'moisture-loss': 'Moisture shrinkage (within tolerance)',
   damage: 'Damage',
   spoilage: 'Spoilage',
   'nrv-write-down': 'NRV write-down',
+  'abnormal-loss': 'Shrinkage beyond tolerance',
 };
 
 // --- weighted average cost ---------------------------------------------------------------

@@ -27,16 +27,22 @@ export const sharedTaxAccounts: AccountTemplate[] = [
   { code: '2045', name: 'SSNIT Payable', type: 'LIABILITY', parentCode: '2000', category: 'tax' },
 ];
 
+/** Stock adjustments, NRV write-downs and shrinkage beyond tolerance post here; see src/lib/inventory.ts and trading.ts. */
+export const sharedInventoryAccounts: AccountTemplate[] = [
+  { code: '5030', name: 'Inventory Adjustments', type: 'COST_OF_SALES', parentCode: '5000', category: 'inventory-adjustment' },
+  { code: '5035', name: 'Inventory Write-downs (NRV)', type: 'COST_OF_SALES', parentCode: '5000', category: 'inventory-adjustment' },
+  { code: '5045', name: 'Stock Loss (beyond shrinkage tolerance)', type: 'COST_OF_SALES', parentCode: '5000', category: 'inventory-adjustment' },
+];
+
+/** Cash advanced to buying agents: a receivable until produce or cash comes back. Traders only. */
+export const agentFloatAccounts: AccountTemplate[] = [
+  { code: '1060', name: 'Agent Float Advances', type: 'ASSET', parentCode: '1000', category: 'agent-float' },
+];
+
 // Foreign exchange. Realised: the difference between what a foreign document
 // was booked at and what the bank actually gave on settlement. Unrealised:
 // period-end revaluation of open foreign monetary balances at the closing
 // rate. Both are expense-type accounts where a credit balance is a net gain.
-/** Stock adjustments and NRV write-downs post here; see src/lib/inventory.ts. */
-export const sharedInventoryAccounts: AccountTemplate[] = [
-  { code: '5030', name: 'Inventory Adjustments', type: 'COST_OF_SALES', parentCode: '5000', category: 'inventory-adjustment' },
-  { code: '5035', name: 'Inventory Write-downs (NRV)', type: 'COST_OF_SALES', parentCode: '5000', category: 'inventory-adjustment' },
-];
-
 export const sharedFxAccounts: AccountTemplate[] = [
   { code: '7010', name: 'Realised Foreign Exchange Gain/Loss', type: 'EXPENSE', category: 'fx' },
   { code: '7020', name: 'Unrealised Foreign Exchange Gain/Loss', type: 'EXPENSE', category: 'fx' },
@@ -84,6 +90,7 @@ export const manufacturingAccounts: AccountTemplate[] = [
   { code: '6040', name: 'Depreciation', type: 'EXPENSE', parentCode: '6000' },
   ...sharedTaxAccounts,
   ...sharedInventoryAccounts,
+  ...agentFloatAccounts,
   ...sharedFxAccounts,
 ];
 
@@ -95,8 +102,8 @@ export const ngoAccounts: AccountTemplate[] = [
   { code: '1020', name: 'Donations Receivable', type: 'ASSET', parentCode: '1010' },
   { code: '1025', name: 'Intercompany Receivable - Sprouted Crafts', type: 'ASSET', parentCode: '1010' },
   { code: '1026', name: 'Intercompany Receivable - Oikazi', type: 'ASSET', parentCode: '1010' },
-  { code: '1030', name: 'Aggregation Inventory', type: 'ASSET', parentCode: '1000', category: 'inventory' },
-  { code: '1035', name: 'Farm Inputs Inventory', type: 'ASSET', parentCode: '1000', category: 'inventory' },
+  { code: '1030', name: 'Aggregation Inventory', type: 'ASSET', parentCode: '1000' },
+  { code: '1035', name: 'Farm Inputs Inventory', type: 'ASSET', parentCode: '1000' },
   { code: '1040', name: 'Program Advances', type: 'ASSET', parentCode: '1000' },
   { code: '2001', name: 'Trade Payables', type: 'LIABILITY', parentCode: '2000' },
   { code: '2005', name: 'Supplier Payables', type: 'LIABILITY', parentCode: '2001' },

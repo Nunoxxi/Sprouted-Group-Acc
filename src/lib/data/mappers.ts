@@ -52,6 +52,7 @@ export function entityRecord(row: Entity): EntityRecord {
     emailFrom: row.emailFrom ?? '',
     accent: row.accent ?? '',
     functionalCurrency: row.functionalCurrency,
+    floatAgeLimitDays: row.floatAgeLimitDays,
   };
 }
 
