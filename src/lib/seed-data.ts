@@ -23,6 +23,11 @@ export const seedEntities: EntityRecord[] = [
     accent: accentPalette[0],
     functionalCurrency: 'GHS',
     floatAgeLimitDays: 14,
+    lbcMode: false,
+    revenuePresentation: 'gross',
+    producerPriceMinorPerKg: null,
+    buyerMarginMinorPerKg: null,
+    haulageMinorPerKg: null,
   },
   {
     id: 'sprouted-crafts',
@@ -37,6 +42,11 @@ export const seedEntities: EntityRecord[] = [
     accent: accentPalette[1],
     functionalCurrency: 'GHS',
     floatAgeLimitDays: 14,
+    lbcMode: false,
+    revenuePresentation: 'gross',
+    producerPriceMinorPerKg: null,
+    buyerMarginMinorPerKg: null,
+    haulageMinorPerKg: null,
   },
   {
     id: 'oikazi',
@@ -51,6 +61,11 @@ export const seedEntities: EntityRecord[] = [
     accent: accentPalette[2],
     functionalCurrency: 'GHS',
     floatAgeLimitDays: 14,
+    lbcMode: false,
+    revenuePresentation: 'gross',
+    producerPriceMinorPerKg: null,
+    buyerMarginMinorPerKg: null,
+    haulageMinorPerKg: null,
   },
 ];
 

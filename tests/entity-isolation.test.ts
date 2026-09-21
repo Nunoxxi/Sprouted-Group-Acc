@@ -110,6 +110,7 @@ import * as vatActions from '@/app/actions/vat';
 import * as entityActions from '@/app/actions/entities';
 import * as inventoryActions from '@/app/actions/inventory';
 import * as tradingActions from '@/app/actions/trading';
+import * as contractActions from '@/app/actions/contracts';
 import * as userActions from '@/app/actions/users';
 import * as auditRoute from '@/app/api/audit/route';
 import * as backupsRoute from '@/app/api/backups/route';
@@ -197,6 +198,17 @@ const tradingCalls: Record<keyof typeof tradingActions, Call> = {
   recordWeighOut: () => tradingActions.recordWeighOut(FORBIDDEN_ENTITY, { lotId: 'l', date: '2026-09-21', gramsOut: 1 }),
 };
 
+/** Every sales-contract Server Function, invoked against the forbidden entity. */
+const contractCalls: Record<keyof typeof contractActions, Call> = {
+  saveContract: () => contractActions.saveContract(FORBIDDEN_ENTITY, { buyerContactId: 'c', itemId: 'i', quantity: 1, quantityUnit: 'kg', priceMinor: 100, priceUnit: 'kg', currency: 'GHS', deliveryTerms: 'EXW', deliveryFrom: '2026-09-01', deliveryTo: '2026-09-30', recognizeOn: 'delivery', saleType: 'domestic' }),
+  setContractStatus: () => contractActions.setContractStatus(FORBIDDEN_ENTITY, 'sc', 'closed'),
+  recordDelivery: () => contractActions.recordDelivery(FORBIDDEN_ENTITY, { contractId: 'sc', date: '2026-09-21', locationId: 'l', quantity: 1, unit: 'kg' }),
+  acceptDelivery: () => contractActions.acceptDelivery(FORBIDDEN_ENTITY, 'd', '2026-09-21'),
+  setLbcSettings: () => contractActions.setLbcSettings(FORBIDDEN_ENTITY, { lbcMode: true, revenuePresentation: 'gross', producerPriceMinorPerKg: null, buyerMarginMinorPerKg: null, haulageMinorPerKg: null }),
+  recordSeedFund: () => contractActions.recordSeedFund(FORBIDDEN_ENTITY, { kind: 'received', date: '2026-09-21', amountMinor: 100, bankAccountId: 'b' }),
+  recordCmcReceipt: () => contractActions.recordCmcReceipt(FORBIDDEN_ENTITY, { date: '2026-09-21', amountMinor: 100, bankAccountId: 'b' }),
+};
+
 /** Every user-management Server Function. Owner-only, so any other role is refused. */
 const userCalls: Record<keyof typeof userActions, Call> = {
   listUsers: () => userActions.listUsers(),
@@ -259,6 +271,8 @@ describe('coverage', () => {
     expect(exportedInventory.sort()).toEqual(Object.keys(inventoryCalls).sort());
     const exportedTrading = Object.keys(tradingActions).filter((k) => typeof (tradingActions as Record<string, unknown>)[k] === 'function');
     expect(exportedTrading.sort()).toEqual(Object.keys(tradingCalls).sort());
+    const exportedContracts = Object.keys(contractActions).filter((k) => typeof (contractActions as Record<string, unknown>)[k] === 'function');
+    expect(exportedContracts.sort()).toEqual(Object.keys(contractCalls).sort());
   });
 
   it('every Route Handler method has a case', () => {
@@ -270,7 +284,7 @@ describe('coverage', () => {
 // --- signed out --------------------------------------------------------------------
 
 describe('signed out', () => {
-  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...userCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...userCalls })) {
     if (!call) continue;
     it(`${name} is refused without touching the database`, async () => {
       expect(isRefusal(await call())).toBe(true);
@@ -290,7 +304,7 @@ describe('signed out', () => {
 describe('an Accountant on Sprouted Roots asking for Oikazi', () => {
   beforeEach(() => signIn({ role: 'accountant' }, [GRANTED_ENTITY]));
 
-  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls })) {
     if (!call) continue;
     it(`${name} is refused and reads nothing`, async () => {
       const result = await call();
@@ -346,7 +360,7 @@ describe('a Viewer with access to Oikazi', () => {
   }
 
   it('cannot touch rates, banks, the functional currency, revaluation or VAT registration, even on their own entity', async () => {
-    for (const [name, call] of Object.entries({ ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls })) {
+    for (const [name, call] of Object.entries({ ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls })) {
       if (name === 'listExchangeRates') continue; // reading the rate table is reports:view
       dbCalls.length = 0;
       const result = await call();

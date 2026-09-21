@@ -37,6 +37,8 @@ import { SignOutButton } from '@/components/auth/sign-out-button';
 import { InventoryPanel } from '@/components/app/inventory-panel';
 import { formatKg, inventoryAccountCategory, unitLabels } from '@/lib/inventory';
 import { BuyingPanel } from '@/components/app/buying-panel';
+import { ContractsPanel } from '@/components/app/contracts-panel';
+import { sellingCostKinds, sellingCostLabels, type SellingCostKind } from '@/lib/contracts';
 import { agentFloatSummaries, floatPosition, holdsStock, landedCostKinds, landedCostLabels, qualityFieldsFor, type LandedCostKind } from '@/lib/trading';
 import { CurrencyProvider, ReportMoney, TranslationProvider } from '@/components/ui/money';
 import type { Permission } from '@/lib/authz';
@@ -75,6 +77,7 @@ const navigationItems = [
   'Tax',
   'Inventory',
   'Buying',
+  'Contracts',
   'Reports',
   'Settings',
 ] as const;
@@ -394,6 +397,8 @@ function formFrom(record: DocumentRecord): DocumentFormState {
       community: line.community,
       district: line.district,
       quality: line.quality,
+      contractId: line.contractId,
+      sellingCostKind: line.sellingCostKind,
     })),
     evatClearanceNumber: record.evatClearanceNumber,
     evatQrCode: record.evatQrCode,
@@ -676,7 +681,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
   // unregistered entity while on it lands on the dashboard (see the entity
   // menu); switching registration off happens from Settings, so the Tax
   // branch below only ever renders for a registered entity.
-  const visibleNavigation = navigationItems.filter((item) => (item !== 'Tax' || selectedEntity.vatRegistered) && ((item !== 'Inventory' && item !== 'Buying') || holdsStock(selectedEntity.type)));
+  const visibleNavigation = navigationItems.filter((item) => (item !== 'Tax' || selectedEntity.vatRegistered) && ((item !== 'Inventory' && item !== 'Buying' && item !== 'Contracts') || holdsStock(selectedEntity.type)));
   // The table's default for this document's currency and date; the document may override it.
   const documentRateQuote = selectRate(entityRates, activeDocument.currency, functionalCurrency, activeDocument.date);
   const documentRate: string | null = activeDocument.currency === functionalCurrency ? '1.0' : (activeDocument.rate ?? documentRateQuote?.rate ?? null);
@@ -2373,7 +2378,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                     type="button"
                     onClick={() => {
                       setSelectedEntityId(entity.id);
-                      if ((activeNav === 'Tax' && !entity.vatRegistered) || ((activeNav === 'Inventory' || activeNav === 'Buying') && !holdsStock(entity.type))) {
+                      if ((activeNav === 'Tax' && !entity.vatRegistered) || ((activeNav === 'Inventory' || activeNav === 'Buying' || activeNav === 'Contracts') && !holdsStock(entity.type))) {
                         setActiveNav('Dashboard');
                       }
                       setEntityMenuOpen(false);
@@ -4490,6 +4495,21 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
               bankAccounts={entityBankAccounts}
               allowed={allowed}
             />
+          ) : activeNav === 'Contracts' ? (
+            <ContractsPanel
+              key={selectedEntity.id}
+              entity={selectedEntity}
+              contracts={initialData.contractsByEntity[selectedEntity.id] ?? []}
+              contacts={contacts}
+              items={entityItems}
+              commodities={entityCommodities}
+              locations={entityLocations}
+              balances={initialData.stockBalancesByEntity[selectedEntity.id] ?? []}
+              rates={entityRates}
+              bankAccounts={entityBankAccounts}
+              seedFunds={initialData.seedFundsByEntity[selectedEntity.id] ?? []}
+              allowed={allowed}
+            />
           ) : (
             <Card className="rounded-2xl">
               <div className="border-b border-slate-200 pb-4">
@@ -4782,19 +4802,22 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                           <div>
                             <label className="mb-1 block text-xs font-medium text-slate-600">Stock</label>
                             <select
-                              value={line.itemId ? `item:${line.itemId}` : line.landedCostKind ? `landed:${line.landedCostKind}` : ''}
+                              value={line.itemId ? `item:${line.itemId}` : line.landedCostKind ? `landed:${line.landedCostKind}` : line.contractId ? `contract:${line.contractId}` : ''}
                               disabled={documentReadOnly}
                               onChange={(event) => {
                                 const [mode, value] = event.target.value.split(':');
                                 if (mode === 'item') {
                                   const item = entityItems.find((candidate) => candidate.id === value);
                                   // The grade decides the account: the line posts where the stock is carried.
-                                  if (item) updateLine(line.id, { itemId: item.id, accountCode: item.accountCode, locationId: line.locationId ?? entityLocations.find((location) => location.isActive)?.id ?? null, landedCostKind: null, landedCostLotIds: [] });
+                                  if (item) updateLine(line.id, { itemId: item.id, accountCode: item.accountCode, locationId: line.locationId ?? entityLocations.find((location) => location.isActive)?.id ?? null, landedCostKind: null, landedCostLotIds: [], contractId: null, sellingCostKind: null });
                                 } else if (mode === 'landed') {
                                   // A landed cost posts to the account the lots are carried in; the server checks each lot.
-                                  updateLine(line.id, { landedCostKind: value as LandedCostKind, itemId: null, locationId: null, accountCode: entityItems.find((item) => item.isActive)?.accountCode ?? '1030', lotRef: '', community: '', district: '', quality: {} });
+                                  updateLine(line.id, { landedCostKind: value as LandedCostKind, itemId: null, locationId: null, accountCode: entityItems.find((item) => item.isActive)?.accountCode ?? '1030', lotRef: '', community: '', district: '', quality: {}, contractId: null, sellingCostKind: null });
+                                } else if (mode === 'contract') {
+                                  // A selling cost keeps its expense account; it is attributed to the contract for its margin.
+                                  updateLine(line.id, { contractId: value, sellingCostKind: line.sellingCostKind ?? 'transport-to-buyer', itemId: null, locationId: null, landedCostKind: null, landedCostLotIds: [], lotRef: '', community: '', district: '', quality: {} });
                                 } else {
-                                  updateLine(line.id, { itemId: null, locationId: null, landedCostKind: null, landedCostLotIds: [], lotRef: '', community: '', district: '', quality: {} });
+                                  updateLine(line.id, { itemId: null, locationId: null, landedCostKind: null, landedCostLotIds: [], lotRef: '', community: '', district: '', quality: {}, contractId: null, sellingCostKind: null });
                                 }
                               }}
                               className="min-h-[40px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50"
@@ -4808,9 +4831,24 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                               <optgroup label="Capitalise into stock (landed cost)">
                                 {landedCostKinds.map((kind) => <option key={kind} value={`landed:${kind}`}>{landedCostLabels[kind]}</option>)}
                               </optgroup>
+                              <optgroup label="Selling cost of a sales contract">
+                                {(initialData.contractsByEntity[selectedEntity.id] ?? []).filter((contract) => contract.status !== 'cancelled').map((contract) => <option key={contract.id} value={`contract:${contract.id}`}>{contract.contractNo} · {contract.buyerName}</option>)}
+                              </optgroup>
                             </select>
                           </div>
-                          {line.itemId ? (
+                          {line.contractId ? (
+                            <div>
+                              <label className="mb-1 block text-xs font-medium text-slate-600">Kind of selling cost</label>
+                              <select
+                                value={line.sellingCostKind ?? 'transport-to-buyer'}
+                                disabled={documentReadOnly}
+                                onChange={(event) => updateLine(line.id, { sellingCostKind: event.target.value as SellingCostKind })}
+                                className="min-h-[40px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50"
+                              >
+                                {sellingCostKinds.map((kind) => <option key={kind} value={kind}>{sellingCostLabels[kind]}</option>)}
+                              </select>
+                            </div>
+                          ) : line.itemId ? (
                             <div>
                               <label className="mb-1 block text-xs font-medium text-slate-600">Received at</label>
                               <select
@@ -4829,7 +4867,9 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                           <p className="self-end pb-2 text-xs text-slate-500">
                             {line.itemId
                               ? `Qty in ${unitLabels[entityItems.find((item) => item.id === line.itemId)?.baseUnit ?? 'kg']}; price per ${unitLabels[entityItems.find((item) => item.id === line.itemId)?.baseUnit ?? 'kg'].replace(/s$/, '')}. Posting receives the stock at this cost and records the lot.`
-                              : line.landedCostKind
+                              : line.contractId
+                                ? 'Posted to the expense account chosen; attributed to the contract for its margin per kg.'
+                                : line.landedCostKind
                                 ? 'Spread per kilogram over the lots ticked below; their value rises, quantity does not.'
                                 : entityAccounts.find((account) => account.code === line.accountCode)?.category === inventoryAccountCategory
                                   ? 'This account holds stock. Name the grade, or the ledger will carry value that stock does not.'

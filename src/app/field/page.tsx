@@ -53,7 +53,7 @@ export default async function FieldPage() {
   const refs: FieldReferenceData = {
     loadedAt: new Date().toISOString(),
     user: { name: principal.name },
-    entities: traders.map((e) => ({ id: e.id, name: e.name })),
+    entities: traders.map((e) => ({ id: e.id, name: e.name, lbcMode: e.lbcMode, producerPriceMinorPerKg: e.producerPriceMinorPerKg === null ? null : Number(e.producerPriceMinorPerKg) })),
     agents: agents.map(agentRecord),
     items: items.map(itemRecord),
     locations: locations.map(locationRecord),

@@ -81,6 +81,7 @@ const kindToRecord: Record<PrismaMovementKind, StockMovementRecord['kind']> = {
   WRITE_DOWN: 'write-down',
   LANDED_COST: 'landed-cost',
   SHRINKAGE: 'shrinkage',
+  DELIVERY: 'delivery',
 };
 
 // --- row → record --------------------------------------------------------------

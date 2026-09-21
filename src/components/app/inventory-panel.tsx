@@ -79,7 +79,7 @@ const selectClass = 'min-h-[44px] w-full rounded-lg border border-slate-200 bg-w
 const label = 'mb-1.5 block text-sm font-medium text-slate-700';
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const currentPeriod = () => todayIso().slice(0, 7);
-const kindLabels: Record<StockMovementRecord['kind'], string> = { receipt: 'Receipt', 'receipt-reversal': 'Receipt reversed', transfer: 'Transfer', adjustment: 'Adjustment', 'write-down': 'Write-down', 'landed-cost': 'Landed cost', shrinkage: 'Shrinkage' };
+const kindLabels: Record<StockMovementRecord['kind'], string> = { receipt: 'Receipt', 'receipt-reversal': 'Receipt reversed', transfer: 'Transfer', adjustment: 'Adjustment', 'write-down': 'Write-down', 'landed-cost': 'Landed cost', shrinkage: 'Shrinkage', delivery: 'Delivered on contract' };
 
 export function InventoryPanel({ entity, accounts, items, commodities, lots, locations, balances, movements, counts, nrvPrices, ledger, allowed }: Props) {
   const [tab, setTab] = useState<Tab>('Stock');

@@ -37,6 +37,7 @@ import type { BankAccount, ExchangeRate, Payment, Revaluation } from '@prisma/cl
 import type { Quality } from '../trading';
 import { loadInventoryData } from './inventory';
 import { landedCostKindOf, loadTradingData } from './trading';
+import { loadContractData, sellingCostKindOf } from './contracts';
 
 // --- enum translations -------------------------------------------------------
 
@@ -187,6 +188,8 @@ export function documentRecord(row: DocumentRow): DocumentRecord {
         community: line.community ?? '',
         district: line.district ?? '',
         quality: line.qualityJson ? (JSON.parse(line.qualityJson) as Quality) : {},
+        contractId: line.contractId,
+        sellingCostKind: sellingCostKindOf(line.sellingCostKind),
       })),
     evatClearanceNumber: row.evatClearanceNumber ?? '',
     evatQrCode: row.evatQrCode ?? '',
@@ -283,5 +286,6 @@ export async function loadInitialData(principal: Principal): Promise<InitialData
     revaluationsByEntity: withAllEntities(groupBy(revaluations.map((row) => ({ entityId: row.entityId, ...revaluationRecord(row) })), (row) => row.entityId)),
     ...(await loadInventoryData(entityScope, entityIds)),
     ...(await loadTradingData(entityScope, entityIds)),
+    ...(await loadContractData(entityScope, entityIds)),
   };
 }

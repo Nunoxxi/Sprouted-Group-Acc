@@ -8,6 +8,7 @@
 import type { AccountRecord, ContactRecord } from './data/types';
 import { isCurrency, type Currency } from './fx';
 import { landedCostKinds, type LandedCostKind, type Quality } from './trading';
+import { sellingCostKinds, type SellingCostKind } from './contracts';
 import {
   leviesOnBase,
   roundPesewas,
@@ -56,6 +57,9 @@ export type DocumentLine = {
   community: string;
   district: string;
   quality: Quality;
+  /** Bills: a selling cost attributed to a sales contract. */
+  contractId: string | null;
+  sellingCostKind: SellingCostKind | null;
 };
 
 export type DocumentFormState = {
@@ -129,6 +133,8 @@ export function makeLine(kind: DocumentKind = 'invoice'): DocumentLine {
     community: '',
     district: '',
     quality: {},
+    contractId: null,
+    sellingCostKind: null,
   };
 }
 
@@ -188,6 +194,8 @@ export function normalizeLine(value: unknown, kind: DocumentKind): DocumentLine 
     community: asText(line.community),
     district: asText(line.district),
     quality: normalizeQuality(line.quality),
+    contractId: kind === 'bill' && typeof line.contractId === 'string' && line.contractId ? line.contractId : null,
+    sellingCostKind: kind === 'bill' && sellingCostKinds.includes(line.sellingCostKind as SellingCostKind) ? (line.sellingCostKind as SellingCostKind) : null,
   };
 }
 

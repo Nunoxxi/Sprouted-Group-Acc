@@ -26,26 +26,37 @@ enum Currency {
 // Entity.id is the slug the UI uses ('sprouted-roots'); code is the statutory
 // short code ('SG001'). One identifier everywhere, no alias tables.
 model Entity {
-  id                 String    @id
-  code               String    @unique
-  name               String
-  type               String // 'programs' | 'manufacturing'
-  financialYearEnd   String?
+  id                      String              @id
+  code                    String              @unique
+  name                    String
+  type                    String // 'programs' | 'manufacturing'
+  financialYearEnd        String?
   /// VAT registration is per entity, off by default. VAT is calculated only
   /// for this entity and only on documents dated on or after vatRegisteredFrom.
-  vatRegistered      Boolean   @default(false)
-  vatRegisteredFrom  DateTime? @db.Date
-  tin                String?
+  vatRegistered           Boolean             @default(false)
+  vatRegisteredFrom       DateTime?           @db.Date
+  tin                     String?
   /// Sender for invitations and password resets to this entity's people, e.g.
   /// "Sprouted Crafts <crafts@sproutedgroup.com>". Null falls back to EMAIL_FROM.
-  emailFrom          String?
-  accent             String?
+  emailFrom               String?
+  accent                  String?
   /// The currency the books are kept and reported in. Per entity, never global.
-  functionalCurrency Currency  @default(GHS)
+  functionalCurrency      Currency            @default(GHS)
   /// A buying agent's open float older than this is flagged on the dashboard.
-  floatAgeLimitDays  Int       @default(14)
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  floatAgeLimitDays       Int                 @default(14)
+  /// Operating as a COCOBOD Licensed Buying Company: seed funds are a
+  /// liability, purchases are at the gazetted producer price, deliveries go
+  /// to CMC take-over centres, margin and haulage are separate income.
+  lbcMode                 Boolean             @default(false)
+  /// Gross (producer value as sales, cost as COGS) or net (margin and
+  /// haulage only): the principal-versus-agent judgement, made by a person.
+  revenuePresentation     RevenuePresentation @default(GROSS)
+  /// Gazetted rates, minor units per kg, set by hand when COCOBOD publishes them.
+  producerPriceMinorPerKg BigInt?
+  buyerMarginMinorPerKg   BigInt?
+  haulageMinorPerKg       BigInt?
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
 
   userAccess       UserEntityAccess[]
   exchangeRates    ExchangeRate[]
@@ -77,6 +88,10 @@ model Entity {
   floatAdvances    FloatAdvance[]
   floatReturns     FloatReturn[]
   agentPurchases   AgentPurchase[]
+  salesContracts   SalesContract[]
+  deliveries       ContractDelivery[]
+  sellingCosts     ContractSellingCost[]
+  seedFunds        SeedFundMovement[]
 }
 
 // Append-only. Events form a hash chain per entity ordered by `sequence`, which
@@ -151,7 +166,8 @@ enum WithholdingTaxStatus {
 // Contacts are shared across the group — the same supplier trades with all
 // three entities. Entity scoping happens on ContactEntityBalance and Document.
 model Contact {
-  lots Lot[]
+  lots           Lot[]
+  salesContracts SalesContract[]
 
   id                   String               @id @default(cuid())
   name                 String
@@ -241,6 +257,10 @@ model User {
   floatReturns         FloatReturn[]
   agentPurchases       AgentPurchase[]    @relation("PurchaseCreatedBy")
   postedPurchases      AgentPurchase[]    @relation("PurchasePostedBy")
+  salesContracts       SalesContract[]
+  deliveries           ContractDelivery[] @relation("DeliveryCreatedBy")
+  acceptedDeliveries   ContractDelivery[] @relation("DeliveryAcceptedBy")
+  seedFunds            SeedFundMovement[]
 
   @@index([deactivatedAt])
 }
@@ -372,6 +392,7 @@ enum JournalKind {
   PAYMENT
   REVALUATION
   STOCK
+  CONTRACT
 }
 
 // postedAt is the accounting date (a document's own date), never "now" —
@@ -389,21 +410,24 @@ model JournalEntry {
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
-  entity              Entity          @relation(fields: [entityId], references: [id])
-  postedBy            User?           @relation(fields: [postedById], references: [id])
+  entity              Entity            @relation(fields: [entityId], references: [id])
+  postedBy            User?             @relation(fields: [postedById], references: [id])
   lines               JournalLine[]
-  reversalOf          JournalEntry?   @relation("Reversal", fields: [reversalOfId], references: [id])
-  reversedBy          JournalEntry?   @relation("Reversal")
-  postedDocument      Document?       @relation("DocumentPosting")
-  voidedDocument      Document?       @relation("DocumentVoid")
+  reversalOf          JournalEntry?     @relation("Reversal", fields: [reversalOfId], references: [id])
+  reversedBy          JournalEntry?     @relation("Reversal")
+  postedDocument      Document?         @relation("DocumentPosting")
+  voidedDocument      Document?         @relation("DocumentVoid")
   payment             Payment?
-  revaluation         Revaluation?    @relation("RevaluationEntry")
-  revaluationReversal Revaluation?    @relation("RevaluationReversal")
+  revaluation         Revaluation?      @relation("RevaluationEntry")
+  revaluationReversal Revaluation?      @relation("RevaluationReversal")
   stockMovements      StockMovement[]
   stockCount          StockCount?
   floatAdvance        FloatAdvance?
   floatReturn         FloatReturn?
   agentPurchase       AgentPurchase?
+  delivery            ContractDelivery? @relation("DeliveryJournal")
+  acceptance          ContractDelivery? @relation("AcceptanceJournal")
+  seedFund            SeedFundMovement?
 
   @@index([entityId, postedAt])
   @@index([entityId, kind])
@@ -575,29 +599,34 @@ model Document {
 }
 
 model DocumentLine {
-  id             String          @id @default(cuid())
-  documentId     String
-  entityId       String
-  position       Int
-  description    String
-  quantity       Float // not money: 1.5 kg is a legitimate quantity
-  unitPriceMinor BigInt
-  accountId      String
-  vatTreatment   VatTreatment    @default(STANDARD)
-  projectId      String?
-  fundId         String?
+  id              String           @id @default(cuid())
+  documentId      String
+  entityId        String
+  position        Int
+  description     String
+  quantity        Float // not money: 1.5 kg is a legitimate quantity
+  unitPriceMinor  BigInt
+  accountId       String
+  vatTreatment    VatTreatment     @default(STANDARD)
+  projectId       String?
+  fundId          String?
   /// Bills only: the stock item this line receives, and where. Set when the
   /// line's account is an inventory account; posting the bill creates the
   /// receipt. `quantity` is then in the item's base unit.
-  itemId         String?
-  locationId     String?
+  itemId          String?
+  locationId      String?
   /// A charge capitalised into stock (transport, bags, ...), spread per kg over the lots it relates to.
-  landedCostKind LandedCostKind?
+  landedCostKind  LandedCostKind?
   /// Origin and quality of the lot a stock line receives; all optional.
-  lotRef         String?
-  community      String?
-  district       String?
-  qualityJson    String?
+  lotRef          String?
+  community       String?
+  district        String?
+  qualityJson     String?
+  /// A directly attributable selling cost of a sales contract (transport to
+  /// buyer or port, permits, levies): posted to the expense account chosen,
+  /// attributed to the contract for its margin.
+  contractId      String?
+  sellingCostKind SellingCostKind?
 
   document       Document               @relation(fields: [documentId], references: [id])
   entity         Entity                 @relation(fields: [entityId], references: [id])
@@ -609,6 +638,8 @@ model DocumentLine {
   receipts       StockMovement[]
   lot            Lot?
   landedCostLots LandedCostAllocation[]
+  contract       SalesContract?         @relation(fields: [contractId], references: [id])
+  sellingCost    ContractSellingCost?
 
   @@index([documentId, position])
   @@index([entityId, accountId])
@@ -672,6 +703,7 @@ model ExchangeRate {
 model BankAccount {
   floatAdvances FloatAdvance[]
   floatReturns  FloatReturn[]
+  seedFunds     SeedFundMovement[]
 
   id        String   @id @default(cuid())
   entityId  String
@@ -773,6 +805,7 @@ enum StockMovementKind {
   WRITE_DOWN
   LANDED_COST
   SHRINKAGE
+  DELIVERY
 }
 
 enum AdjustmentReason {
@@ -818,6 +851,7 @@ model Item {
   commodity      Commodity?       @relation(fields: [commodityId], references: [id])
   lots           Lot[]
   agentPurchases AgentPurchase[]
+  salesContracts SalesContract[]
 
   @@unique([entityId, code])
   @@index([entityId, category])
@@ -835,16 +869,17 @@ model StockLocation {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  entity         Entity          @relation(fields: [entityId], references: [id])
-  account        Account?        @relation(fields: [accountId], references: [id])
+  entity         Entity             @relation(fields: [entityId], references: [id])
+  account        Account?           @relation(fields: [accountId], references: [id])
   balances       StockBalance[]
-  movementsFrom  StockMovement[] @relation("MovementFrom")
-  movementsTo    StockMovement[] @relation("MovementTo")
+  movementsFrom  StockMovement[]    @relation("MovementFrom")
+  movementsTo    StockMovement[]    @relation("MovementTo")
   counts         StockCount[]
   documentLines  DocumentLine[]
   lots           Lot[]
   agents         BuyingAgent[]
   agentPurchases AgentPurchase[]
+  deliveries     ContractDelivery[]
 
   @@unique([entityId, code])
 }
@@ -890,22 +925,24 @@ model StockMovement {
   documentLineId String?
   stockCountId   String?
   lotId          String?
+  deliveryId     String?
   journalEntryId String?
   reversesId     String?           @unique
   createdById    String?
   createdAt      DateTime          @default(now())
 
-  entity       Entity         @relation(fields: [entityId], references: [id])
-  item         Item           @relation(fields: [itemId], references: [id])
-  fromLocation StockLocation? @relation("MovementFrom", fields: [fromLocationId], references: [id])
-  toLocation   StockLocation? @relation("MovementTo", fields: [toLocationId], references: [id])
-  documentLine DocumentLine?  @relation(fields: [documentLineId], references: [id])
-  stockCount   StockCount?    @relation(fields: [stockCountId], references: [id])
-  lot          Lot?           @relation(fields: [lotId], references: [id])
-  journalEntry JournalEntry?  @relation(fields: [journalEntryId], references: [id])
-  reverses     StockMovement? @relation("MovementReversal", fields: [reversesId], references: [id])
-  reversedBy   StockMovement? @relation("MovementReversal")
-  createdBy    User?          @relation(fields: [createdById], references: [id])
+  entity       Entity            @relation(fields: [entityId], references: [id])
+  item         Item              @relation(fields: [itemId], references: [id])
+  fromLocation StockLocation?    @relation("MovementFrom", fields: [fromLocationId], references: [id])
+  toLocation   StockLocation?    @relation("MovementTo", fields: [toLocationId], references: [id])
+  documentLine DocumentLine?     @relation(fields: [documentLineId], references: [id])
+  stockCount   StockCount?       @relation(fields: [stockCountId], references: [id])
+  lot          Lot?              @relation(fields: [lotId], references: [id])
+  delivery     ContractDelivery? @relation(fields: [deliveryId], references: [id])
+  journalEntry JournalEntry?     @relation(fields: [journalEntryId], references: [id])
+  reverses     StockMovement?    @relation("MovementReversal", fields: [reversesId], references: [id])
+  reversedBy   StockMovement?    @relation("MovementReversal")
+  createdBy    User?             @relation(fields: [createdById], references: [id])
 
   @@index([entityId, date])
   @@index([entityId, itemId])
@@ -1002,9 +1039,10 @@ model Commodity {
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt
 
-  entity Entity @relation(fields: [entityId], references: [id])
-  items  Item[]
-  lots   Lot[]
+  entity    Entity          @relation(fields: [entityId], references: [id])
+  items     Item[]
+  lots      Lot[]
+  contracts SalesContract[]
 
   @@unique([entityId, code])
 }
@@ -1207,4 +1245,174 @@ model AgentPurchase {
   @@unique([entityId, clientRef])
   @@index([entityId, status])
   @@index([agentId, status])
+}
+
+// --- sales contracts ----------------------------------------------------------------
+//
+// A contract sells a quantity of one grade to a buyer at a price per unit in
+// a currency, for delivery in a period on stated terms. Deliveries draw
+// stock at the location's weighted average and recognise revenue on
+// delivery or on acceptance, as the contract says. Selling costs come from
+// bill lines attributed to the contract. LBC mode reshapes the journals
+// for deliveries to COCOBOD's CMC.
+
+enum RevenuePresentation {
+  GROSS
+  NET
+}
+
+enum ContractStatus {
+  OPEN
+  CLOSED
+  CANCELLED
+}
+
+enum RevenueRecognition {
+  DELIVERY
+  ACCEPTANCE
+}
+
+enum DeliveryStatus {
+  DELIVERED
+  AWAITING_ACCEPTANCE
+  ACCEPTED
+}
+
+enum SellingCostKind {
+  TRANSPORT_TO_BUYER
+  PORT_HANDLING
+  EXPORT_PERMIT
+  LEVY
+  OTHER
+}
+
+model SalesContract {
+  id             String             @id @default(cuid())
+  entityId       String
+  contractNo     String
+  buyerContactId String
+  commodityId    String
+  itemId         String
+  quantityGrams  BigInt
+  /// Price per priceUnit in the contract currency, minor units.
+  priceMinor     BigInt
+  priceUnit      StockUnit          @default(KG)
+  currency       Currency           @default(GHS)
+  /// The rate the contract was priced at (functional per 1 unit of currency); null for functional-currency contracts.
+  contractRate   Decimal?           @db.Decimal(20, 10)
+  deliveryTerms  String
+  deliveryFrom   DateTime
+  deliveryTo     DateTime
+  recognizeOn    RevenueRecognition @default(DELIVERY)
+  /// Domestic or export: decides the sales account.
+  saleType       SaleType           @default(DOMESTIC)
+  /// LBC mode: a contract with COCOBOD's CMC at the producer price.
+  isCmc          Boolean            @default(false)
+  status         ContractStatus     @default(OPEN)
+  note           String?
+  createdById    String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  entity       Entity                @relation(fields: [entityId], references: [id])
+  buyer        Contact               @relation(fields: [buyerContactId], references: [id])
+  commodity    Commodity             @relation(fields: [commodityId], references: [id])
+  item         Item                  @relation(fields: [itemId], references: [id])
+  createdBy    User?                 @relation(fields: [createdById], references: [id])
+  deliveries   ContractDelivery[]
+  sellingCosts ContractSellingCost[]
+  costLines    DocumentLine[]
+
+  @@unique([entityId, contractNo])
+  @@index([entityId, status])
+}
+
+model ContractDelivery {
+  id                       String         @id @default(cuid())
+  entityId                 String
+  contractId               String
+  deliveryNo               Int
+  date                     DateTime
+  locationId               String
+  grams                    BigInt
+  /// Where it went (CMC take-over centre, port, buyer's warehouse).
+  destination              String?
+  /// Fixed at posting: revenue in the contract currency and in functional at the delivery-date rate.
+  rate                     Decimal        @default(1) @db.Decimal(20, 10)
+  revenueTxnMinor          BigInt
+  revenueMinor             BigInt
+  /// Cost of the stock drawn, functional.
+  costMinor                BigInt
+  /// LBC mode: the two allowances, functional.
+  marginMinor              BigInt         @default(0)
+  haulageMinor             BigInt         @default(0)
+  status                   DeliveryStatus @default(DELIVERED)
+  journalEntryId           String?        @unique
+  acceptanceJournalEntryId String?        @unique
+  acceptedAt               DateTime?
+  acceptedById             String?
+  note                     String?
+  createdById              String?
+  createdAt                DateTime       @default(now())
+
+  entity            Entity          @relation(fields: [entityId], references: [id])
+  contract          SalesContract   @relation(fields: [contractId], references: [id])
+  location          StockLocation   @relation(fields: [locationId], references: [id])
+  journalEntry      JournalEntry?   @relation("DeliveryJournal", fields: [journalEntryId], references: [id])
+  acceptanceJournal JournalEntry?   @relation("AcceptanceJournal", fields: [acceptanceJournalEntryId], references: [id])
+  createdBy         User?           @relation("DeliveryCreatedBy", fields: [createdById], references: [id])
+  acceptedBy        User?           @relation("DeliveryAcceptedBy", fields: [acceptedById], references: [id])
+  movements         StockMovement[]
+
+  @@unique([contractId, deliveryNo])
+  @@index([entityId, date])
+}
+
+/// A selling cost attributed to a contract, created when the bill line that
+/// carries it is posted. Functional currency.
+model ContractSellingCost {
+  id             String          @id @default(cuid())
+  entityId       String
+  contractId     String
+  kind           SellingCostKind
+  description    String
+  date           DateTime
+  amountMinor    BigInt
+  documentLineId String          @unique
+  createdAt      DateTime        @default(now())
+
+  entity       Entity        @relation(fields: [entityId], references: [id])
+  contract     SalesContract @relation(fields: [contractId], references: [id])
+  documentLine DocumentLine  @relation(fields: [documentLineId], references: [id])
+
+  @@index([contractId])
+}
+
+enum SeedFundKind {
+  RECEIVED
+  REPAID
+  OFFSET
+}
+
+/// LBC mode: seed funds from COCOBOD are a liability, never income. Received
+/// into a bank account; repaid from one; or offset against what CMC owes for
+/// cocoa delivered.
+model SeedFundMovement {
+  id             String       @id @default(cuid())
+  entityId       String
+  kind           SeedFundKind
+  date           DateTime
+  amountMinor    BigInt
+  bankAccountId  String?
+  journalEntryId String?      @unique
+  note           String?
+  createdById    String?
+  createdAt      DateTime     @default(now())
+
+  entity       Entity        @relation(fields: [entityId], references: [id])
+  bankAccount  BankAccount?  @relation(fields: [bankAccountId], references: [id])
+  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id])
+  createdBy    User?         @relation(fields: [createdById], references: [id])
+
+  @@index([entityId, date])
 }

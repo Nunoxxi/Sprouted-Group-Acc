@@ -78,7 +78,7 @@ Copy `.env.example` to `.env`. Relevant variables:
 
 ```text
 src/app/              App Router entry, layout, and API routes (audit, backups)
-src/components/app/   app-shell.tsx — the UI shell with sidebar nav; inventory-panel.tsx — Inventory; buying-panel.tsx — agents and floats
+src/components/app/   app-shell.tsx — the UI shell with sidebar nav; inventory-panel.tsx — Inventory; buying-panel.tsx — agents and floats; contracts-panel.tsx — sales contracts and LBC
 src/app/field/        The buying agent's phone form: mobile-first, works offline, syncs when it can
 src/components/ui/    Design system primitives (Button, Card, Input, Money, Badge)
 src/lib/              Shared logic (see below)
@@ -100,6 +100,7 @@ The files worth reading first in `src/lib/`:
 - **`report-data.ts`** — the demo ledger and account classifications that the reports currently read from.
 - **`export.ts`** — per-entity ledger export, checksum verification, retention.
 - **`inventory.ts`** — stock: grams as the unit of weight, weighted average cost as value ÷ quantity per grade per location, receipt allocation from bills, adjustment/transfer/write-down journals, count differences, NRV, and the stock-to-ledger reconciliation. Pure and fully tested.
+- **`contracts.ts`** — sales contracts: values, margin per contract at the contract rate and today's, FX exposure on the open balance, the position report, and every delivery journal shape including LBC gross and net. Pure and fully tested.
 - **`trading.ts`** — commodity trading: landed cost per kilogram, shrinkage within and beyond tolerance, buying-agent floats and their reconciliation, quality fields per commodity. Pure and fully tested.
 - **`fx.ts`** — multi-currency: exact rate arithmetic, rate selection, journal conversion, realised FX on settlement, period-end revaluation, intercompany across currencies. Pure and fully tested.
 - **`audit.ts`** — append-only audit log with a SHA-256 hash chain per entity; runs inside the caller's transaction when given one.

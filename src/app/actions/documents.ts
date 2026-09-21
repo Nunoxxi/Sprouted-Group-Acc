@@ -32,6 +32,7 @@ import { fromMinor, toMinor } from '@/lib/data/money';
 import { moveBalance, StockRefusal } from '@/lib/data/stock';
 import { unitToRecord } from '@/lib/data/inventory';
 import { landedToPrisma } from '@/lib/data/trading';
+import { sellingToPrisma } from '@/lib/data/contracts';
 import { allocateByWeight } from '@/lib/trading';
 import { allocateReceiptValues, formatKg, toGrams } from '@/lib/inventory';
 import { roundPesewas } from '@/lib/ghana-tax';
@@ -259,6 +260,20 @@ async function saveDraft(entityId: string, input: unknown, principal: Principal)
     }
   }
 
+  // A selling cost names an open contract of this entity and a kind; it posts
+  // to whatever expense account the line chose and is attributed for margin.
+  const contractIds = [...new Set(form.lines.flatMap((line) => (line.contractId ? [line.contractId] : [])))];
+  const contracts = contractIds.length ? await prisma.salesContract.findMany({ where: { id: { in: contractIds }, entityId }, select: { id: true, status: true, contractNo: true } }) : [];
+  const contractById = new Map(contracts.map((c) => [c.id, c]));
+  for (const line of form.lines) {
+    if (!line.contractId) continue;
+    const contract = contractById.get(line.contractId);
+    if (!contract) return fail('A line names a sales contract that does not belong to this entity.');
+    if (contract.status === 'CANCELLED') return fail(`Contract ${contract.contractNo} is cancelled.`);
+    if (!line.sellingCostKind) return fail(`Say what kind of selling cost the line for ${contract.contractNo} is.`);
+    if (line.itemId || line.landedCostKind) return fail('A selling cost line cannot also receive stock or be a landed cost.');
+  }
+
   const linesData = form.lines.map((line, position) => ({
     entityId,
     position,
@@ -275,6 +290,8 @@ async function saveDraft(entityId: string, input: unknown, principal: Principal)
     district: line.district.trim() || null,
     qualityJson: Object.keys(line.quality).length ? JSON.stringify(line.quality) : null,
     landedCostLots: line.landedCostKind ? { create: line.landedCostLotIds.map((lotId) => ({ entityId, lotId })) } : undefined,
+    contractId: line.contractId,
+    sellingCostKind: line.sellingCostKind ? sellingToPrisma[line.sellingCostKind] : null,
   }));
 
   // The id must belong to *this* entity. One that does not — whether it is
@@ -299,6 +316,7 @@ async function saveDraft(entityId: string, input: unknown, principal: Principal)
       }
 
       await tx.landedCostAllocation.deleteMany({ where: { documentLine: { documentId: form.id } } });
+      await tx.contractSellingCost.deleteMany({ where: { documentLine: { documentId: form.id } } });
       await tx.documentLine.deleteMany({ where: { documentId: form.id } });
       return tx.document.update({
         where: { id: form.id },
@@ -526,6 +544,23 @@ async function post(entityId: string, documentId: string, principal: Principal):
         }
       }
 
+      // Selling costs: each attributed line's functional share of its account's
+      // debit becomes a cost of the contract it names (the bill's journal is
+      // the expense posting; this is attribution only).
+      const sellingLines = document.lines.filter((line) => line.contractId && line.sellingCostKind);
+      if (sellingLines.length > 0) {
+        const codes = new Set(sellingLines.map((line) => line.account.code));
+        const byAccount: Record<string, number> = {};
+        for (const line of lines) if (line.type === 'debit' && codes.has(line.accountCode)) byAccount[line.accountCode] = (byAccount[line.accountCode] ?? 0) + line.functionalAmount;
+        const shares = allocateReceiptValues(
+          document.lines.filter((line) => codes.has(line.account.code)).map((line) => ({ lineId: line.id, accountCode: line.account.code, baseMinor: roundPesewas(line.quantity * toMinor(line.unitPriceMinor)) })),
+          byAccount,
+        );
+        for (const line of sellingLines) {
+          await tx.contractSellingCost.create({ data: { entityId, contractId: line.contractId as string, kind: line.sellingCostKind!, description: line.description || `${documentLabel(kind, number)}`, date: document.date, amountMinor: fromMinor(shares[line.id] ?? 0), documentLineId: line.id } });
+        }
+      }
+
       // Landed cost: each such line's functional share of its account's debit is
       // spread per kilogram over the lots it names — value up, quantity unchanged.
       const landedLines = document.lines.filter((line) => line.landedCostKind && line.landedCostLots.length > 0);
@@ -625,6 +660,8 @@ function documentRecordToForm(record: DocumentRecord): DocumentFormState {
       community: line.community,
       district: line.district,
       quality: line.quality,
+      contractId: line.contractId,
+      sellingCostKind: line.sellingCostKind,
     })),
     evatClearanceNumber: record.evatClearanceNumber,
     evatQrCode: record.evatQrCode,
@@ -889,6 +926,10 @@ async function voidPosted(entityId: string, documentId: string, principal: Princ
     });
 
     await tx.document.update({ where: { id: documentId }, data: { voidEntryId: reversal.id } });
+
+    // Selling costs attributed by this bill are reversed with it: the
+    // attribution is zeroed and marked, the row stays as the record.
+    await tx.contractSellingCost.updateMany({ where: { documentLine: { documentId } }, data: { amountMinor: 0n, description: `(voided) ${documentLabel(kind, number)}` } });
 
     // Stock received from this bill leaves again, at the value it came in
     // at, so stock and the reversed ledger stay equal. If it has since been

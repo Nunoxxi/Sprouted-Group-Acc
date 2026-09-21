@@ -8,6 +8,7 @@ import type { Permission, Role } from '../authz';
 import type { Currency } from '../fx';
 import type { AdjustmentReason, ItemCategory, StockUnit } from '../inventory';
 import type { CommodityKind, LandedCostKind, Quality } from '../trading';
+import type { PriceUnit, SellingCostKind } from '../contracts';
 import type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus } from './enums';
 
 export type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus };
@@ -31,6 +32,12 @@ export type EntityRecord = {
   functionalCurrency: Currency;
   /** An agent's open float older than this many days is flagged. */
   floatAgeLimitDays: number;
+  /** COCOBOD Licensed Buying Company mode and its settings. */
+  lbcMode: boolean;
+  revenuePresentation: 'gross' | 'net';
+  producerPriceMinorPerKg: number | null;
+  buyerMarginMinorPerKg: number | null;
+  haulageMinorPerKg: number | null;
 };
 
 export type ContactRecord = {
@@ -110,6 +117,9 @@ export type DocumentLineRecord = {
   community: string;
   district: string;
   quality: Quality;
+  /** Bills: a selling cost attributed to a sales contract. */
+  contractId: string | null;
+  sellingCostKind: SellingCostKind | null;
 };
 
 export type PostedJournalLine = {
@@ -127,7 +137,7 @@ export type PostedJournalLine = {
 
 export type PostedJournal = {
   id: string;
-  kind: 'DOCUMENT' | 'REVERSAL' | 'MANUAL' | 'PAYMENT' | 'REVALUATION' | 'STOCK';
+  kind: 'DOCUMENT' | 'REVERSAL' | 'MANUAL' | 'PAYMENT' | 'REVALUATION' | 'STOCK' | 'CONTRACT';
   postedAt: string; // YYYY-MM-DD
   lines: PostedJournalLine[];
 };
@@ -354,7 +364,7 @@ export type StockBalanceRecord = {
 export type StockMovementRecord = {
   id: string;
   entityId: string;
-  kind: 'receipt' | 'receipt-reversal' | 'transfer' | 'adjustment' | 'write-down' | 'landed-cost' | 'shrinkage';
+  kind: 'receipt' | 'receipt-reversal' | 'transfer' | 'adjustment' | 'write-down' | 'landed-cost' | 'shrinkage' | 'delivery';
   date: string;
   itemId: string;
   itemCode: string;
@@ -399,6 +409,60 @@ export type NrvPriceRecord = {
   sellingPriceMinorPerKg: number;
 };
 
+// --- sales contracts ----------------------------------------------------------
+
+export type ContractDeliveryRecord = {
+  id: string;
+  contractId: string;
+  deliveryNo: number;
+  date: string;
+  locationId: string;
+  grams: number;
+  destination: string;
+  rate: string;
+  revenueTxnMinor: number;
+  revenueMinor: number;
+  costMinor: number;
+  marginMinor: number;
+  haulageMinor: number;
+  status: 'delivered' | 'awaiting-acceptance' | 'accepted';
+  journal: PostedJournal | null;
+  acceptanceJournal: PostedJournal | null;
+  acceptedAt: string | null;
+  note: string;
+  createdByName: string;
+};
+
+export type ContractSellingCostRecord = { id: string; kind: SellingCostKind; description: string; date: string; amountMinor: number; documentId: string | null };
+
+export type SalesContractRecord = {
+  id: string;
+  entityId: string;
+  contractNo: string;
+  buyerContactId: string;
+  buyerName: string;
+  commodityId: string;
+  itemId: string;
+  quantityGrams: number;
+  priceMinor: number;
+  priceUnit: PriceUnit;
+  currency: Currency;
+  contractRate: string | null;
+  deliveryTerms: string;
+  deliveryFrom: string;
+  deliveryTo: string;
+  recognizeOn: 'delivery' | 'acceptance';
+  saleType: 'domestic' | 'export';
+  isCmc: boolean;
+  status: 'open' | 'closed' | 'cancelled';
+  note: string;
+  deliveries: ContractDeliveryRecord[];
+  sellingCosts: ContractSellingCostRecord[];
+  createdByName: string;
+};
+
+export type SeedFundRecord = { id: string; kind: 'received' | 'repaid' | 'offset'; date: string; amountMinor: number; bankAccountId: string | null; journal: PostedJournal | null; note: string };
+
 /** Ledger balance of one inventory account, from the real journal lines. */
 export type InventoryLedgerRow = { accountCode: string; accountName: string; balanceMinor: number };
 
@@ -427,6 +491,8 @@ export type InitialData = {
   agentsByEntity: Record<string, BuyingAgentRecord[]>;
   floatsByEntity: Record<string, FloatAdvanceRecord[]>;
   agentPurchasesByEntity: Record<string, AgentPurchaseRecord[]>;
+  contractsByEntity: Record<string, SalesContractRecord[]>;
+  seedFundsByEntity: Record<string, SeedFundRecord[]>;
 };
 
 export type AuditEventRecord = {

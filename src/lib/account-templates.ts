@@ -39,6 +39,16 @@ export const agentFloatAccounts: AccountTemplate[] = [
   { code: '1060', name: 'Agent Float Advances', type: 'ASSET', parentCode: '1000', category: 'agent-float' },
 ];
 
+/** Sales contracts and COCOBOD Licensed Buying Company mode; see src/lib/contracts.ts. Traders only. */
+export const contractAccounts: AccountTemplate[] = [
+  { code: '1065', name: 'COCOBOD Receivable', type: 'ASSET', parentCode: '1000', category: 'lbc' },
+  { code: '2050', name: 'COCOBOD Seed Fund Payable', type: 'LIABILITY', parentCode: '2000', category: 'lbc' },
+  { code: '4020', name: "Buyer's Margin (COCOBOD)", type: 'INCOME', parentCode: '4000', category: 'lbc' },
+  { code: '4025', name: 'Haulage Allowance (COCOBOD)', type: 'INCOME', parentCode: '4000', category: 'lbc' },
+  { code: '4030', name: 'Cocoa Pass-through (net presentation)', type: 'INCOME', parentCode: '4000', category: 'lbc' },
+  { code: '6045', name: 'Export Permits & Levies', type: 'EXPENSE', parentCode: '6000' },
+];
+
 // Foreign exchange. Realised: the difference between what a foreign document
 // was booked at and what the bank actually gave on settlement. Unrealised:
 // period-end revaluation of open foreign monetary balances at the closing
@@ -91,6 +101,7 @@ export const manufacturingAccounts: AccountTemplate[] = [
   ...sharedTaxAccounts,
   ...sharedInventoryAccounts,
   ...agentFloatAccounts,
+  ...contractAccounts,
   ...sharedFxAccounts,
 ];
 

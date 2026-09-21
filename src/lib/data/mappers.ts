@@ -53,6 +53,11 @@ export function entityRecord(row: Entity): EntityRecord {
     accent: row.accent ?? '',
     functionalCurrency: row.functionalCurrency,
     floatAgeLimitDays: row.floatAgeLimitDays,
+    lbcMode: row.lbcMode,
+    revenuePresentation: row.revenuePresentation === 'NET' ? 'net' : 'gross',
+    producerPriceMinorPerKg: row.producerPriceMinorPerKg === null ? null : toMinor(row.producerPriceMinorPerKg),
+    buyerMarginMinorPerKg: row.buyerMarginMinorPerKg === null ? null : toMinor(row.buyerMarginMinorPerKg),
+    haulageMinorPerKg: row.haulageMinorPerKg === null ? null : toMinor(row.haulageMinorPerKg),
   };
 }
 

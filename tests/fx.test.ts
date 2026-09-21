@@ -34,7 +34,7 @@ function balanced(lines: readonly FxJournalLine[]): boolean {
 
 function usdInvoice(unitPriceCents: number, quantity = 1): DocumentFormState {
   const document = makeDocument('invoice', 'customer');
-  document.lines = [{ id: 'l1', description: 'Cocoa beans', quantity, unitPrice: unitPriceCents, accountCode: '4005', vatTreatment: 'zero-rated', itemId: null, locationId: null, landedCostKind: null, landedCostLotIds: [], lotRef: '', community: '', district: '', quality: {} }];
+  document.lines = [{ id: 'l1', description: 'Cocoa beans', quantity, unitPrice: unitPriceCents, accountCode: '4005', vatTreatment: 'zero-rated', itemId: null, locationId: null, landedCostKind: null, landedCostLotIds: [], lotRef: '', community: '', district: '', quality: {}, contractId: null, sellingCostKind: null }];
   return document;
 }
 
@@ -114,7 +114,7 @@ describe('a foreign invoice posted at one rate', () => {
     // 3 × $333.33 standard-rated: base 99999, levies 15000/2500/2500 — each
     // line rounds on its own at 12.345678 and the total drifts by a pesewa.
     const document = makeDocument('invoice', 'c');
-    document.lines = [{ id: 'a', description: 'x', quantity: 3, unitPrice: 33333, accountCode: '4005', vatTreatment: 'standard', itemId: null, locationId: null, landedCostKind: null, landedCostLotIds: [], lotRef: '', community: '', district: '', quality: {} }];
+    document.lines = [{ id: 'a', description: 'x', quantity: 3, unitPrice: 33333, accountCode: '4005', vatTreatment: 'standard', itemId: null, locationId: null, landedCostKind: null, landedCostLotIds: [], lotRef: '', community: '', district: '', quality: {}, contractId: null, sellingCostKind: null }];
     const raw = journalLinesFor(document, false, undefined, {}, vatOn);
     const naive = raw.map((line) => ({ ...line, functional: convertMinor(line.amount, '12.345678') }));
     const naiveImbalance = naive.reduce((s, l) => s + (l.type === 'debit' ? l.functional : -l.functional), 0);

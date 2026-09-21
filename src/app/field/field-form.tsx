@@ -22,7 +22,7 @@ import { qualityFieldsFor, type CommodityKind, type Quality } from '@/lib/tradin
 export type FieldReferenceData = {
   loadedAt: string;
   user: { name: string };
-  entities: { id: string; name: string }[];
+  entities: { id: string; name: string; lbcMode: boolean; producerPriceMinorPerKg: number | null }[];
   agents: BuyingAgentRecord[];
   items: ItemRecord[];
   locations: StockLocationRecord[];
@@ -114,6 +114,11 @@ export function FieldForm({ refs: serverRefs }: { refs: FieldReferenceData }) {
     return 0;
   }, [form.kg, form.bags, commodity]);
   const qualityFields = qualityFieldsFor(commodity?.kind ?? 'other');
+  // LBC mode: the price is the gazetted producer price × weight, unless typed over.
+  const lbcEntity = refs.entities.find((e) => e.id === entityId);
+  const producerPrice = lbcEntity?.lbcMode && lbcEntity.producerPriceMinorPerKg !== null ? lbcEntity.producerPriceMinorPerKg : null;
+  const suggestedPrice = producerPrice !== null && grams > 0 ? Math.round((grams * producerPrice) / 1000) : null;
+  const priceToUse = form.price.trim() ? form.price : suggestedPrice !== null ? (suggestedPrice / 100).toFixed(2) : '';
   const pendingCount = queue.filter((q) => q.status === 'queued').length;
 
   const sync = useCallback(async (current: QueuedPurchase[]) => {
@@ -157,7 +162,7 @@ export function FieldForm({ refs: serverRefs }: { refs: FieldReferenceData }) {
   }, [online]);
 
   function save() {
-    if (!entityId || !form.agentId || !form.itemId || !form.farmerName.trim() || grams <= 0 || !form.price.trim()) {
+    if (!entityId || !form.agentId || !form.itemId || !form.farmerName.trim() || grams <= 0 || !priceToUse.trim()) {
       setNotice('Fill in agent, farmer, grade, weight and price.');
       return;
     }
@@ -181,13 +186,13 @@ export function FieldForm({ refs: serverRefs }: { refs: FieldReferenceData }) {
       locationId: form.locationId || agent?.defaultLocationId || null,
       bags: form.bags.trim() ? Number(form.bags) : null,
       grams,
-      priceMinor: Math.round(Number(form.price) * 100),
+      priceMinor: Math.round(Number(priceToUse) * 100),
       paymentMethod: form.paymentMethod,
       quality: q,
       note: form.note.trim(),
       savedAt: new Date().toISOString(),
       status: 'queued',
-      summary: `${form.farmerName.trim()} · ${(grams / 1000).toFixed(1)} kg ${item?.grade ?? ''} · GH₵${Number(form.price).toFixed(2)}`,
+      summary: `${form.farmerName.trim()} · ${(grams / 1000).toFixed(1)} kg ${item?.grade ?? ''} · GH₵${Number(priceToUse).toFixed(2)}`,
     };
     const next = [purchase, ...queue];
     setQueue(next);
@@ -231,7 +236,7 @@ export function FieldForm({ refs: serverRefs }: { refs: FieldReferenceData }) {
           <div><label className={label}>or weight (kg)</label><input type="number" inputMode="decimal" min={0} step="any" className={field} value={form.kg} onChange={(e) => setForm({ ...form, kg: e.target.value, bags: '' })} /></div>
         </div>
         {grams > 0 ? <p className="-mt-2 text-sm text-slate-600">= {(grams / 1000).toLocaleString('en-GH', { maximumFractionDigits: 3 })} kg</p> : null}
-        <div><label className={label}>Price paid (GH₵)</label><input type="number" inputMode="decimal" min={0} step="0.01" className={field} value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} /></div>
+        <div><label className={label}>Price paid (GH₵){producerPrice !== null ? ` — producer price GH₵${(producerPrice / 100).toFixed(2)}/kg` : ''}</label><input type="number" inputMode="decimal" min={0} step="0.01" className={field} value={form.price} placeholder={suggestedPrice !== null ? (suggestedPrice / 100).toFixed(2) : ''} onChange={(e) => setForm({ ...form, price: e.target.value })} />{producerPrice !== null && form.price.trim() && Math.round(Number(form.price) * 100) !== suggestedPrice ? <p className="mt-1 text-xs text-amber-800">Differs from the gazetted producer price.</p> : null}</div>
         <div>
           <label className={label}>Paid by</label>
           <div className="grid grid-cols-2 gap-3">
