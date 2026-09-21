@@ -22,6 +22,8 @@ export type EntityRecord = {
   /** YYYY-MM-DD from which VAT applies; null while unregistered. */
   vatRegisteredFrom: string | null;
   tin: string;
+  /** Sender for this entity's invitations and resets; empty means the group default. */
+  emailFrom: string;
   accent: string;
   /** The currency the books are kept in. Per entity. */
   functionalCurrency: Currency;

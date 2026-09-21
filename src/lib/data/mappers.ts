@@ -49,6 +49,7 @@ export function entityRecord(row: Entity): EntityRecord {
     vatRegistered: row.vatRegistered,
     vatRegisteredFrom: row.vatRegisteredFrom ? row.vatRegisteredFrom.toISOString().slice(0, 10) : null,
     tin: row.tin ?? '',
+    emailFrom: row.emailFrom ?? '',
     accent: row.accent ?? '',
     functionalCurrency: row.functionalCurrency,
   };

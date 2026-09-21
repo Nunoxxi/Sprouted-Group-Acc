@@ -70,7 +70,7 @@ Copy `.env.example` to `.env`. Relevant variables:
 | `EXPORT_DIR` | Where ledger export files are written. Defaults to `exports/` next to the app; point it at durable storage in production. |
 | `BETTER_AUTH_SECRET` | Signs session cookies and encrypts TOTP secrets. `openssl rand -base64 32`. Changing it signs everyone out. |
 | `BETTER_AUTH_URL` | The app's public URL; invite and reset links are built from it. |
-| `RESEND_API_KEY`, `EMAIL_FROM` | Outbound email for invitations and resets. Without a key, development prints the email to the console; production refuses to send. |
+| `RESEND_API_KEY`, `EMAIL_FROM` | Outbound email for invitations and resets. `EMAIL_FROM` is the group sender and its domain is the one verified with Resend; each entity may set its own sender on that domain under Settings. Without a key, development prints the email to the console; production refuses to send. |
 
 `.env` is git-ignored and holds real credentials. Never commit it.
 

@@ -39,6 +39,7 @@ import type { Permission } from '@/lib/authz';
 import { recordPayment as recordPaymentAction } from '@/app/actions/documents';
 import { createBankAccount, previewRevaluation, reverseRevaluation, runRevaluation, setFunctionalCurrency, upsertExchangeRate, type RevaluationPreview } from '@/app/actions/fx';
 import { setVatRegistration } from '@/app/actions/vat';
+import { setEntitySender } from '@/app/actions/entities';
 import {
   convertJournal,
   convertMinor,
@@ -643,6 +644,10 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
     ? `Registered from ${selectedEntity.vatRegisteredFrom}`
     : 'Not VAT registered';
   const [vatForm, setVatForm] = useState({ registeredFrom: '' });
+  // The entity's sender address, edited in place; keyed on the entity so
+  // switching entities shows that entity's value, not the last one typed.
+  const [senderForm, setSenderForm] = useState<{ entityId: string; value: string }>({ entityId: selectedEntity.id, value: selectedEntity.emailFrom });
+  const senderValue = senderForm.entityId === selectedEntity.id ? senderForm.value : selectedEntity.emailFrom;
   // The Tax screen exists only for a registered entity. Choosing an
   // unregistered entity while on it lands on the dashboard (see the entity
   // menu); switching registration off happens from Settings, so the Tax
@@ -4045,6 +4050,35 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                       <span className="text-xs text-slate-500">Applies to documents dated on or after this date only.</span>
                     </div>
                   )
+                ) : null}
+              </Card>
+
+              <Card className="rounded-2xl">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Email</p>
+                <h3 className="mt-1 text-xl font-semibold text-slate-900">
+                  {selectedEntity.emailFrom ? `Sender: ${selectedEntity.emailFrom}` : 'Sender: the group default'}
+                </h3>
+                <p className="mt-1 text-sm text-slate-600">
+                  Invitations and password resets for people whose first entity is {selectedEntity.name} are sent from this address. It must be on the domain verified with the email provider — the same domain as the group default. Leave it empty to use the group default.
+                </p>
+                {allowed('entity:configure') ? (
+                  <div className="mt-3 flex flex-wrap items-end gap-3">
+                    <div className="min-w-[320px] flex-1">
+                      <label className="mb-1.5 block text-sm font-medium text-slate-700">Sender</label>
+                      <Input
+                        value={senderValue}
+                        placeholder={`${selectedEntity.name} <${selectedEntity.id.replace(/^sprouted-/, '')}@yourdomain.com>`}
+                        onChange={(event) => setSenderForm({ entityId: selectedEntity.id, value: event.target.value })}
+                      />
+                    </div>
+                    <Button
+                      size="sm"
+                      disabled={settingsPending || senderValue.trim() === selectedEntity.emailFrom}
+                      onClick={() => runSetting(senderValue.trim() ? `Sender for ${selectedEntity.name} set to ${senderValue.trim()}.` : `Sender for ${selectedEntity.name} cleared; the group default applies.`, () => setEntitySender(selectedEntity.id, senderValue))}
+                    >
+                      Save sender
+                    </Button>
+                  </div>
                 ) : null}
               </Card>
 

@@ -19,6 +19,7 @@ import { defaultStatements } from 'better-auth/plugins/admin/access';
 
 import { banReasons, passwordPolicy, roles } from './authz';
 import { sendEmail } from './email';
+import { senderForUser } from './email-sender';
 import { prisma } from './prisma';
 
 // The origin check compares this to the browser's Origin header exactly, so a
@@ -96,14 +97,18 @@ export const auth = betterAuth({
     async sendResetPassword({ user, url }) {
       const hasPassword = await prisma.authAccount.count({ where: { userId: user.id, providerId: 'credential' } });
       const isInvite = hasPassword === 0;
+      // From the entity the person belongs to, when it has its own sender.
+      const sender = await senderForUser(user.id);
+      const speakingFor = sender.entityName ? ` for ${sender.entityName}` : '';
       await sendEmail({
+        from: sender.from,
         to: user.email,
-        subject: isInvite ? 'You have been invited to Sprouted Accounting' : 'Reset your Sprouted Accounting password',
+        subject: isInvite ? `You have been invited to Sprouted Accounting${speakingFor}` : 'Reset your Sprouted Accounting password',
         text: [
           `Hello ${user.name},`,
           '',
           isInvite
-            ? 'An Owner has invited you to Sprouted Accounting. Set your password here:'
+            ? `An Owner has invited you to Sprouted Accounting${speakingFor}. Set your password here:`
             : 'Set a new password for your Sprouted Accounting account here:',
           url,
           '',

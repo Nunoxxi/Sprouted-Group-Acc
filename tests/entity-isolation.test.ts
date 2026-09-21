@@ -107,6 +107,7 @@ vi.mock('@/lib/auth', () => {
 import * as documentActions from '@/app/actions/documents';
 import * as fxActions from '@/app/actions/fx';
 import * as vatActions from '@/app/actions/vat';
+import * as entityActions from '@/app/actions/entities';
 import * as userActions from '@/app/actions/users';
 import * as auditRoute from '@/app/api/audit/route';
 import * as backupsRoute from '@/app/api/backups/route';
@@ -159,6 +160,11 @@ const fxCalls: Record<keyof typeof fxActions, Call> = {
 /** Every VAT-registration Server Function, invoked against the forbidden entity. */
 const vatCalls: Record<keyof typeof vatActions, Call> = {
   setVatRegistration: () => vatActions.setVatRegistration(FORBIDDEN_ENTITY, { registered: true, registeredFrom: '2026-10-01' }),
+};
+
+/** Every entity-settings Server Function, invoked against the forbidden entity. */
+const entityCalls: Record<keyof typeof entityActions, Call> = {
+  setEntitySender: () => entityActions.setEntitySender(FORBIDDEN_ENTITY, 'Oikazi <oikazi@example.com>'),
 };
 
 /** Every user-management Server Function. Owner-only, so any other role is refused. */
@@ -217,6 +223,8 @@ describe('coverage', () => {
     expect(exportedFx.sort()).toEqual(Object.keys(fxCalls).sort());
     const exportedVat = Object.keys(vatActions).filter((k) => typeof (vatActions as Record<string, unknown>)[k] === 'function');
     expect(exportedVat.sort()).toEqual(Object.keys(vatCalls).sort());
+    const exportedEntity = Object.keys(entityActions).filter((k) => typeof (entityActions as Record<string, unknown>)[k] === 'function');
+    expect(exportedEntity.sort()).toEqual(Object.keys(entityCalls).sort());
   });
 
   it('every Route Handler method has a case', () => {
@@ -228,7 +236,7 @@ describe('coverage', () => {
 // --- signed out --------------------------------------------------------------------
 
 describe('signed out', () => {
-  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...userCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...userCalls })) {
     if (!call) continue;
     it(`${name} is refused without touching the database`, async () => {
       expect(isRefusal(await call())).toBe(true);
@@ -248,7 +256,7 @@ describe('signed out', () => {
 describe('an Accountant on Sprouted Roots asking for Oikazi', () => {
   beforeEach(() => signIn({ role: 'accountant' }, [GRANTED_ENTITY]));
 
-  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls })) {
     if (!call) continue;
     it(`${name} is refused and reads nothing`, async () => {
       const result = await call();
@@ -304,7 +312,7 @@ describe('a Viewer with access to Oikazi', () => {
   }
 
   it('cannot touch rates, banks, the functional currency, revaluation or VAT registration, even on their own entity', async () => {
-    for (const [name, call] of Object.entries({ ...fxCalls, ...vatCalls })) {
+    for (const [name, call] of Object.entries({ ...fxCalls, ...vatCalls, ...entityCalls })) {
       if (name === 'listExchangeRates') continue; // reading the rate table is reports:view
       dbCalls.length = 0;
       const result = await call();

@@ -36,6 +36,9 @@ model Entity {
   vatRegistered      Boolean  @default(false)
   vatRegisteredFrom  DateTime? @db.Date
   tin                String?
+  /// Sender for invitations and password resets to this entity's people, e.g.
+  /// "Sprouted Crafts <crafts@sproutedgroup.com>". Null falls back to EMAIL_FROM.
+  emailFrom          String?
   accent             String?
   /// The currency the books are kept and reported in. Per entity, never global.
   functionalCurrency Currency @default(GHS)
