@@ -35,7 +35,7 @@ export const toPrismaEnum = {
   fundClassification: fundClassToPrisma,
 } as const;
 
-function entityTypeOf(raw: string): EntityType {
+export function entityTypeOf(raw: string): EntityType {
   return raw === 'programs' ? 'programs' : 'manufacturing';
 }
 
@@ -91,6 +91,7 @@ export function accountRecord(row: Account & { parent?: Pick<Account, 'code'> | 
     name: row.name,
     type: row.type,
     parentCode: row.parent?.code ?? null,
+    category: row.category ?? null,
     isActive: row.isActive,
   };
 }

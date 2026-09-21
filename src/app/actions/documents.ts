@@ -29,6 +29,10 @@ import { ensureDefaultBankAccount, seedChartForEntity } from '@/lib/data/chart.t
 import { documentInclude, documentRecord, kindToPrisma, saleTypeToPrisma, vatToPrisma } from '@/lib/data/documents';
 import { contactRecord, entityRecord, rateText, toPrismaEnum } from '@/lib/data/mappers';
 import { fromMinor, toMinor } from '@/lib/data/money';
+import { moveBalance, StockRefusal } from '@/lib/data/stock';
+import { unitToRecord } from '@/lib/data/inventory';
+import { allocateReceiptValues, formatKg, toGrams } from '@/lib/inventory';
+import { roundPesewas } from '@/lib/ghana-tax';
 import type { ContactRecord, DocumentRecord, EntityRecord, EntityType } from '@/lib/data/types';
 import {
   accountNameMap,
@@ -219,6 +223,24 @@ async function saveDraft(entityId: string, input: unknown, principal: Principal)
     vatApplied: documentTaxFor(entity, form.date).vatApplies,
   };
 
+  // A bill line that receives stock names an item of this entity and a
+  // location of this entity, and is posted to the account the item is
+  // carried in — so the receipt and the ledger cannot disagree.
+  const itemIds = form.lines.flatMap((line) => (line.itemId ? [line.itemId] : []));
+  const items = itemIds.length ? await prisma.item.findMany({ where: { id: { in: itemIds }, entityId, isActive: true }, include: { account: { select: { code: true } } } }) : [];
+  const itemById = new Map(items.map((item) => [item.id, item]));
+  const locationIds = form.lines.flatMap((line) => (line.locationId ? [line.locationId] : []));
+  const locations = locationIds.length ? await prisma.stockLocation.findMany({ where: { id: { in: locationIds }, entityId, isActive: true }, select: { id: true } }) : [];
+  const locationIdSet = new Set(locations.map((location) => location.id));
+  for (const line of form.lines) {
+    if (!line.itemId) continue;
+    const item = itemById.get(line.itemId);
+    if (!item) return fail('A line names a stock item that does not belong to this entity.');
+    if (item.account.code !== line.accountCode) return fail(`${item.code} is carried in ${item.account.code}; post the line there.`);
+    if (!line.locationId || !locationIdSet.has(line.locationId)) return fail(`Choose where ${item.code} is received.`);
+    if (!(line.quantity > 0)) return fail(`Enter the quantity of ${item.code} received.`);
+  }
+
   const linesData = form.lines.map((line, position) => ({
     entityId,
     position,
@@ -227,6 +249,8 @@ async function saveDraft(entityId: string, input: unknown, principal: Principal)
     unitPriceMinor: fromMinor(line.unitPrice),
     accountId: accountIdOf.get(line.accountCode) as string,
     vatTreatment: vatToPrisma[line.vatTreatment],
+    itemId: line.itemId,
+    locationId: line.locationId,
   }));
 
   // The id must belong to *this* entity. One that does not — whether it is
@@ -417,6 +441,46 @@ async function post(entityId: string, documentId: string, principal: Principal):
         },
       });
 
+      // Receipts: each stock line adds to its location exactly its share of
+      // what this journal debited to its inventory account. The bill's
+      // journal is the receipt's ledger posting; nothing posts twice, and
+      // stock value equals the ledger by construction.
+      const stockLines = document.lines.filter((line) => line.itemId && line.locationId);
+      if (stockLines.length > 0) {
+        const items = await tx.item.findMany({ where: { id: { in: stockLines.map((line) => line.itemId as string) }, entityId }, include: { account: { select: { code: true } } } });
+        const itemById = new Map(items.map((item) => [item.id, item]));
+        const inventoryCodes = new Set(items.map((item) => item.account.code));
+        const functionalByAccount: Record<string, number> = {};
+        for (const line of lines) {
+          if (line.type === 'debit' && inventoryCodes.has(line.accountCode)) {
+            functionalByAccount[line.accountCode] = (functionalByAccount[line.accountCode] ?? 0) + line.functionalAmount;
+          }
+        }
+        const shares = allocateReceiptValues(
+          document.lines
+            .filter((line) => inventoryCodes.has(line.account.code))
+            .map((line) => ({ lineId: line.id, accountCode: line.account.code, baseMinor: roundPesewas(line.quantity * toMinor(line.unitPriceMinor)) })),
+          functionalByAccount,
+        );
+        for (const line of stockLines) {
+          const item = itemById.get(line.itemId as string);
+          if (!item) throw new StockRefusal('A line names a stock item that does not belong to this entity.');
+          const factors = { baseUnit: unitToRecord[item.baseUnit], gramsPerBag: item.gramsPerBag, gramsPerCarton: item.gramsPerCarton };
+          const grams = toGrams(line.quantity, factors.baseUnit, factors);
+          if (grams <= 0) throw new StockRefusal(`${item.code}: the quantity rounds to nothing.`);
+          const value = shares[line.id] ?? 0;
+          await moveBalance(tx, entityId, item.id, line.locationId as string, grams, value);
+          await tx.stockMovement.create({
+            data: {
+              entityId, kind: 'RECEIPT', date: document.date, itemId: item.id, toLocationId: line.locationId,
+              quantityGrams: fromMinor(grams), valueMinor: fromMinor(value),
+              documentId, documentLineId: line.id, journalEntryId: entry.id, createdById: principal.userId,
+              note: `${documentLabel(kind, number)}: ${formatKg(grams)} ${item.name}`,
+            },
+          });
+        }
+      }
+
       await recordAuditEvent(
         {
           entityId,
@@ -443,6 +507,9 @@ async function post(entityId: string, documentId: string, principal: Principal):
   } catch (error) {
     if (error instanceof AlreadyPostedError) {
       return fail('This document was already posted.');
+    }
+    if (error instanceof StockRefusal) {
+      return fail(error.message);
     }
     throw error;
   }
@@ -476,6 +543,8 @@ function documentRecordToForm(record: DocumentRecord): DocumentFormState {
       unitPrice: line.unitPrice,
       accountCode: line.accountCode,
       vatTreatment: line.vatTreatment,
+      itemId: line.itemId,
+      locationId: line.locationId,
     })),
     evatClearanceNumber: record.evatClearanceNumber,
     evatQrCode: record.evatQrCode,
@@ -741,6 +810,29 @@ async function voidPosted(entityId: string, documentId: string, principal: Princ
 
     await tx.document.update({ where: { id: documentId }, data: { voidEntryId: reversal.id } });
 
+    // Stock received from this bill leaves again, at the value it came in
+    // at, so stock and the reversed ledger stay equal. If it has since been
+    // moved or consumed, the void is refused rather than taking a location
+    // negative — adjust the stock first.
+    const receipts = await tx.stockMovement.findMany({ where: { documentId, kind: 'RECEIPT', reversedBy: null }, include: { item: { select: { code: true } } } });
+    for (const receipt of receipts) {
+      const grams = toMinor(receipt.quantityGrams);
+      const value = toMinor(receipt.valueMinor);
+      try {
+        await moveBalance(tx, entityId, receipt.itemId, receipt.toLocationId as string, -grams, -value);
+      } catch (error) {
+        if (error instanceof StockRefusal) throw new StockRefusal(`${receipt.item.code}: ${error.message} Adjust the stock before voiding this bill.`);
+        throw error;
+      }
+      await tx.stockMovement.create({
+        data: {
+          entityId, kind: 'RECEIPT_REVERSAL', date: dateOf(today), itemId: receipt.itemId, fromLocationId: receipt.toLocationId,
+          quantityGrams: fromMinor(-grams), valueMinor: fromMinor(-value), documentId, documentLineId: receipt.documentLineId,
+          journalEntryId: reversal.id, reversesId: receipt.id, createdById: principal.userId, note: `Void of ${documentLabel(kind, number)}`,
+        },
+      });
+    }
+
     await recordAuditEvent(
       {
         entityId,
@@ -758,9 +850,13 @@ async function voidPosted(entityId: string, documentId: string, principal: Princ
     return tx.document.findUniqueOrThrow({ where: { id: documentId }, include: documentInclude });
   }).catch((error) => {
     if (error instanceof AlreadyPostedError) return null;
+    if (error instanceof StockRefusal) return error;
     throw error;
   });
 
+  if (row instanceof StockRefusal) {
+    return fail(row.message);
+  }
   if (!row) {
     return fail('This document changed while you were voiding it. Reload and try again.');
   }

@@ -34,6 +34,8 @@ import {
   voidDocument,
 } from '@/app/actions/documents';
 import { SignOutButton } from '@/components/auth/sign-out-button';
+import { InventoryPanel } from '@/components/app/inventory-panel';
+import { inventoryAccountCategory, unitLabels } from '@/lib/inventory';
 import { CurrencyProvider, ReportMoney, TranslationProvider } from '@/components/ui/money';
 import type { Permission } from '@/lib/authz';
 import { recordPayment as recordPaymentAction } from '@/app/actions/documents';
@@ -381,6 +383,8 @@ function formFrom(record: DocumentRecord): DocumentFormState {
       unitPrice: line.unitPrice,
       accountCode: line.accountCode,
       vatTreatment: line.vatTreatment,
+      itemId: line.itemId,
+      locationId: line.locationId,
     })),
     evatClearanceNumber: record.evatClearanceNumber,
     evatQrCode: record.evatQrCode,
@@ -631,6 +635,8 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
   const entityRates = initialData.ratesByEntity[selectedEntity.id] ?? [];
   const entityBankAccounts = initialData.bankAccountsByEntity[selectedEntity.id] ?? [];
   const entityRevaluations = initialData.revaluationsByEntity[selectedEntity.id] ?? [];
+  const entityItems = initialData.itemsByEntity[selectedEntity.id] ?? [];
+  const entityLocations = initialData.locationsByEntity[selectedEntity.id] ?? [];
   // Rolling twelve-month taxable turnover against the registration threshold,
   // from posted invoices in the ledger. Shown for every entity, registered or
   // not: it is the number that decides whether registration is compulsory.
@@ -4416,13 +4422,19 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
               </Card>
             </div>
           ) : activeNav === 'Inventory' ? (
-            <Card className="rounded-2xl">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Inventory</p>
-              <h2 className="mt-1 text-2xl font-semibold text-slate-900">Not built yet</h2>
-              <p className="mt-3 max-w-xl text-sm text-slate-600">
-                Stock, raw material lots and processing yields are on the roadmap. Nothing here is recorded yet.
-              </p>
-            </Card>
+            <InventoryPanel
+              key={selectedEntity.id}
+              entity={selectedEntity}
+              accounts={entityAccounts}
+              items={entityItems}
+              locations={entityLocations}
+              balances={initialData.stockBalancesByEntity[selectedEntity.id] ?? []}
+              movements={initialData.stockMovementsByEntity[selectedEntity.id] ?? []}
+              counts={initialData.stockCountsByEntity[selectedEntity.id] ?? []}
+              nrvPrices={initialData.nrvPricesByEntity[selectedEntity.id] ?? []}
+              ledger={initialData.inventoryLedgerByEntity[selectedEntity.id] ?? []}
+              allowed={allowed}
+            />
           ) : (
             <Card className="rounded-2xl">
               <div className="border-b border-slate-200 pb-4">
@@ -4709,6 +4721,47 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                     >
                       ×
                     </button>
+                    {isPurchaseView && (line.itemId || entityAccounts.find((account) => account.code === line.accountCode)?.category === inventoryAccountCategory) ? (
+                      <div className="col-span-6 -mt-1 grid gap-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2 md:grid-cols-[1.4fr_1fr_1.6fr]">
+                        <div>
+                          <label className="mb-1 block text-xs font-medium text-slate-600">Stock item received</label>
+                          <select
+                            value={line.itemId ?? ''}
+                            disabled={documentReadOnly}
+                            onChange={(event) => {
+                              const item = entityItems.find((candidate) => candidate.id === event.target.value);
+                              // The item decides the account: the line posts where the stock is carried.
+                              updateLine(line.id, item ? { itemId: item.id, accountCode: item.accountCode, locationId: line.locationId ?? entityLocations.find((location) => location.isActive)?.id ?? null } : { itemId: null, locationId: null });
+                            }}
+                            className="min-h-[40px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50"
+                          >
+                            <option value="">Not stock — expense only</option>
+                            {entityItems.filter((item) => item.isActive).map((item) => (
+                              <option key={item.id} value={item.id}>{item.code} · {item.name} ({unitLabels[item.baseUnit]})</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs font-medium text-slate-600">Received at</label>
+                          <select
+                            value={line.locationId ?? ''}
+                            disabled={documentReadOnly || !line.itemId}
+                            onChange={(event) => updateLine(line.id, { locationId: event.target.value || null })}
+                            className="min-h-[40px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50"
+                          >
+                            <option value="">Choose…</option>
+                            {entityLocations.filter((location) => location.isActive).map((location) => (
+                              <option key={location.id} value={location.id}>{location.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <p className="self-end pb-2 text-xs text-slate-500">
+                          {line.itemId
+                            ? `Qty is in ${unitLabels[entityItems.find((item) => item.id === line.itemId)?.baseUnit ?? 'kg']}; unit price per ${unitLabels[entityItems.find((item) => item.id === line.itemId)?.baseUnit ?? 'kg'].replace(/s$/, '')}. Posting the bill receives the stock at this line's cost.`
+                            : 'This account holds stock. Name the item, or the ledger will carry value that stock does not.'}
+                        </p>
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </div>

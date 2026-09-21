@@ -36,11 +36,14 @@ const expected: Record<Role, Permission[]> = {
     'contact:create',
     'rates:manage',
     'revaluation:run',
+    'inventory:manage',
+    'stock:enter',
+    'stock:post',
     'reports:view',
     'audit:read',
     'export:run',
   ],
-  'data-entry': ['document:draft', 'contact:create', 'reports:view'],
+  'data-entry': ['document:draft', 'contact:create', 'stock:enter', 'reports:view'],
   viewer: ['reports:view'],
 };
 
@@ -56,6 +59,10 @@ describe('role matrix', () => {
     expect(roleHas('data-entry', 'document:post')).toBe(false);
     expect(roleHas('data-entry', 'document:void')).toBe(false);
     expect(roleHas('data-entry', 'period:unlock')).toBe(false);
+    // Stock: data entry may count and enter prices, never post the adjustment.
+    expect(roleHas('data-entry', 'stock:enter')).toBe(true);
+    expect(roleHas('data-entry', 'stock:post')).toBe(false);
+    expect(roleHas('data-entry', 'inventory:manage')).toBe(false);
   });
 
   it('Viewer can edit nothing', () => {

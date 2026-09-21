@@ -108,6 +108,7 @@ import * as documentActions from '@/app/actions/documents';
 import * as fxActions from '@/app/actions/fx';
 import * as vatActions from '@/app/actions/vat';
 import * as entityActions from '@/app/actions/entities';
+import * as inventoryActions from '@/app/actions/inventory';
 import * as userActions from '@/app/actions/users';
 import * as auditRoute from '@/app/api/audit/route';
 import * as backupsRoute from '@/app/api/backups/route';
@@ -165,6 +166,18 @@ const vatCalls: Record<keyof typeof vatActions, Call> = {
 /** Every entity-settings Server Function, invoked against the forbidden entity. */
 const entityCalls: Record<keyof typeof entityActions, Call> = {
   setEntitySender: () => entityActions.setEntitySender(FORBIDDEN_ENTITY, 'Oikazi <oikazi@example.com>'),
+};
+
+/** Every inventory Server Function, invoked against the forbidden entity. */
+const inventoryCalls: Record<keyof typeof inventoryActions, Call> = {
+  saveItem: () => inventoryActions.saveItem(FORBIDDEN_ENTITY, { code: 'RCN', name: 'Raw cashew', category: 'raw-material', baseUnit: 'bag', gramsPerBag: 80000, gramsPerCarton: null }),
+  saveLocation: () => inventoryActions.saveLocation(FORBIDDEN_ENTITY, { code: 'WH1', name: 'Warehouse', accountCode: null }),
+  transferStock: () => inventoryActions.transferStock(FORBIDDEN_ENTITY, { itemId: 'item-1', fromLocationId: 'loc-1', toLocationId: 'loc-2', quantity: 1, unit: 'kg', date: '2026-09-21' }),
+  adjustStock: () => inventoryActions.adjustStock(FORBIDDEN_ENTITY, { itemId: 'item-1', locationId: 'loc-1', quantity: -1, unit: 'kg', reason: 'damage', date: '2026-09-21' }),
+  saveStockCount: () => inventoryActions.saveStockCount(FORBIDDEN_ENTITY, { locationId: 'loc-1', date: '2026-09-21', lines: [] }),
+  postStockCount: () => inventoryActions.postStockCount(FORBIDDEN_ENTITY, 'count-1'),
+  setNrvPrice: () => inventoryActions.setNrvPrice(FORBIDDEN_ENTITY, { itemId: 'item-1', period: '2026-09', sellingPriceMinorPerKg: 1000 }),
+  writeDownToNrv: () => inventoryActions.writeDownToNrv(FORBIDDEN_ENTITY, { itemId: 'item-1', period: '2026-09', date: '2026-09-30' }),
 };
 
 /** Every user-management Server Function. Owner-only, so any other role is refused. */
@@ -225,6 +238,8 @@ describe('coverage', () => {
     expect(exportedVat.sort()).toEqual(Object.keys(vatCalls).sort());
     const exportedEntity = Object.keys(entityActions).filter((k) => typeof (entityActions as Record<string, unknown>)[k] === 'function');
     expect(exportedEntity.sort()).toEqual(Object.keys(entityCalls).sort());
+    const exportedInventory = Object.keys(inventoryActions).filter((k) => typeof (inventoryActions as Record<string, unknown>)[k] === 'function');
+    expect(exportedInventory.sort()).toEqual(Object.keys(inventoryCalls).sort());
   });
 
   it('every Route Handler method has a case', () => {
@@ -236,7 +251,7 @@ describe('coverage', () => {
 // --- signed out --------------------------------------------------------------------
 
 describe('signed out', () => {
-  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...userCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...userCalls })) {
     if (!call) continue;
     it(`${name} is refused without touching the database`, async () => {
       expect(isRefusal(await call())).toBe(true);
@@ -256,7 +271,7 @@ describe('signed out', () => {
 describe('an Accountant on Sprouted Roots asking for Oikazi', () => {
   beforeEach(() => signIn({ role: 'accountant' }, [GRANTED_ENTITY]));
 
-  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls })) {
     if (!call) continue;
     it(`${name} is refused and reads nothing`, async () => {
       const result = await call();
@@ -312,7 +327,7 @@ describe('a Viewer with access to Oikazi', () => {
   }
 
   it('cannot touch rates, banks, the functional currency, revaluation or VAT registration, even on their own entity', async () => {
-    for (const [name, call] of Object.entries({ ...fxCalls, ...vatCalls, ...entityCalls })) {
+    for (const [name, call] of Object.entries({ ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls })) {
       if (name === 'listExchangeRates') continue; // reading the rate table is reports:view
       dbCalls.length = 0;
       const result = await call();

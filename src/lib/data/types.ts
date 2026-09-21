@@ -6,6 +6,7 @@
 
 import type { Permission, Role } from '../authz';
 import type { Currency } from '../fx';
+import type { AdjustmentReason, ItemCategory, StockUnit } from '../inventory';
 import type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus } from './enums';
 
 export type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus };
@@ -54,6 +55,8 @@ export type AccountRecord = {
   name: string;
   type: AccountClass;
   parentCode: string | null;
+  /** Chart tag: 'tax', 'fx', 'inventory', 'inventory-adjustment', or null. */
+  category: string | null;
   isActive: boolean;
 };
 
@@ -93,6 +96,9 @@ export type DocumentLineRecord = {
   vatTreatment: VatTreatment;
   projectId: string | null;
   fundId: string | null;
+  /** Bills: the stock item received by this line and where; quantity is then in the item's base unit. */
+  itemId: string | null;
+  locationId: string | null;
 };
 
 export type PostedJournalLine = {
@@ -110,7 +116,7 @@ export type PostedJournalLine = {
 
 export type PostedJournal = {
   id: string;
-  kind: 'DOCUMENT' | 'REVERSAL' | 'MANUAL' | 'PAYMENT' | 'REVALUATION';
+  kind: 'DOCUMENT' | 'REVERSAL' | 'MANUAL' | 'PAYMENT' | 'REVALUATION' | 'STOCK';
   postedAt: string; // YYYY-MM-DD
   lines: PostedJournalLine[];
 };
@@ -209,6 +215,89 @@ export type RevaluationRecord = {
 };
 
 /** Everything the shell needs on first render, loaded once by the page. */
+// --- inventory ---------------------------------------------------------------
+
+export type ItemRecord = {
+  id: string;
+  entityId: string;
+  code: string;
+  name: string;
+  category: ItemCategory;
+  baseUnit: StockUnit;
+  gramsPerBag: number | null;
+  gramsPerCarton: number | null;
+  accountCode: string;
+  accountName: string;
+  isActive: boolean;
+};
+
+export type StockLocationRecord = {
+  id: string;
+  entityId: string;
+  code: string;
+  name: string;
+  /** Account override for stock held here, or null for the item's own. */
+  accountCode: string | null;
+  isActive: boolean;
+};
+
+export type StockBalanceRecord = {
+  itemId: string;
+  locationId: string;
+  quantityGrams: number;
+  valueMinor: number;
+};
+
+export type StockMovementRecord = {
+  id: string;
+  entityId: string;
+  kind: 'receipt' | 'receipt-reversal' | 'transfer' | 'adjustment' | 'write-down';
+  date: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  fromLocationId: string | null;
+  toLocationId: string | null;
+  quantityGrams: number;
+  valueMinor: number;
+  reason: AdjustmentReason | null;
+  note: string;
+  documentId: string | null;
+  stockCountId: string | null;
+  journal: PostedJournal | null;
+  createdByName: string;
+  createdAt: string;
+};
+
+export type StockCountLineRecord = {
+  itemId: string;
+  expectedGrams: number;
+  countedGrams: number | null;
+};
+
+export type StockCountRecord = {
+  id: string;
+  entityId: string;
+  locationId: string;
+  date: string;
+  status: 'draft' | 'posted';
+  note: string;
+  lines: StockCountLineRecord[];
+  journal: PostedJournal | null;
+  createdByName: string;
+  postedByName: string | null;
+  postedAt: string | null;
+};
+
+export type NrvPriceRecord = {
+  itemId: string;
+  period: string;
+  sellingPriceMinorPerKg: number;
+};
+
+/** Ledger balance of one inventory account, from the real journal lines. */
+export type InventoryLedgerRow = { accountCode: string; accountName: string; balanceMinor: number };
+
 export type InitialData = {
   currentUser: CurrentUser;
   /** Only the entities the signed-in user may see. */
@@ -222,6 +311,13 @@ export type InitialData = {
   ratesByEntity: Record<string, ExchangeRateRow[]>;
   bankAccountsByEntity: Record<string, BankAccountRecord[]>;
   revaluationsByEntity: Record<string, RevaluationRecord[]>;
+  itemsByEntity: Record<string, ItemRecord[]>;
+  locationsByEntity: Record<string, StockLocationRecord[]>;
+  stockBalancesByEntity: Record<string, StockBalanceRecord[]>;
+  stockMovementsByEntity: Record<string, StockMovementRecord[]>;
+  stockCountsByEntity: Record<string, StockCountRecord[]>;
+  nrvPricesByEntity: Record<string, NrvPriceRecord[]>;
+  inventoryLedgerByEntity: Record<string, InventoryLedgerRow[]>;
 };
 
 export type AuditEventRecord = {

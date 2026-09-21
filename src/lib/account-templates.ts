@@ -31,6 +31,12 @@ export const sharedTaxAccounts: AccountTemplate[] = [
 // was booked at and what the bank actually gave on settlement. Unrealised:
 // period-end revaluation of open foreign monetary balances at the closing
 // rate. Both are expense-type accounts where a credit balance is a net gain.
+/** Stock adjustments and NRV write-downs post here; see src/lib/inventory.ts. */
+export const sharedInventoryAccounts: AccountTemplate[] = [
+  { code: '5030', name: 'Inventory Adjustments', type: 'COST_OF_SALES', parentCode: '5000', category: 'inventory-adjustment' },
+  { code: '5035', name: 'Inventory Write-downs (NRV)', type: 'COST_OF_SALES', parentCode: '5000', category: 'inventory-adjustment' },
+];
+
 export const sharedFxAccounts: AccountTemplate[] = [
   { code: '7010', name: 'Realised Foreign Exchange Gain/Loss', type: 'EXPENSE', category: 'fx' },
   { code: '7020', name: 'Unrealised Foreign Exchange Gain/Loss', type: 'EXPENSE', category: 'fx' },
@@ -45,11 +51,11 @@ export const manufacturingAccounts: AccountTemplate[] = [
   { code: '1025', name: 'Intercompany Receivable - Sprouted Roots', type: 'ASSET', parentCode: '1010' },
   { code: '1026', name: 'Intercompany Receivable - Sprouted Crafts', type: 'ASSET', parentCode: '1010' },
   { code: '1027', name: 'Intercompany Receivable - Oikazi', type: 'ASSET', parentCode: '1010' },
-  { code: '1030', name: 'Raw Materials Inventory', type: 'ASSET', parentCode: '1000' },
-  { code: '1035', name: 'Packaging Materials Inventory', type: 'ASSET', parentCode: '1000' },
-  { code: '1040', name: 'Work in Progress Inventory', type: 'ASSET', parentCode: '1000' },
-  { code: '1045', name: 'Finished Goods Inventory', type: 'ASSET', parentCode: '1000' },
-  { code: '1050', name: 'Goods in Transit', type: 'ASSET', parentCode: '1000' },
+  { code: '1030', name: 'Raw Materials Inventory', type: 'ASSET', parentCode: '1000', category: 'inventory' },
+  { code: '1035', name: 'Packaging Materials Inventory', type: 'ASSET', parentCode: '1000', category: 'inventory' },
+  { code: '1040', name: 'Work in Progress Inventory', type: 'ASSET', parentCode: '1000', category: 'inventory' },
+  { code: '1045', name: 'Finished Goods Inventory', type: 'ASSET', parentCode: '1000', category: 'inventory' },
+  { code: '1050', name: 'Goods in Transit', type: 'ASSET', parentCode: '1000', category: 'inventory' },
   { code: '2001', name: 'Trade Payables', type: 'LIABILITY', parentCode: '2000' },
   { code: '2005', name: 'Domestic Payables', type: 'LIABILITY', parentCode: '2001' },
   { code: '2010', name: 'Export Payables', type: 'LIABILITY', parentCode: '2001' },
@@ -77,6 +83,7 @@ export const manufacturingAccounts: AccountTemplate[] = [
   { code: '6035', name: 'Bank Charges', type: 'EXPENSE', parentCode: '6000' },
   { code: '6040', name: 'Depreciation', type: 'EXPENSE', parentCode: '6000' },
   ...sharedTaxAccounts,
+  ...sharedInventoryAccounts,
   ...sharedFxAccounts,
 ];
 
@@ -88,8 +95,8 @@ export const ngoAccounts: AccountTemplate[] = [
   { code: '1020', name: 'Donations Receivable', type: 'ASSET', parentCode: '1010' },
   { code: '1025', name: 'Intercompany Receivable - Sprouted Crafts', type: 'ASSET', parentCode: '1010' },
   { code: '1026', name: 'Intercompany Receivable - Oikazi', type: 'ASSET', parentCode: '1010' },
-  { code: '1030', name: 'Aggregation Inventory', type: 'ASSET', parentCode: '1000' },
-  { code: '1035', name: 'Farm Inputs Inventory', type: 'ASSET', parentCode: '1000' },
+  { code: '1030', name: 'Aggregation Inventory', type: 'ASSET', parentCode: '1000', category: 'inventory' },
+  { code: '1035', name: 'Farm Inputs Inventory', type: 'ASSET', parentCode: '1000', category: 'inventory' },
   { code: '1040', name: 'Program Advances', type: 'ASSET', parentCode: '1000' },
   { code: '2001', name: 'Trade Payables', type: 'LIABILITY', parentCode: '2000' },
   { code: '2005', name: 'Supplier Payables', type: 'LIABILITY', parentCode: '2001' },
@@ -121,6 +128,7 @@ export const ngoAccounts: AccountTemplate[] = [
   { code: '6035', name: 'Audit & Compliance', type: 'EXPENSE', parentCode: '6000' },
   { code: '6040', name: 'Volunteer & Community Support', type: 'EXPENSE', parentCode: '6000' },
   ...sharedTaxAccounts,
+  ...sharedInventoryAccounts,
   ...sharedFxAccounts,
 ];
 

@@ -34,6 +34,9 @@ export const permissions = [
   'entity:configure', // functional currency and other per-entity settings
   'rates:manage', // exchange rate table, bank accounts
   'revaluation:run', // period-end FX revaluation and its reversal
+  'inventory:manage', // items and stock locations
+  'stock:enter', // enter a stock count or an NRV selling price (nothing posts)
+  'stock:post', // transfers, adjustments, posting a count, write-downs — each writes a journal
   'reports:view',
   'audit:read',
   'export:run',
@@ -53,11 +56,14 @@ const matrix: Record<Role, ReadonlySet<Permission>> = {
     'contact:create',
     'rates:manage',
     'revaluation:run',
+    'inventory:manage',
+    'stock:enter',
+    'stock:post',
     'reports:view',
     'audit:read',
     'export:run',
   ]),
-  'data-entry': new Set<Permission>(['document:draft', 'contact:create', 'reports:view']),
+  'data-entry': new Set<Permission>(['document:draft', 'contact:create', 'stock:enter', 'reports:view']),
   viewer: new Set<Permission>(['reports:view']),
 };
 

@@ -34,6 +34,7 @@ import type {
   VatTreatment,
 } from './types';
 import type { BankAccount, ExchangeRate, Payment, Revaluation } from '@prisma/client';
+import { loadInventoryData } from './inventory';
 
 // --- enum translations -------------------------------------------------------
 
@@ -176,6 +177,8 @@ export function documentRecord(row: DocumentRow): DocumentRecord {
         vatTreatment: vatToRecord[line.vatTreatment],
         projectId: line.projectId,
         fundId: line.fundId,
+        itemId: line.itemId,
+        locationId: line.locationId,
       })),
     evatClearanceNumber: row.evatClearanceNumber ?? '',
     evatQrCode: row.evatQrCode ?? '',
@@ -270,5 +273,6 @@ export async function loadInitialData(principal: Principal): Promise<InitialData
     ratesByEntity: withAllEntities(groupBy(rates.map((row) => ({ entityId: row.entityId, ...exchangeRateRow(row) })), (row) => row.entityId)),
     bankAccountsByEntity: withAllEntities(groupBy(bankAccounts.map(bankAccountRecord), (account) => account.entityId)),
     revaluationsByEntity: withAllEntities(groupBy(revaluations.map((row) => ({ entityId: row.entityId, ...revaluationRecord(row) })), (row) => row.entityId)),
+    ...(await loadInventoryData(entityScope, entityIds)),
   };
 }

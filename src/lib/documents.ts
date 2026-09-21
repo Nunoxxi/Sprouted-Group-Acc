@@ -44,6 +44,9 @@ export type DocumentLine = {
   unitPrice: number; // pesewas
   accountCode: string;
   vatTreatment: VATTreatment;
+  /** Bills: the stock item this line receives and where. Quantity is then in the item's base unit. */
+  itemId: string | null;
+  locationId: string | null;
 };
 
 export type DocumentFormState = {
@@ -109,6 +112,8 @@ export function makeLine(kind: DocumentKind = 'invoice'): DocumentLine {
     unitPrice: 0,
     accountCode: defaultLineAccount[kind],
     vatTreatment: 'standard',
+    itemId: null,
+    locationId: null,
   };
 }
 
@@ -160,6 +165,8 @@ export function normalizeLine(value: unknown, kind: DocumentKind): DocumentLine 
     vatTreatment: vatTreatments.includes(line.vatTreatment as VATTreatment)
       ? (line.vatTreatment as VATTreatment)
       : fresh.vatTreatment,
+    itemId: kind === 'bill' && typeof line.itemId === 'string' && line.itemId ? line.itemId : null,
+    locationId: kind === 'bill' && typeof line.locationId === 'string' && line.locationId ? line.locationId : null,
   };
 }
 

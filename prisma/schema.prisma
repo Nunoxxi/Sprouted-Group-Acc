@@ -26,14 +26,14 @@ enum Currency {
 // Entity.id is the slug the UI uses ('sprouted-roots'); code is the statutory
 // short code ('SG001'). One identifier everywhere, no alias tables.
 model Entity {
-  id                 String   @id
-  code               String   @unique
+  id                 String    @id
+  code               String    @unique
   name               String
   type               String // 'programs' | 'manufacturing'
   financialYearEnd   String?
   /// VAT registration is per entity, off by default. VAT is calculated only
   /// for this entity and only on documents dated on or after vatRegisteredFrom.
-  vatRegistered      Boolean  @default(false)
+  vatRegistered      Boolean   @default(false)
   vatRegisteredFrom  DateTime? @db.Date
   tin                String?
   /// Sender for invitations and password resets to this entity's people, e.g.
@@ -41,9 +41,9 @@ model Entity {
   emailFrom          String?
   accent             String?
   /// The currency the books are kept and reported in. Per entity, never global.
-  functionalCurrency Currency @default(GHS)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  functionalCurrency Currency  @default(GHS)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   userAccess       UserEntityAccess[]
   exchangeRates    ExchangeRate[]
@@ -61,6 +61,13 @@ model Entity {
   taxPeriodFilings TaxPeriodFiling[]
   documentCounters DocumentCounter[]
   backupRuns       BackupRun[]
+  items            Item[]
+  stockLocations   StockLocation[]
+  stockBalances    StockBalance[]
+  stockMovements   StockMovement[]
+  stockCounts      StockCount[]
+  stockCountLines  StockCountLine[]
+  nrvPrices        NrvPrice[]
 }
 
 // Append-only. Events form a hash chain per entity ordered by `sequence`, which
@@ -213,6 +220,10 @@ model User {
   payments             Payment[]
   revaluations         Revaluation[]      @relation("RevaluationRunBy")
   reversedRevaluations Revaluation[]      @relation("RevaluationReversedBy")
+  stockMovements       StockMovement[]
+  stockCounts          StockCount[]       @relation("StockCountCreatedBy")
+  postedStockCounts    StockCount[]       @relation("StockCountPostedBy")
+  nrvPrices            NrvPrice[]
 
   @@index([deactivatedAt])
 }
@@ -323,12 +334,14 @@ model Account {
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 
-  entity        Entity         @relation(fields: [entityId], references: [id])
-  parent        Account?       @relation("AccountParent", fields: [parentId], references: [id])
-  children      Account[]      @relation("AccountParent")
-  journalLines  JournalLine[]
-  documentLines DocumentLine[]
-  bankAccount   BankAccount?
+  entity         Entity          @relation(fields: [entityId], references: [id])
+  parent         Account?        @relation("AccountParent", fields: [parentId], references: [id])
+  children       Account[]       @relation("AccountParent")
+  journalLines   JournalLine[]
+  documentLines  DocumentLine[]
+  bankAccount    BankAccount?
+  items          Item[]
+  stockLocations StockLocation[]
 
   @@unique([entityId, code])
   @@index([entityId, parentId])
@@ -341,6 +354,7 @@ enum JournalKind {
   MANUAL
   PAYMENT
   REVALUATION
+  STOCK
 }
 
 // postedAt is the accounting date (a document's own date), never "now" —
@@ -358,16 +372,18 @@ model JournalEntry {
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
-  entity              Entity        @relation(fields: [entityId], references: [id])
-  postedBy            User?         @relation(fields: [postedById], references: [id])
+  entity              Entity          @relation(fields: [entityId], references: [id])
+  postedBy            User?           @relation(fields: [postedById], references: [id])
   lines               JournalLine[]
-  reversalOf          JournalEntry? @relation("Reversal", fields: [reversalOfId], references: [id])
-  reversedBy          JournalEntry? @relation("Reversal")
-  postedDocument      Document?     @relation("DocumentPosting")
-  voidedDocument      Document?     @relation("DocumentVoid")
+  reversalOf          JournalEntry?   @relation("Reversal", fields: [reversalOfId], references: [id])
+  reversedBy          JournalEntry?   @relation("Reversal")
+  postedDocument      Document?       @relation("DocumentPosting")
+  voidedDocument      Document?       @relation("DocumentVoid")
   payment             Payment?
-  revaluation         Revaluation?  @relation("RevaluationEntry")
-  revaluationReversal Revaluation?  @relation("RevaluationReversal")
+  revaluation         Revaluation?    @relation("RevaluationEntry")
+  revaluationReversal Revaluation?    @relation("RevaluationReversal")
+  stockMovements      StockMovement[]
+  stockCount          StockCount?
 
   @@index([entityId, postedAt])
   @@index([entityId, kind])
@@ -550,12 +566,20 @@ model DocumentLine {
   vatTreatment   VatTreatment @default(STANDARD)
   projectId      String?
   fundId         String?
+  /// Bills only: the stock item this line receives, and where. Set when the
+  /// line's account is an inventory account; posting the bill creates the
+  /// receipt. `quantity` is then in the item's base unit.
+  itemId         String?
+  locationId     String?
 
-  document Document @relation(fields: [documentId], references: [id])
-  entity   Entity   @relation(fields: [entityId], references: [id])
-  account  Account  @relation(fields: [accountId], references: [id])
-  project  Project? @relation(fields: [projectId], references: [id])
-  fund     Fund?    @relation(fields: [fundId], references: [id])
+  document Document        @relation(fields: [documentId], references: [id])
+  entity   Entity          @relation(fields: [entityId], references: [id])
+  account  Account         @relation(fields: [accountId], references: [id])
+  project  Project?        @relation(fields: [projectId], references: [id])
+  fund     Fund?           @relation(fields: [fundId], references: [id])
+  item     Item?           @relation(fields: [itemId], references: [id])
+  location StockLocation?  @relation(fields: [locationId], references: [id])
+  receipts StockMovement[]
 
   @@index([documentId, position])
   @@index([entityId, accountId])
@@ -684,4 +708,220 @@ model Revaluation {
   reversedBy    User?         @relation("RevaluationReversedBy", fields: [reversedById], references: [id])
 
   @@unique([entityId, period])
+}
+
+// --- inventory ----------------------------------------------------------------------
+//
+// Quantities are integer grams, the way money is integer pesewas: no float
+// ever touches a weight. Bags, cartons and tonnes are display conversions
+// per item. Value is the entity's functional currency, fixed at receipt.
+// Cost is carried as value / quantity (weighted average), never as a stored
+// unit price that could drift from the ledger.
+
+enum ItemCategory {
+  RAW_MATERIAL
+  PACKAGING
+  WORK_IN_PROGRESS
+  FINISHED_GOOD
+  BY_PRODUCT
+}
+
+enum StockUnit {
+  KG
+  BAG
+  CARTON
+  TONNE
+}
+
+enum StockMovementKind {
+  RECEIPT
+  RECEIPT_REVERSAL
+  TRANSFER
+  ADJUSTMENT
+  WRITE_DOWN
+}
+
+enum AdjustmentReason {
+  COUNT_DIFFERENCE
+  MOISTURE_LOSS
+  DAMAGE
+  SPOILAGE
+  NRV_WRITE_DOWN
+}
+
+enum StockCountStatus {
+  DRAFT
+  POSTED
+}
+
+model Item {
+  id             String       @id @default(cuid())
+  entityId       String
+  code           String
+  name           String
+  category       ItemCategory
+  /// The unit the item is bought and counted in. Storage is always grams.
+  baseUnit       StockUnit    @default(KG)
+  gramsPerBag    Int?
+  gramsPerCarton Int?
+  /// The inventory GL account this item's stock is carried in.
+  accountId      String
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  entity        Entity           @relation(fields: [entityId], references: [id])
+  account       Account          @relation(fields: [accountId], references: [id])
+  balances      StockBalance[]
+  movements     StockMovement[]
+  countLines    StockCountLine[]
+  nrvPrices     NrvPrice[]
+  documentLines DocumentLine[]
+
+  @@unique([entityId, code])
+  @@index([entityId, category])
+}
+
+model StockLocation {
+  id        String   @id @default(cuid())
+  entityId  String
+  code      String
+  name      String
+  /// Optional: stock held here is carried in this account instead of the
+  /// item's (e.g. Goods in Transit). A transfer into or out of such a
+  /// location posts between the two accounts.
+  accountId String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  entity        Entity          @relation(fields: [entityId], references: [id])
+  account       Account?        @relation(fields: [accountId], references: [id])
+  balances      StockBalance[]
+  movementsFrom StockMovement[] @relation("MovementFrom")
+  movementsTo   StockMovement[] @relation("MovementTo")
+  counts        StockCount[]
+  documentLines DocumentLine[]
+
+  @@unique([entityId, code])
+}
+
+/// Quantity and value on hand per item per location. Value / quantity across
+/// an item's locations is its weighted average cost.
+model StockBalance {
+  id            String   @id @default(cuid())
+  entityId      String
+  itemId        String
+  locationId    String
+  quantityGrams BigInt   @default(0)
+  valueMinor    BigInt   @default(0)
+  updatedAt     DateTime @updatedAt
+
+  entity   Entity        @relation(fields: [entityId], references: [id])
+  item     Item          @relation(fields: [itemId], references: [id])
+  location StockLocation @relation(fields: [locationId], references: [id])
+
+  @@unique([itemId, locationId])
+  @@index([entityId])
+}
+
+/// Append-only. Every change to stock is one of these; nothing edits a
+/// balance directly. A receipt's ledger posting is its bill's journal; every
+/// other kind carries its own STOCK journal when it has a ledger effect.
+model StockMovement {
+  id             String            @id @default(cuid())
+  entityId       String
+  kind           StockMovementKind
+  date           DateTime
+  itemId         String
+  fromLocationId String?
+  toLocationId   String?
+  /// Signed. Positive adds at toLocation; negative removes at fromLocation; a
+  /// transfer is positive and names both.
+  quantityGrams  BigInt
+  /// Signed, functional currency. A write-down has quantity 0 and negative value.
+  valueMinor     BigInt
+  reason         AdjustmentReason?
+  note           String?
+  documentId     String?
+  documentLineId String?
+  stockCountId   String?
+  journalEntryId String?
+  reversesId     String?           @unique
+  createdById    String?
+  createdAt      DateTime          @default(now())
+
+  entity       Entity         @relation(fields: [entityId], references: [id])
+  item         Item           @relation(fields: [itemId], references: [id])
+  fromLocation StockLocation? @relation("MovementFrom", fields: [fromLocationId], references: [id])
+  toLocation   StockLocation? @relation("MovementTo", fields: [toLocationId], references: [id])
+  documentLine DocumentLine?  @relation(fields: [documentLineId], references: [id])
+  stockCount   StockCount?    @relation(fields: [stockCountId], references: [id])
+  journalEntry JournalEntry?  @relation(fields: [journalEntryId], references: [id])
+  reverses     StockMovement? @relation("MovementReversal", fields: [reversesId], references: [id])
+  reversedBy   StockMovement? @relation("MovementReversal")
+  createdBy    User?          @relation(fields: [createdById], references: [id])
+
+  @@index([entityId, date])
+  @@index([entityId, itemId])
+  @@index([documentId])
+}
+
+model StockCount {
+  id             String           @id @default(cuid())
+  entityId       String
+  locationId     String
+  date           DateTime
+  status         StockCountStatus @default(DRAFT)
+  note           String?
+  journalEntryId String?          @unique
+  createdById    String?
+  postedById     String?
+  postedAt       DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  entity       Entity           @relation(fields: [entityId], references: [id])
+  location     StockLocation    @relation(fields: [locationId], references: [id])
+  journalEntry JournalEntry?    @relation(fields: [journalEntryId], references: [id])
+  createdBy    User?            @relation("StockCountCreatedBy", fields: [createdById], references: [id])
+  postedBy     User?            @relation("StockCountPostedBy", fields: [postedById], references: [id])
+  lines        StockCountLine[]
+  movements    StockMovement[]
+
+  @@index([entityId, status])
+}
+
+model StockCountLine {
+  id            String  @id @default(cuid())
+  stockCountId  String
+  entityId      String
+  itemId        String
+  /// Snapshot when the count was saved; recomputed at posting.
+  expectedGrams BigInt
+  countedGrams  BigInt?
+
+  stockCount StockCount @relation(fields: [stockCountId], references: [id])
+  entity     Entity     @relation(fields: [entityId], references: [id])
+  item       Item       @relation(fields: [itemId], references: [id])
+
+  @@unique([stockCountId, itemId])
+}
+
+/// Net realisable value: the selling price per kg entered for an item for a
+/// period. The NRV report compares it with weighted average cost.
+model NrvPrice {
+  id                     String   @id @default(cuid())
+  entityId               String
+  itemId                 String
+  period                 String // YYYY-MM
+  sellingPriceMinorPerKg BigInt
+  createdById            String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  entity    Entity @relation(fields: [entityId], references: [id])
+  item      Item   @relation(fields: [itemId], references: [id])
+  createdBy User?  @relation(fields: [createdById], references: [id])
+
+  @@unique([entityId, itemId, period])
 }
