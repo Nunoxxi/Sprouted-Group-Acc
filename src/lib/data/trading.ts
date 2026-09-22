@@ -9,6 +9,9 @@ import type {
   AgentPurchase,
   AgentPurchaseStatus,
   BuyingAgent,
+  Farmer,
+  FarmerAdvance,
+  FarmerPayment,
   Commodity,
   CommodityKind as PrismaCommodityKind,
   Contact,
@@ -23,6 +26,7 @@ import type {
 } from '@prisma/client';
 
 import { prisma } from '../prisma';
+import { evidenceKindOf, settlementOf } from './momo';
 import type { CommodityKind, LandedCostKind, Quality } from '../trading';
 import { postedJournal } from './documents';
 import { toMinor } from './money';
@@ -97,7 +101,7 @@ export function agentRecord(row: BuyingAgent): BuyingAgentRecord {
 }
 
 export function floatRecord(
-  row: FloatAdvance & { journalEntry: JournalRow | null; returns: (FloatReturn & { journalEntry: JournalRow | null })[]; purchases: Pick<AgentPurchase, 'priceMinor' | 'status'>[]; createdBy: Pick<User, 'name'> | null; reconciledBy: Pick<User, 'name'> | null },
+  row: FloatAdvance & { journalEntry: JournalRow | null; returns: (FloatReturn & { journalEntry: JournalRow | null })[]; purchases: Pick<AgentPurchase, 'priceMinor' | 'payableMinor' | 'settlement' | 'status'>[]; createdBy: Pick<User, 'name'> | null; reconciledBy: Pick<User, 'name'> | null },
 ): FloatAdvanceRecord {
   return {
     id: row.id,
@@ -110,14 +114,26 @@ export function floatRecord(
     status: row.status === 'RECONCILED' ? 'reconciled' : 'open',
     journal: row.journalEntry ? postedJournal(row.journalEntry) : null,
     returns: [...row.returns].sort((a, b) => a.date.getTime() - b.date.getTime()).map((r) => ({ id: r.id, date: isoDate(r.date), amountMinor: toMinor(r.amountMinor), bankAccountId: r.bankAccountId, journal: r.journalEntry ? postedJournal(r.journalEntry) : null })),
-    purchasedMinor: row.purchases.filter((p) => p.status === 'POSTED').reduce((s, p) => s + toMinor(p.priceMinor), 0),
+    // What left the float: purchases the agent settled, net of any advance recovered
+    // (the farmer was handed the net, so only the net came out of the float).
+    purchasedMinor: row.purchases.filter((p) => p.status === 'POSTED' && p.settlement === 'FLOAT').reduce((s, p) => s + toMinor(p.payableMinor), 0),
     reconciledAt: row.reconciledAt ? row.reconciledAt.toISOString() : null,
     reconciledByName: row.reconciledBy?.name ?? null,
     createdByName: row.createdBy?.name ?? '',
   };
 }
 
-export function purchaseRecord(row: AgentPurchase & { journalEntry: JournalRow | null; createdBy: Pick<User, 'name'> | null; postedBy: Pick<User, 'name'> | null }): AgentPurchaseRecord {
+type PurchaseRow = AgentPurchase & {
+  journalEntry: JournalRow | null;
+  createdBy: Pick<User, 'name'> | null;
+  postedBy: Pick<User, 'name'> | null;
+  payments: Pick<FarmerPayment, 'amountMinor'>[];
+  farmer: (Pick<Farmer, 'id'> & { advances: Pick<FarmerAdvance, 'amountMinor' | 'settledMinor' | 'status'>[] }) | null;
+};
+
+export function purchaseRecord(row: PurchaseRow): AgentPurchaseRecord {
+  const payableMinor = toMinor(row.payableMinor);
+  const paidInBatches = row.payments.reduce((s, p) => s + toMinor(p.amountMinor), 0);
   return {
     id: row.id,
     entityId: row.entityId,
@@ -134,6 +150,16 @@ export function purchaseRecord(row: AgentPurchase & { journalEntry: JournalRow |
     grams: toMinor(row.grams),
     priceMinor: toMinor(row.priceMinor),
     paymentMethod: paymentToRecord[row.paymentMethod],
+    settlement: settlementOf(row.settlement),
+    farmerId: row.farmerId,
+    recoveredMinor: toMinor(row.recoveredMinor),
+    payableMinor,
+    // The agent settled it on the spot; anything else is paid only as batches clear.
+    paidMinor: row.settlement === 'FLOAT' ? payableMinor : paidInBatches,
+    advanceRemainingMinor: (row.farmer?.advances ?? []).filter((a) => a.status === 'OPEN').reduce((s, a) => s + toMinor(a.amountMinor) - toMinor(a.settledMinor), 0),
+    paymentRef: row.paymentRef ?? '',
+    evidenceKind: evidenceKindOf(row.evidenceKind),
+    evidenceAt: row.evidenceAt ? row.evidenceAt.toISOString() : null,
     quality: qualityOf(row),
     note: row.note ?? '',
     status: statusToRecord[row.status],
@@ -147,8 +173,14 @@ export function purchaseRecord(row: AgentPurchase & { journalEntry: JournalRow |
 }
 
 export const lotInclude = { supplier: { select: { name: true } }, createdBy: { select: { name: true } }, documentLine: { select: { documentId: true } }, agentPurchase: { select: { id: true } } } as const;
-export const floatInclude = { journalEntry: { include: journalInclude }, returns: { include: { journalEntry: { include: journalInclude } } }, purchases: { select: { priceMinor: true, status: true } }, createdBy: { select: { name: true } }, reconciledBy: { select: { name: true } } } as const;
-export const purchaseInclude = { journalEntry: { include: journalInclude }, createdBy: { select: { name: true } }, postedBy: { select: { name: true } } } as const;
+export const floatInclude = { journalEntry: { include: journalInclude }, returns: { include: { journalEntry: { include: journalInclude } } }, purchases: { select: { priceMinor: true, payableMinor: true, settlement: true, status: true } }, createdBy: { select: { name: true } }, reconciledBy: { select: { name: true } } } as const;
+export const purchaseInclude = {
+  journalEntry: { include: journalInclude },
+  createdBy: { select: { name: true } },
+  postedBy: { select: { name: true } },
+  payments: { select: { amountMinor: true } },
+  farmer: { select: { id: true, advances: { select: { amountMinor: true, settledMinor: true, status: true } } } },
+} as const;
 
 function groupBy<T>(items: T[], keyOf: (item: T) => string): Record<string, T[]> {
   const groups: Record<string, T[]> = {};

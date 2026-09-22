@@ -39,6 +39,7 @@ import { formatKg, inventoryAccountCategory, unitLabels } from '@/lib/inventory'
 import { BuyingPanel } from '@/components/app/buying-panel';
 import { ContractsPanel } from '@/components/app/contracts-panel';
 import { OpeningPanel } from '@/components/app/opening-panel';
+import { PaymentsPanel } from '@/components/app/payments-panel';
 import { sellingCostKinds, sellingCostLabels, type SellingCostKind } from '@/lib/contracts';
 import { agentFloatSummaries, floatPosition, holdsStock, landedCostKinds, landedCostLabels, qualityFieldsFor, type LandedCostKind } from '@/lib/trading';
 import { CurrencyProvider, ReportMoney, TranslationProvider } from '@/components/ui/money';
@@ -74,6 +75,7 @@ const navigationItems = [
   'Sales',
   'Purchases',
   'Bank',
+  'Payments',
   'Intercompany',
   'Tax',
   'Inventory',
@@ -4510,6 +4512,21 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
               rates={entityRates}
               bankAccounts={entityBankAccounts}
               seedFunds={initialData.seedFundsByEntity[selectedEntity.id] ?? []}
+              allowed={allowed}
+            />
+          ) : activeNav === 'Payments' ? (
+            <PaymentsPanel
+              key={selectedEntity.id}
+              entity={selectedEntity}
+              bankAccounts={entityBankAccounts}
+              farmers={initialData.farmersByEntity[selectedEntity.id] ?? []}
+              advances={initialData.farmerAdvancesByEntity[selectedEntity.id] ?? []}
+              batches={initialData.paymentBatchesByEntity[selectedEntity.id] ?? []}
+              mappings={initialData.statementMappingsByEntity[selectedEntity.id] ?? []}
+              statements={initialData.statementImportsByEntity[selectedEntity.id] ?? []}
+              purchases={initialData.agentPurchasesByEntity[selectedEntity.id] ?? []}
+              agents={initialData.agentsByEntity[selectedEntity.id] ?? []}
+              items={entityItems}
               allowed={allowed}
             />
           ) : activeNav === 'Go-live' ? (

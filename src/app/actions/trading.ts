@@ -19,13 +19,14 @@ import { itemInclude, itemRecord } from '@/lib/data/inventory';
 import { entityRecord, entityTypeOf } from '@/lib/data/mappers';
 import { fromMinor, toMinor } from '@/lib/data/money';
 import { balanceAt, moveBalance, StockRefusal } from '@/lib/data/stock';
+import { evidenceToPrisma, settlementToPrisma } from '@/lib/data/momo';
 import { agentRecord, commodityRecord, floatInclude, floatRecord, kindToPrisma, lotInclude, lotRecord, paymentToPrisma, purchaseInclude, purchaseRecord } from '@/lib/data/trading';
 import type { AgentPurchaseRecord, BuyingAgentRecord, CommodityRecord, EntityRecord, FloatAdvanceRecord, ItemRecord, LotRecord } from '@/lib/data/types';
 import { periodOf } from '@/lib/documents';
 import { accountForStock, formatKg, inventoryAccountCategory, type StockPosition } from '@/lib/inventory';
+import { momoAccounts, planRecovery, purchaseJournal } from '@/lib/momo';
 import {
   abnormalLossValue,
-  agentPurchaseJournal,
   commodityKinds,
   floatAdvanceJournal,
   floatReturnJournal,
@@ -337,7 +338,11 @@ export type FieldPurchase = {
   agentId: string;
   floatId?: string | null;
   date: string;
+  /** Either an existing farmer, or a name that becomes one. */
+  farmerId?: string | null;
   farmerName: string;
+  farmerPhone?: string;
+  walletNumber?: string;
   community?: string;
   district?: string;
   itemId: string;
@@ -347,6 +352,13 @@ export type FieldPurchase = {
   grams: number;
   priceMinor: number;
   paymentMethod: 'cash' | 'mobile-money';
+  /** The agent paid from the float now, or the farmer is paid centrally later. */
+  settlement?: 'float' | 'payable';
+  /** The mobile money transfer reference, when the agent paid that way. */
+  paymentRef?: string;
+  /** Cash paid now must carry the farmer's signature or thumbprint from the device. */
+  evidenceKind?: 'signature' | 'thumbprint' | 'reference';
+  evidenceData?: string;
   quality?: Quality;
   note?: string;
 };
@@ -384,12 +396,46 @@ export async function syncAgentPurchases(entityId: string, purchases: FieldPurch
             const farmerName = String(purchase.farmerName ?? '').trim();
             if (!farmerName) throw new StockRefusal('Farmer name is required.');
             dateOf(purchase.date);
+            const settlement = purchase.settlement === 'payable' ? 'payable' : 'float';
+            if (settlement === 'float' && !purchase.floatId) throw new StockRefusal('A purchase the agent paid for needs the float it came out of.');
+            // Evidence the farmer was paid: cash needs a signature or thumbprint from the
+            // device, mobile money needs the transfer reference. Nothing to evidence yet
+            // when the farmer is to be paid centrally.
+            const evidenceData = String(purchase.evidenceData ?? '').trim();
+            const paymentRef = String(purchase.paymentRef ?? '').trim();
+            let evidenceKind = purchase.evidenceKind ?? null;
+            if (settlement === 'float') {
+              if (purchase.paymentMethod === 'cash') {
+                if (evidenceKind !== 'signature' && evidenceKind !== 'thumbprint') throw new StockRefusal("A cash payment needs the farmer's signature or thumbprint.");
+                if (!evidenceData) throw new StockRefusal('The signature or thumbprint did not reach us; capture it again.');
+              } else {
+                if (!paymentRef) throw new StockRefusal('A mobile money payment needs its transfer reference.');
+                evidenceKind = evidenceKind ?? 'reference';
+              }
+            }
+            // The farmer record is what advances and payments hang off, so every purchase gets one.
+            const farmer = purchase.farmerId
+              ? await tx.farmer.findFirst({ where: { id: purchase.farmerId, entityId } })
+              : await tx.farmer.findFirst({ where: { entityId, name: farmerName } });
+            if (purchase.farmerId && !farmer) throw new StockRefusal('Unknown farmer.');
+            const community = purchase.community?.trim() || null;
+            const district = purchase.district?.trim() || null;
+            const walletNumber = String(purchase.walletNumber ?? '').trim() || null;
+            const resolved = farmer
+              ? await tx.farmer.update({
+                  where: { id: farmer.id },
+                  data: { phone: farmer.phone ?? purchase.farmerPhone?.trim() ?? null, community: farmer.community ?? community, district: farmer.district ?? district, walletNumber: farmer.walletNumber ?? walletNumber },
+                })
+              : await tx.farmer.create({ data: { entityId, name: farmerName, phone: purchase.farmerPhone?.trim() || null, community, district, walletNumber } });
             await tx.agentPurchase.create({
               data: {
-                entityId, agentId: agent.id, floatId: purchase.floatId || null, clientRef, date: dateOf(purchase.date), farmerName,
-                community: purchase.community?.trim() || null, district: purchase.district?.trim() || null, itemId: item.id, locationId,
+                entityId, agentId: agent.id, floatId: purchase.floatId || null, clientRef, date: dateOf(purchase.date), farmerId: resolved.id, farmerName,
+                community, district, itemId: item.id, locationId,
                 bags: purchase.bags === null || purchase.bags === undefined ? null : new Prisma.Decimal(purchase.bags), grams: fromMinor(grams), priceMinor: fromMinor(priceMinor),
-                paymentMethod: paymentToPrisma[purchase.paymentMethod === 'mobile-money' ? 'mobile-money' : 'cash'], ...qualityData(purchase.quality), note: purchase.note?.trim() || null, createdById: principal.userId,
+                paymentMethod: paymentToPrisma[purchase.paymentMethod === 'mobile-money' ? 'mobile-money' : 'cash'],
+                settlement: settlementToPrisma[settlement], paymentRef: paymentRef || null,
+                evidenceKind: evidenceKind ? evidenceToPrisma[evidenceKind] : null, evidenceData: evidenceData || null, evidenceAt: evidenceKind ? new Date() : null,
+                ...qualityData(purchase.quality), note: purchase.note?.trim() || null, createdById: principal.userId,
               },
             });
             result.accepted.push(clientRef);
@@ -409,10 +455,13 @@ export async function syncAgentPurchases(entityId: string, purchases: FieldPurch
 }
 
 /**
- * Post pending purchases: each receives its stock at the agent's location
- * against the float (Dr inventory / Cr Agent Float Advances), creates its
- * lot, and gets its own journal. Purchases with no float are refused — the
- * money must have come from somewhere.
+ * Post pending purchases: each receives its stock at the agent's location,
+ * creates its lot, and gets its own journal. Any pre-season advance the
+ * farmer still owes is recovered here, oldest first and never more than the
+ * purchase is worth; the net goes against the agent's float when the agent
+ * paid on the spot, or to Farmer Payables when a batch will pay it. A
+ * purchase the agent paid for with no float named is refused — the money
+ * must have come from somewhere.
  */
 export async function postAgentPurchases(entityId: string, purchaseIds: string[]): Promise<ActionResult<AgentPurchaseRecord[]>> {
   return withEntityAccess(entityId, 'stock:post', (principal) =>
@@ -423,12 +472,17 @@ export async function postAgentPurchases(entityId: string, purchaseIds: string[]
         await prisma.$transaction(async (tx) => {
           const purchase = await tx.agentPurchase.findFirst({ where: { id, entityId, status: 'PENDING' }, include: { agent: true, item: { include: { account: true } }, location: { include: { account: true } } } });
           if (!purchase) return;
-          if (!purchase.floatId) throw new StockRefusal(`Purchase from ${purchase.farmerName} names no float; assign it to the agent's open float first.`);
+          if (purchase.settlement === 'FLOAT' && !purchase.floatId) throw new StockRefusal(`Purchase from ${purchase.farmerName} names no float; assign it to the agent's open float first.`);
           if (!purchase.item.commodityId) throw new StockRefusal('The grade has no commodity.');
           const date = purchase.date.toISOString().slice(0, 10);
           if (await tx.taxPeriodFiling.findUnique({ where: { entityId_period: { entityId, period: periodOf(date) } } })) throw new StockRefusal(`Period ${periodOf(date)} has been filed.`);
           const grams = toMinor(purchase.grams);
           const price = toMinor(purchase.priceMinor);
+          // What this delivery recovers of the farmer's advances, and what is left to settle.
+          const openAdvances = purchase.farmerId
+            ? await tx.farmerAdvance.findMany({ where: { entityId, farmerId: purchase.farmerId, status: 'OPEN' }, select: { id: true, date: true, amountMinor: true, settledMinor: true } })
+            : [];
+          const plan = planRecovery(price, openAdvances.map((a) => ({ id: a.id, date: a.date.toISOString().slice(0, 10), amountMinor: toMinor(a.amountMinor), settledMinor: toMinor(a.settledMinor) })));
           const lot = await tx.lot.create({
             data: {
               entityId, commodityId: purchase.item.commodityId, itemId: purchase.itemId, locationId: purchase.locationId, lotRef: `AP-${purchase.clientRef.slice(0, 12).toUpperCase()}`, date: purchase.date,
@@ -440,10 +494,17 @@ export async function postAgentPurchases(entityId: string, purchaseIds: string[]
           await moveBalance(tx, entityId, purchase.itemId, purchase.locationId, grams, price);
           const inventoryCode = accountForStock({ accountCode: purchase.item.account.code }, { accountCode: purchase.location.account?.code ?? null });
           const names = await namesFor(tx, entityId);
-          const journalId = await postJournal(tx, entityId, agentPurchaseJournal(price, inventoryCode, names), date, `AP ${purchase.agent.name}`, `${formatKg(grams)} ${purchase.item.name} bought from ${purchase.farmerName} by ${purchase.agent.name}`, principal);
+          const settlementCode = purchase.settlement === 'PAYABLE' ? momoAccounts.farmerPayables : tradingAccounts.agentFloats;
+          const journalId = await postJournal(tx, entityId, purchaseJournal(price, plan.recoveredMinor, inventoryCode, settlementCode, purchase.settlement === 'PAYABLE' ? 'Farmer Payables' : 'Agent Float Advances', names), date, `AP ${purchase.agent.name}`, `${formatKg(grams)} ${purchase.item.name} bought from ${purchase.farmerName} by ${purchase.agent.name}`, principal);
+          for (const recovery of plan.recoveries) {
+            await tx.advanceRecovery.create({ data: { entityId, advanceId: recovery.advanceId, purchaseId: purchase.id, amountMinor: fromMinor(recovery.amountMinor) } });
+            const advance = openAdvances.find((a) => a.id === recovery.advanceId);
+            const settled = toMinor(advance?.settledMinor ?? 0n) + recovery.amountMinor;
+            await tx.farmerAdvance.update({ where: { id: recovery.advanceId }, data: { settledMinor: fromMinor(settled), status: settled >= toMinor(advance?.amountMinor ?? 0n) ? 'SETTLED' : 'OPEN' } });
+          }
           await tx.stockMovement.create({ data: { entityId, kind: 'RECEIPT', date: purchase.date, itemId: purchase.itemId, toLocationId: purchase.locationId, quantityGrams: fromMinor(grams), valueMinor: fromMinor(price), lotId: lot.id, journalEntryId: journalId, createdById: principal.userId, note: `Field purchase from ${purchase.farmerName}` } });
-          await tx.agentPurchase.update({ where: { id: purchase.id }, data: { status: 'POSTED', lotId: lot.id, journalEntryId: journalId, postedById: principal.userId, postedAt: new Date() } });
-          await recordAuditEvent({ entityId, userId: principal.userId, userName: principal.name, action: 'POST', resourceType: 'agent-purchase', resourceRef: purchase.clientRef, summary: `Field purchase posted: ${formatKg(grams)} ${purchase.item.name} from ${purchase.farmerName} (${purchase.community ?? '—'}) by ${purchase.agent.name}, ${(price / 100).toFixed(2)} ${purchase.paymentMethod === 'MOBILE_MONEY' ? 'by mobile money' : 'in cash'}`, metadata: { journalEntryId: journalId, lotId: lot.id, floatId: purchase.floatId } }, tx);
+          await tx.agentPurchase.update({ where: { id: purchase.id }, data: { status: 'POSTED', lotId: lot.id, journalEntryId: journalId, recoveredMinor: fromMinor(plan.recoveredMinor), payableMinor: fromMinor(plan.payableMinor), postedById: principal.userId, postedAt: new Date() } });
+          await recordAuditEvent({ entityId, userId: principal.userId, userName: principal.name, action: 'POST', resourceType: 'agent-purchase', resourceRef: purchase.clientRef, summary: `Field purchase posted: ${formatKg(grams)} ${purchase.item.name} from ${purchase.farmerName} (${purchase.community ?? '—'}) by ${purchase.agent.name}, ${(price / 100).toFixed(2)} ${purchase.paymentMethod === 'MOBILE_MONEY' ? 'by mobile money' : 'in cash'}${plan.recoveredMinor ? `, ${(plan.recoveredMinor / 100).toFixed(2)} recovered from advances` : ''}${purchase.settlement === 'PAYABLE' ? `, ${(plan.payableMinor / 100).toFixed(2)} left payable` : ''}`, metadata: { journalEntryId: journalId, lotId: lot.id, floatId: purchase.floatId, recoveredMinor: plan.recoveredMinor, payableMinor: plan.payableMinor } }, tx);
           posted.push(purchase.id);
         });
       }

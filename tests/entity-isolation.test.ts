@@ -112,6 +112,7 @@ import * as inventoryActions from '@/app/actions/inventory';
 import * as tradingActions from '@/app/actions/trading';
 import * as contractActions from '@/app/actions/contracts';
 import * as openingActions from '@/app/actions/opening';
+import * as momoActions from '@/app/actions/momo';
 import * as userActions from '@/app/actions/users';
 import * as auditRoute from '@/app/api/audit/route';
 import * as backupsRoute from '@/app/api/backups/route';
@@ -223,6 +224,24 @@ const openingCalls: Record<keyof typeof openingActions, Call> = {
 /** The one opening read a Viewer may make on their own entity. */
 const openingReads = new Set(['openingChecklist']);
 
+/** Every mobile money and farmer payment Server Function. */
+const momoCalls: Record<keyof typeof momoActions, Call> = {
+  saveFarmer: () => momoActions.saveFarmer(FORBIDDEN_ENTITY, { name: 'Kofi Mensah' }),
+  recordFarmerAdvance: () => momoActions.recordFarmerAdvance(FORBIDDEN_ENTITY, { farmerId: 'f', date: '2026-09-21', amountMinor: 100, bankAccountId: 'b' }),
+  createPaymentBatch: () => momoActions.createPaymentBatch(FORBIDDEN_ENTITY, { date: '2026-09-21', bankAccountId: 'b', purchaseIds: ['p'] }),
+  exportPaymentBatch: () => momoActions.exportPaymentBatch(FORBIDDEN_ENTITY, 'batch'),
+  markBatchPaid: () => momoActions.markBatchPaid(FORBIDDEN_ENTITY, 'batch', { date: '2026-09-21' }),
+  saveStatementMapping: () => momoActions.saveStatementMapping(FORBIDDEN_ENTITY, { name: 'MTN', dateColumn: 'Date', descriptionColumn: 'Description', amountColumn: 'Amount' }),
+  addDefaultStatementMappings: () => momoActions.addDefaultStatementMappings(FORBIDDEN_ENTITY),
+  importStatement: () => momoActions.importStatement(FORBIDDEN_ENTITY, { bankAccountId: 'b', mappingId: 'm', fileName: 'x.csv', csv: 'Date,Description,Amount\n2026-09-01,x,1.00' }),
+  matchStatementLine: () => momoActions.matchStatementLine(FORBIDDEN_ENTITY, 'line', 'batch'),
+  noteStatementLine: () => momoActions.noteStatementLine(FORBIDDEN_ENTITY, 'line', 'ours'),
+  createWallet: () => momoActions.createWallet(FORBIDDEN_ENTITY, { name: 'MoMo', provider: 'MTN', number: '0244000111', currency: 'GHS' }),
+  farmerHistoryReport: () => momoActions.farmerHistoryReport(FORBIDDEN_ENTITY, 'f'),
+};
+/** The one farmer read a Viewer may make on their own entity. */
+const momoReads = new Set(['farmerHistoryReport']);
+
 /** Every user-management Server Function. Owner-only, so any other role is refused. */
 const userCalls: Record<keyof typeof userActions, Call> = {
   listUsers: () => userActions.listUsers(),
@@ -289,6 +308,8 @@ describe('coverage', () => {
     expect(exportedContracts.sort()).toEqual(Object.keys(contractCalls).sort());
     const exportedOpening = Object.keys(openingActions).filter((k) => typeof (openingActions as Record<string, unknown>)[k] === 'function');
     expect(exportedOpening.sort()).toEqual(Object.keys(openingCalls).sort());
+    const exportedMomo = Object.keys(momoActions).filter((k) => typeof (momoActions as Record<string, unknown>)[k] === 'function');
+    expect(exportedMomo.sort()).toEqual(Object.keys(momoCalls).sort());
   });
 
   it('every Route Handler method has a case', () => {
@@ -300,7 +321,7 @@ describe('coverage', () => {
 // --- signed out --------------------------------------------------------------------
 
 describe('signed out', () => {
-  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...userCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...userCalls })) {
     if (!call) continue;
     it(`${name} is refused without touching the database`, async () => {
       expect(isRefusal(await call())).toBe(true);
@@ -320,7 +341,7 @@ describe('signed out', () => {
 describe('an Accountant on Sprouted Roots asking for Oikazi', () => {
   beforeEach(() => signIn({ role: 'accountant' }, [GRANTED_ENTITY]));
 
-  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls })) {
     if (!call) continue;
     it(`${name} is refused and reads nothing`, async () => {
       const result = await call();
@@ -376,8 +397,8 @@ describe('a Viewer with access to Oikazi', () => {
   }
 
   it('cannot touch rates, banks, the functional currency, revaluation or VAT registration, even on their own entity', async () => {
-    for (const [name, call] of Object.entries({ ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls })) {
-      if (name === 'listExchangeRates' || openingReads.has(name)) continue; // reads are reports:view
+    for (const [name, call] of Object.entries({ ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls })) {
+      if (name === 'listExchangeRates' || openingReads.has(name) || momoReads.has(name)) continue; // reads are reports:view
       dbCalls.length = 0;
       const result = await call();
       expect(isRefusal(result), name).toBe(true);

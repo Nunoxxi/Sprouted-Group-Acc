@@ -61,42 +61,48 @@ model Entity {
   createdAt               DateTime            @default(now())
   updatedAt               DateTime            @updatedAt
 
-  userAccess       UserEntityAccess[]
-  exchangeRates    ExchangeRate[]
-  bankAccounts     BankAccount[]
-  payments         Payment[]
-  revaluations     Revaluation[]
-  accounts         Account[]
-  journalEntries   JournalEntry[]
-  contactBalances  ContactEntityBalance[]
-  auditEvents      AuditEvent[]
-  funds            Fund[]
-  projects         Project[]
-  documents        Document[]
-  documentLines    DocumentLine[]
-  taxPeriodFilings TaxPeriodFiling[]
-  documentCounters DocumentCounter[]
-  backupRuns       BackupRun[]
-  items            Item[]
-  stockLocations   StockLocation[]
-  stockBalances    StockBalance[]
-  stockMovements   StockMovement[]
-  stockCounts      StockCount[]
-  stockCountLines  StockCountLine[]
-  nrvPrices        NrvPrice[]
-  commodities      Commodity[]
-  lots             Lot[]
-  landedCosts      LandedCostAllocation[]
-  buyingAgents     BuyingAgent[]
-  floatAdvances    FloatAdvance[]
-  floatReturns     FloatReturn[]
-  agentPurchases   AgentPurchase[]
-  salesContracts   SalesContract[]
-  deliveries       ContractDelivery[]
-  sellingCosts     ContractSellingCost[]
-  seedFunds        SeedFundMovement[]
-  openingBatches   OpeningBatch[]
-  farmerAdvances   FarmerAdvance[]
+  userAccess        UserEntityAccess[]
+  exchangeRates     ExchangeRate[]
+  bankAccounts      BankAccount[]
+  payments          Payment[]
+  revaluations      Revaluation[]
+  accounts          Account[]
+  journalEntries    JournalEntry[]
+  contactBalances   ContactEntityBalance[]
+  auditEvents       AuditEvent[]
+  funds             Fund[]
+  projects          Project[]
+  documents         Document[]
+  documentLines     DocumentLine[]
+  taxPeriodFilings  TaxPeriodFiling[]
+  documentCounters  DocumentCounter[]
+  backupRuns        BackupRun[]
+  items             Item[]
+  stockLocations    StockLocation[]
+  stockBalances     StockBalance[]
+  stockMovements    StockMovement[]
+  stockCounts       StockCount[]
+  stockCountLines   StockCountLine[]
+  nrvPrices         NrvPrice[]
+  commodities       Commodity[]
+  lots              Lot[]
+  landedCosts       LandedCostAllocation[]
+  buyingAgents      BuyingAgent[]
+  floatAdvances     FloatAdvance[]
+  floatReturns      FloatReturn[]
+  agentPurchases    AgentPurchase[]
+  salesContracts    SalesContract[]
+  deliveries        ContractDelivery[]
+  sellingCosts      ContractSellingCost[]
+  seedFunds         SeedFundMovement[]
+  openingBatches    OpeningBatch[]
+  farmerAdvances    FarmerAdvance[]
+  farmers           Farmer[]
+  statementMappings StatementMapping[]
+  statementImports  StatementImport[]
+  statementLines    StatementLine[]
+  paymentBatches    FarmerPaymentBatch[]
+  farmerPayments    FarmerPayment[]
 }
 
 // Append-only. Events form a hash chain per entity ordered by `sequence`, which
@@ -236,38 +242,41 @@ model User {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
-  invitedBy            User?              @relation("Invitations", fields: [invitedById], references: [id])
-  invitees             User[]             @relation("Invitations")
+  invitedBy            User?                @relation("Invitations", fields: [invitedById], references: [id])
+  invitees             User[]               @relation("Invitations")
   sessions             AuthSession[]
   authAccounts         AuthAccount[]
   twoFactors           TwoFactor[]
   entityAccess         UserEntityAccess[]
-  grantedAccess        UserEntityAccess[] @relation("AccessGrantedBy")
+  grantedAccess        UserEntityAccess[]   @relation("AccessGrantedBy")
   auditEvents          AuditEvent[]
   postedEntries        JournalEntry[]
-  createdDocs          Document[]         @relation("DocumentCreatedBy")
-  editedDocs           Document[]         @relation("DocumentEditedBy")
+  createdDocs          Document[]           @relation("DocumentCreatedBy")
+  editedDocs           Document[]           @relation("DocumentEditedBy")
   filings              TaxPeriodFiling[]
   exchangeRates        ExchangeRate[]
   payments             Payment[]
-  revaluations         Revaluation[]      @relation("RevaluationRunBy")
-  reversedRevaluations Revaluation[]      @relation("RevaluationReversedBy")
+  revaluations         Revaluation[]        @relation("RevaluationRunBy")
+  reversedRevaluations Revaluation[]        @relation("RevaluationReversedBy")
   stockMovements       StockMovement[]
-  stockCounts          StockCount[]       @relation("StockCountCreatedBy")
-  postedStockCounts    StockCount[]       @relation("StockCountPostedBy")
+  stockCounts          StockCount[]         @relation("StockCountCreatedBy")
+  postedStockCounts    StockCount[]         @relation("StockCountPostedBy")
   nrvPrices            NrvPrice[]
   lots                 Lot[]
-  floatAdvances        FloatAdvance[]     @relation("FloatCreatedBy")
-  reconciledFloats     FloatAdvance[]     @relation("FloatReconciledBy")
+  floatAdvances        FloatAdvance[]       @relation("FloatCreatedBy")
+  reconciledFloats     FloatAdvance[]       @relation("FloatReconciledBy")
   floatReturns         FloatReturn[]
-  agentPurchases       AgentPurchase[]    @relation("PurchaseCreatedBy")
-  postedPurchases      AgentPurchase[]    @relation("PurchasePostedBy")
+  agentPurchases       AgentPurchase[]      @relation("PurchaseCreatedBy")
+  postedPurchases      AgentPurchase[]      @relation("PurchasePostedBy")
   salesContracts       SalesContract[]
-  deliveries           ContractDelivery[] @relation("DeliveryCreatedBy")
-  acceptedDeliveries   ContractDelivery[] @relation("DeliveryAcceptedBy")
+  deliveries           ContractDelivery[]   @relation("DeliveryCreatedBy")
+  acceptedDeliveries   ContractDelivery[]   @relation("DeliveryAcceptedBy")
   seedFunds            SeedFundMovement[]
   openingBatches       OpeningBatch[]
   farmerAdvances       FarmerAdvance[]
+  statementImports     StatementImport[]
+  paymentBatches       FarmerPaymentBatch[] @relation("BatchCreatedBy")
+  paidBatches          FarmerPaymentBatch[] @relation("BatchPaidBy")
 
   @@index([deactivatedAt])
 }
@@ -418,26 +427,29 @@ model JournalEntry {
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
-  entity              Entity            @relation(fields: [entityId], references: [id])
-  postedBy            User?             @relation(fields: [postedById], references: [id])
+  entity              Entity              @relation(fields: [entityId], references: [id])
+  postedBy            User?               @relation(fields: [postedById], references: [id])
   lines               JournalLine[]
-  reversalOf          JournalEntry?     @relation("Reversal", fields: [reversalOfId], references: [id])
-  reversedBy          JournalEntry?     @relation("Reversal")
-  postedDocument      Document?         @relation("DocumentPosting")
-  voidedDocument      Document?         @relation("DocumentVoid")
+  reversalOf          JournalEntry?       @relation("Reversal", fields: [reversalOfId], references: [id])
+  reversedBy          JournalEntry?       @relation("Reversal")
+  postedDocument      Document?           @relation("DocumentPosting")
+  voidedDocument      Document?           @relation("DocumentVoid")
   payment             Payment?
-  revaluation         Revaluation?      @relation("RevaluationEntry")
-  revaluationReversal Revaluation?      @relation("RevaluationReversal")
+  revaluation         Revaluation?        @relation("RevaluationEntry")
+  revaluationReversal Revaluation?        @relation("RevaluationReversal")
   stockMovements      StockMovement[]
   stockCount          StockCount?
   floatAdvance        FloatAdvance?
   floatReturn         FloatReturn?
   agentPurchase       AgentPurchase?
-  delivery            ContractDelivery? @relation("DeliveryJournal")
-  acceptance          ContractDelivery? @relation("AcceptanceJournal")
+  delivery            ContractDelivery?   @relation("DeliveryJournal")
+  acceptance          ContractDelivery?   @relation("AcceptanceJournal")
   seedFund            SeedFundMovement?
   openingBatch        OpeningBatch?
   farmerAdvance       FarmerAdvance?
+  paymentBatch        FarmerPaymentBatch? @relation("BatchJournal")
+  batchSettlement     FarmerPaymentBatch? @relation("BatchSettlementJournal")
+  statementLines      StatementLine[]
 
   @@index([entityId, postedAt])
   @@index([entityId, kind])
@@ -715,18 +727,26 @@ model BankAccount {
   floatReturns  FloatReturn[]
   seedFunds     SeedFundMovement[]
 
-  id        String   @id @default(cuid())
+  id        String          @id @default(cuid())
   entityId  String
   name      String
   currency  Currency
+  /// A mobile money wallet is a bank account with a provider and a number;
+  /// it reconciles the same way and has its own GL account.
+  kind      BankAccountKind @default(BANK)
+  provider  String?
+  number    String?
   /// The GL account this bank posts to; one per bank account.
-  accountId String   @unique
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
+  accountId String          @unique
+  isActive  Boolean         @default(true)
+  createdAt DateTime        @default(now())
 
-  entity   Entity    @relation(fields: [entityId], references: [id])
-  account  Account   @relation(fields: [accountId], references: [id])
-  payments Payment[]
+  entity           Entity               @relation(fields: [entityId], references: [id])
+  account          Account              @relation(fields: [accountId], references: [id])
+  payments         Payment[]
+  statementImports StatementImport[]
+  statementLines   StatementLine[]
+  paymentBatches   FarmerPaymentBatch[]
 
   @@index([entityId])
 }
@@ -1219,6 +1239,7 @@ model AgentPurchase {
   floatId        String?
   clientRef      String
   date           DateTime
+  farmerId       String?
   farmerName     String
   community      String?
   district       String?
@@ -1228,6 +1249,18 @@ model AgentPurchase {
   grams          BigInt
   priceMinor     BigInt
   paymentMethod  PaymentMethod       @default(CASH)
+  /// Paid from the agent's float now, or left payable to the farmer and settled
+  /// in a bulk payment batch later.
+  settlement     PurchaseSettlement  @default(FLOAT)
+  /// Evidence: the transfer reference, and for cash the farmer's signature or
+  /// thumbprint captured on the agent's device.
+  paymentRef     String?
+  evidenceKind   PaymentEvidence?
+  evidenceData   String?
+  evidenceAt     DateTime?
+  /// Fixed at posting: advance recovered from this purchase and the net payable.
+  recoveredMinor BigInt              @default(0)
+  payableMinor   BigInt              @default(0)
   kor            Decimal?            @db.Decimal(6, 2)
   moisturePct    Decimal?            @db.Decimal(5, 2)
   nutCount       Int?
@@ -1243,15 +1276,18 @@ model AgentPurchase {
   postedById     String?
   postedAt       DateTime?
 
-  entity       Entity        @relation(fields: [entityId], references: [id])
-  agent        BuyingAgent   @relation(fields: [agentId], references: [id])
-  float        FloatAdvance? @relation(fields: [floatId], references: [id])
-  item         Item          @relation(fields: [itemId], references: [id])
-  location     StockLocation @relation(fields: [locationId], references: [id])
-  lot          Lot?          @relation(fields: [lotId], references: [id])
-  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id])
-  createdBy    User?         @relation("PurchaseCreatedBy", fields: [createdById], references: [id])
-  postedBy     User?         @relation("PurchasePostedBy", fields: [postedById], references: [id])
+  entity       Entity            @relation(fields: [entityId], references: [id])
+  agent        BuyingAgent       @relation(fields: [agentId], references: [id])
+  float        FloatAdvance?     @relation(fields: [floatId], references: [id])
+  farmer       Farmer?           @relation(fields: [farmerId], references: [id])
+  item         Item              @relation(fields: [itemId], references: [id])
+  payments     FarmerPayment[]
+  recoveries   AdvanceRecovery[]
+  location     StockLocation     @relation(fields: [locationId], references: [id])
+  lot          Lot?              @relation(fields: [lotId], references: [id])
+  journalEntry JournalEntry?     @relation(fields: [journalEntryId], references: [id])
+  createdBy    User?             @relation("PurchaseCreatedBy", fields: [createdById], references: [id])
+  postedBy     User?             @relation("PurchasePostedBy", fields: [postedById], references: [id])
 
   @@unique([entityId, clientRef])
   @@index([entityId, status])
@@ -1485,6 +1521,7 @@ enum FarmerAdvanceStatus {
 model FarmerAdvance {
   id             String              @id @default(cuid())
   entityId       String
+  farmerId       String?
   farmerName     String
   community      String?
   district       String?
@@ -1497,9 +1534,229 @@ model FarmerAdvance {
   createdById    String?
   createdAt      DateTime            @default(now())
 
-  entity       Entity        @relation(fields: [entityId], references: [id])
-  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id])
-  createdBy    User?         @relation(fields: [createdById], references: [id])
+  entity       Entity            @relation(fields: [entityId], references: [id])
+  farmer       Farmer?           @relation(fields: [farmerId], references: [id])
+  journalEntry JournalEntry?     @relation(fields: [journalEntryId], references: [id])
+  createdBy    User?             @relation(fields: [createdById], references: [id])
+  recoveries   AdvanceRecovery[]
 
   @@index([entityId, status])
+}
+
+// --- mobile money, farmer payments and advances -------------------------------------
+//
+// A mobile money wallet is an ordinary bank account with a provider and a
+// number, so it posts and reconciles like any other. Statements are imported
+// with a named column mapping per provider; the transaction fee and any levy
+// on a line are split off and posted to charges, so the line matches the
+// amount that actually moved.
+//
+// Farmers may be paid on the spot from the agent's float, or left payable and
+// settled in a bulk payment batch exported for the provider. A pre-season
+// advance is a receivable recovered automatically from what the farmer is
+// next paid.
+
+enum BankAccountKind {
+  BANK
+  MOBILE_MONEY
+  CASH
+}
+
+/// Money owed to a farmer for produce already received, and the account the
+/// advances sit in, are both fixed codes; see src/lib/momo.ts.
+enum PurchaseSettlement {
+  /// Paid immediately from the agent's float.
+  FLOAT
+  /// Left payable to the farmer, settled in a payment batch.
+  PAYABLE
+}
+
+enum PaymentEvidence {
+  SIGNATURE
+  THUMBPRINT
+  /// A mobile money transfer is evidenced by its reference.
+  REFERENCE
+}
+
+model Farmer {
+  id           String   @id @default(cuid())
+  entityId     String
+  name         String
+  phone        String?
+  community    String?
+  district     String?
+  /// The wallet the farmer is paid into, when they are paid by mobile money.
+  walletNumber String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  entity    Entity          @relation(fields: [entityId], references: [id])
+  purchases AgentPurchase[]
+  advances  FarmerAdvance[]
+  payments  FarmerPayment[]
+
+  @@unique([entityId, name])
+  @@index([entityId, isActive])
+}
+
+/// An advance recovered from one purchase. Append-only.
+model AdvanceRecovery {
+  id          String   @id @default(cuid())
+  entityId    String
+  advanceId   String
+  purchaseId  String
+  amountMinor BigInt
+  createdAt   DateTime @default(now())
+
+  advance  FarmerAdvance @relation(fields: [advanceId], references: [id])
+  purchase AgentPurchase @relation(fields: [purchaseId], references: [id])
+
+  @@unique([advanceId, purchaseId])
+  @@index([entityId])
+}
+
+enum PaymentBatchStatus {
+  DRAFT
+  EXPORTED
+  PAID
+}
+
+/// Many farmers paid at once: exported for bulk mobile money disbursement,
+/// then matched to the statement in one step when it clears.
+model FarmerPaymentBatch {
+  id                       String             @id @default(cuid())
+  entityId                 String
+  reference                String
+  date                     DateTime
+  bankAccountId            String
+  status                   PaymentBatchStatus @default(DRAFT)
+  totalMinor               BigInt             @default(0)
+  feeMinor                 BigInt             @default(0)
+  exportedAt               DateTime?
+  paidAt                   DateTime?
+  journalEntryId           String?            @unique
+  settlementJournalEntryId String?            @unique
+  note                     String?
+  createdById              String?
+  paidById                 String?
+  createdAt                DateTime           @default(now())
+
+  entity            Entity          @relation(fields: [entityId], references: [id])
+  bankAccount       BankAccount     @relation(fields: [bankAccountId], references: [id])
+  journalEntry      JournalEntry?   @relation("BatchJournal", fields: [journalEntryId], references: [id])
+  settlementJournal JournalEntry?   @relation("BatchSettlementJournal", fields: [settlementJournalEntryId], references: [id])
+  createdBy         User?           @relation("BatchCreatedBy", fields: [createdById], references: [id])
+  paidBy            User?           @relation("BatchPaidBy", fields: [paidById], references: [id])
+  payments          FarmerPayment[]
+  statementLines    StatementLine[]
+
+  @@unique([entityId, reference])
+  @@index([entityId, status])
+}
+
+model FarmerPayment {
+  id           String  @id @default(cuid())
+  entityId     String
+  batchId      String
+  farmerId     String
+  purchaseId   String?
+  amountMinor  BigInt
+  walletNumber String?
+  paymentRef   String?
+
+  entity   Entity             @relation(fields: [entityId], references: [id])
+  batch    FarmerPaymentBatch @relation(fields: [batchId], references: [id])
+  farmer   Farmer             @relation(fields: [farmerId], references: [id])
+  purchase AgentPurchase?     @relation(fields: [purchaseId], references: [id])
+
+  @@index([entityId, farmerId])
+}
+
+/// A named CSV column mapping for one provider's statement.
+model StatementMapping {
+  id                String   @id @default(cuid())
+  entityId          String
+  name              String
+  /// Column headings, as they appear in the file.
+  dateColumn        String
+  descriptionColumn String
+  referenceColumn   String?
+  amountColumn      String?
+  /// Some providers give money in and money out in separate columns.
+  moneyInColumn     String?
+  moneyOutColumn    String?
+  feeColumn         String?
+  levyColumn        String?
+  balanceColumn     String?
+  /// Rows whose description contains one of these (comma separated) are charges.
+  chargeKeywords    String?
+  dateFormat        String   @default("YYYY-MM-DD")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  entity  Entity            @relation(fields: [entityId], references: [id])
+  imports StatementImport[]
+
+  @@unique([entityId, name])
+}
+
+model StatementImport {
+  id                String    @id @default(cuid())
+  entityId          String
+  bankAccountId     String
+  mappingId         String?
+  fileName          String
+  fromDate          DateTime?
+  toDate            DateTime?
+  lineCount         Int
+  feeMinor          BigInt    @default(0)
+  feeJournalEntryId String?   @unique
+  createdById       String?
+  createdAt         DateTime  @default(now())
+
+  entity      Entity            @relation(fields: [entityId], references: [id])
+  bankAccount BankAccount       @relation(fields: [bankAccountId], references: [id])
+  mapping     StatementMapping? @relation(fields: [mappingId], references: [id])
+  createdBy   User?             @relation(fields: [createdById], references: [id])
+  lines       StatementLine[]
+
+  @@index([entityId, bankAccountId])
+}
+
+enum StatementLineStatus {
+  UNMATCHED
+  MATCHED
+  CHARGE
+}
+
+model StatementLine {
+  id               String              @id @default(cuid())
+  entityId         String
+  importId         String
+  bankAccountId    String
+  date             DateTime
+  description      String
+  reference        String?
+  /// Signed: positive money in, negative money out. Net of the fee and levy,
+  /// which are posted separately to charges.
+  amountMinor      BigInt
+  feeMinor         BigInt              @default(0)
+  levyMinor        BigInt              @default(0)
+  balanceMinor     BigInt?
+  status           StatementLineStatus @default(UNMATCHED)
+  matchedBatchId   String?
+  matchedPaymentId String?
+  journalEntryId   String?
+  note             String?
+  createdAt        DateTime            @default(now())
+
+  entity       Entity              @relation(fields: [entityId], references: [id])
+  import       StatementImport     @relation(fields: [importId], references: [id])
+  bankAccount  BankAccount         @relation(fields: [bankAccountId], references: [id])
+  matchedBatch FarmerPaymentBatch? @relation(fields: [matchedBatchId], references: [id])
+  journalEntry JournalEntry?       @relation(fields: [journalEntryId], references: [id])
+
+  @@index([entityId, status])
+  @@index([importId])
 }

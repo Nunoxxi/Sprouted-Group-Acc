@@ -38,6 +38,7 @@ import type { Quality } from '../trading';
 import { loadInventoryData } from './inventory';
 import { landedCostKindOf, loadTradingData } from './trading';
 import { loadContractData, sellingCostKindOf } from './contracts';
+import { bankAccountKindOf, loadMomoData } from './momo';
 import { loadOpeningData } from './opening';
 
 // --- enum translations -------------------------------------------------------
@@ -126,6 +127,9 @@ export function bankAccountRecord(row: BankAccount & { account: Pick<Account, 'c
     entityId: row.entityId,
     name: row.name,
     currency: row.currency,
+    kind: bankAccountKindOf(row.kind),
+    provider: row.provider ?? '',
+    number: row.number ?? '',
     accountCode: row.account.code,
     accountName: row.account.name,
     isActive: row.isActive,
@@ -289,5 +293,6 @@ export async function loadInitialData(principal: Principal): Promise<InitialData
     ...(await loadTradingData(entityScope, entityIds)),
     ...(await loadContractData(entityScope, entityIds)),
     ...(await loadOpeningData(entityIds)),
+    ...(await loadMomoData(entityScope, entityIds)),
   };
 }

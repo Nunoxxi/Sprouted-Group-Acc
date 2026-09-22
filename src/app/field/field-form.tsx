@@ -13,7 +13,7 @@
  * never double-record. The queue survives closing the browser.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { syncAgentPurchases, type FieldPurchase } from '@/app/actions/trading';
 import type { BuyingAgentRecord, ItemRecord, StockLocationRecord } from '@/lib/data/types';
@@ -52,7 +52,75 @@ function writeQueue(queue: QueuedPurchase[]) {
   }
 }
 function toFieldPurchase(q: QueuedPurchase): FieldPurchase {
-  return { clientRef: q.clientRef, agentId: q.agentId, floatId: q.floatId, date: q.date, farmerName: q.farmerName, community: q.community, district: q.district, itemId: q.itemId, locationId: q.locationId, bags: q.bags, grams: q.grams, priceMinor: q.priceMinor, paymentMethod: q.paymentMethod, quality: q.quality, note: q.note };
+  return { clientRef: q.clientRef, agentId: q.agentId, floatId: q.floatId, date: q.date, farmerName: q.farmerName, farmerPhone: q.farmerPhone, walletNumber: q.walletNumber, community: q.community, district: q.district, itemId: q.itemId, locationId: q.locationId, bags: q.bags, grams: q.grams, priceMinor: q.priceMinor, paymentMethod: q.paymentMethod, settlement: q.settlement, paymentRef: q.paymentRef, evidenceKind: q.evidenceKind, evidenceData: q.evidenceData, quality: q.quality, note: q.note };
+}
+
+/**
+ * The farmer's mark, captured on the agent's device: a signature drawn with
+ * a finger, or a thumb pressed on the screen. Either way what is stored is
+ * the picture, with the kind that was asked for. Small on purpose — it
+ * travels with the purchase through the offline queue.
+ */
+function MarkPad({ kind, value, onChange }: { kind: 'signature' | 'thumbprint'; value: string; onChange: (dataUrl: string) => void }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const drawing = useRef(false);
+
+  function positionOf(event: React.PointerEvent<HTMLCanvasElement>) {
+    const canvas = event.currentTarget;
+    const box = canvas.getBoundingClientRect();
+    return { x: ((event.clientX - box.left) / box.width) * canvas.width, y: ((event.clientY - box.top) / box.height) * canvas.height };
+  }
+
+  function stroke(event: React.PointerEvent<HTMLCanvasElement>, begin: boolean) {
+    const context = event.currentTarget.getContext('2d');
+    if (!context) return;
+    const { x, y } = positionOf(event);
+    context.lineWidth = kind === 'thumbprint' ? 26 : 3;
+    context.lineCap = 'round';
+    context.lineJoin = 'round';
+    context.strokeStyle = '#0f172a';
+    if (begin) {
+      context.beginPath();
+      context.moveTo(x, y);
+    }
+    context.lineTo(x, y);
+    context.stroke();
+  }
+
+  function clear() {
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext('2d');
+    if (!canvas || !context) return;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    onChange('');
+  }
+
+  return (
+    <div>
+      <canvas
+        ref={canvasRef}
+        width={520}
+        height={200}
+        className="w-full touch-none rounded-xl border border-dashed border-slate-400 bg-white"
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          drawing.current = true;
+          stroke(event, true);
+        }}
+        onPointerMove={(event) => {
+          if (drawing.current) stroke(event, false);
+        }}
+        onPointerUp={(event) => {
+          drawing.current = false;
+          onChange(event.currentTarget.toDataURL('image/png'));
+        }}
+      />
+      <div className="mt-1 flex items-center justify-between text-xs text-slate-600">
+        <span>{value ? 'Captured.' : kind === 'signature' ? 'Ask the farmer to sign above.' : 'Ask the farmer to press their thumb above.'}</span>
+        <button type="button" className="underline" onClick={clear}>Clear</button>
+      </div>
+    </div>
+  );
 }
 function newRef(): string {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -102,7 +170,8 @@ export function FieldForm({ refs: serverRefs }: { refs: FieldReferenceData }) {
   const entityItems = refs.items.filter((i) => i.entityId === entityId);
   const entityLocations = refs.locations.filter((l) => l.entityId === entityId);
 
-  const [form, setForm] = useState({ agentId: '', floatId: '', date: todayIso(), farmerName: '', community: '', district: '', itemId: '', locationId: '', bags: '', kg: '', price: '', paymentMethod: 'cash' as 'cash' | 'mobile-money', note: '' });
+  const [form, setForm] = useState({ agentId: '', floatId: '', date: todayIso(), farmerName: '', farmerPhone: '', walletNumber: '', community: '', district: '', itemId: '', locationId: '', bags: '', kg: '', price: '', paymentMethod: 'cash' as 'cash' | 'mobile-money', settlement: 'float' as 'float' | 'payable', paymentRef: '', evidenceKind: 'signature' as 'signature' | 'thumbprint', note: '' });
+  const [mark, setMark] = useState('');
   const [quality, setQuality] = useState<Record<string, string>>({});
   const agent = entityAgents.find((a) => a.id === form.agentId);
   const item = entityItems.find((i) => i.id === form.itemId);
@@ -166,6 +235,21 @@ export function FieldForm({ refs: serverRefs }: { refs: FieldReferenceData }) {
       setNotice('Fill in agent, farmer, grade, weight and price.');
       return;
     }
+    // Paying the farmer now needs evidence it happened; paying centrally does not.
+    if (form.settlement === 'float') {
+      if (!form.floatId) {
+        setNotice('Say which float this came out of, or choose "Pay centrally later".');
+        return;
+      }
+      if (form.paymentMethod === 'cash' && !mark) {
+        setNotice(`Capture the farmer's ${form.evidenceKind === 'thumbprint' ? 'thumbprint' : 'signature'} before saving.`);
+        return;
+      }
+      if (form.paymentMethod === 'mobile-money' && !form.paymentRef.trim()) {
+        setNotice('Enter the mobile money reference for this transfer.');
+        return;
+      }
+    }
     const q: Quality = {};
     for (const f of qualityFields) {
       const raw = quality[f.key];
@@ -180,6 +264,8 @@ export function FieldForm({ refs: serverRefs }: { refs: FieldReferenceData }) {
       floatId: form.floatId || null,
       date: form.date,
       farmerName: form.farmerName.trim(),
+      farmerPhone: form.farmerPhone.trim(),
+      walletNumber: form.walletNumber.trim(),
       community: form.community.trim(),
       district: form.district.trim(),
       itemId: form.itemId,
@@ -188,6 +274,10 @@ export function FieldForm({ refs: serverRefs }: { refs: FieldReferenceData }) {
       grams,
       priceMinor: Math.round(Number(priceToUse) * 100),
       paymentMethod: form.paymentMethod,
+      settlement: form.settlement,
+      paymentRef: form.settlement === 'float' && form.paymentMethod === 'mobile-money' ? form.paymentRef.trim() : '',
+      evidenceKind: form.settlement === 'float' ? (form.paymentMethod === 'cash' ? form.evidenceKind : 'reference') : undefined,
+      evidenceData: form.settlement === 'float' && form.paymentMethod === 'cash' ? mark : '',
       quality: q,
       note: form.note.trim(),
       savedAt: new Date().toISOString(),
@@ -198,7 +288,8 @@ export function FieldForm({ refs: serverRefs }: { refs: FieldReferenceData }) {
     setQueue(next);
     writeQueue(next);
     setSaved(purchase.summary);
-    setForm({ ...form, farmerName: '', community: form.community, district: form.district, bags: '', kg: '', price: '', note: '' });
+    setForm({ ...form, farmerName: '', farmerPhone: '', walletNumber: '', community: form.community, district: form.district, bags: '', kg: '', price: '', paymentRef: '', note: '' });
+    setMark('');
     setQuality({});
     if (online) void sync(next);
   }
@@ -227,6 +318,10 @@ export function FieldForm({ refs: serverRefs }: { refs: FieldReferenceData }) {
         <div><label className={label}>Date</label><input type="date" className={field} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div>
         <div><label className={label}>Farmer</label><input className={field} value={form.farmerName} autoComplete="off" placeholder="Name" onChange={(e) => setForm({ ...form, farmerName: e.target.value })} /></div>
         <div className="grid grid-cols-2 gap-3">
+          <div><label className={label}>Phone</label><input className={field} type="tel" inputMode="tel" value={form.farmerPhone} onChange={(e) => setForm({ ...form, farmerPhone: e.target.value })} /></div>
+          <div><label className={label}>Wallet number</label><input className={field} type="tel" inputMode="tel" value={form.walletNumber} onChange={(e) => setForm({ ...form, walletNumber: e.target.value })} /></div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
           <div><label className={label}>Community</label><input className={field} value={form.community} onChange={(e) => setForm({ ...form, community: e.target.value })} /></div>
           <div><label className={label}>District</label><input className={field} value={form.district} onChange={(e) => setForm({ ...form, district: e.target.value })} /></div>
         </div>
@@ -238,13 +333,39 @@ export function FieldForm({ refs: serverRefs }: { refs: FieldReferenceData }) {
         {grams > 0 ? <p className="-mt-2 text-sm text-slate-600">= {(grams / 1000).toLocaleString('en-GH', { maximumFractionDigits: 3 })} kg</p> : null}
         <div><label className={label}>Price paid (GH₵){producerPrice !== null ? ` — producer price GH₵${(producerPrice / 100).toFixed(2)}/kg` : ''}</label><input type="number" inputMode="decimal" min={0} step="0.01" className={field} value={form.price} placeholder={suggestedPrice !== null ? (suggestedPrice / 100).toFixed(2) : ''} onChange={(e) => setForm({ ...form, price: e.target.value })} />{producerPrice !== null && form.price.trim() && Math.round(Number(form.price) * 100) !== suggestedPrice ? <p className="mt-1 text-xs text-amber-800">Differs from the gazetted producer price.</p> : null}</div>
         <div>
-          <label className={label}>Paid by</label>
+          <label className={label}>Settled</label>
           <div className="grid grid-cols-2 gap-3">
-            {(['cash', 'mobile-money'] as const).map((method) => (
-              <button key={method} type="button" onClick={() => setForm({ ...form, paymentMethod: method })} className={['min-h-[52px] rounded-xl border text-base font-medium', form.paymentMethod === method ? 'border-brand-700 bg-brand-700 text-white' : 'border-slate-300 bg-white text-slate-800'].join(' ')}>{method === 'cash' ? 'Cash' : 'Mobile money'}</button>
+            {([['float', 'Paid now'], ['payable', 'Pay centrally later']] as const).map(([value, text]) => (
+              <button key={value} type="button" onClick={() => setForm({ ...form, settlement: value })} className={['min-h-[52px] rounded-xl border text-base font-medium', form.settlement === value ? 'border-brand-700 bg-brand-700 text-white' : 'border-slate-300 bg-white text-slate-800'].join(' ')}>{text}</button>
             ))}
           </div>
+          {form.settlement === 'payable' ? <p className="mt-1 text-xs text-slate-600">The office pays this farmer in a batch. Anything they owe on an advance comes off automatically.</p> : null}
         </div>
+        {form.settlement === 'float' ? (
+          <>
+            <div>
+              <label className={label}>Paid by</label>
+              <div className="grid grid-cols-2 gap-3">
+                {(['cash', 'mobile-money'] as const).map((method) => (
+                  <button key={method} type="button" onClick={() => setForm({ ...form, paymentMethod: method })} className={['min-h-[52px] rounded-xl border text-base font-medium', form.paymentMethod === method ? 'border-brand-700 bg-brand-700 text-white' : 'border-slate-300 bg-white text-slate-800'].join(' ')}>{method === 'cash' ? 'Cash' : 'Mobile money'}</button>
+                ))}
+              </div>
+            </div>
+            {form.paymentMethod === 'mobile-money' ? (
+              <div><label className={label}>Transfer reference</label><input className={field} autoCapitalize="characters" autoComplete="off" value={form.paymentRef} onChange={(e) => setForm({ ...form, paymentRef: e.target.value })} placeholder="From the confirmation message" /></div>
+            ) : (
+              <div>
+                <label className={label}>Farmer&rsquo;s confirmation</label>
+                <div className="mb-2 grid grid-cols-2 gap-3">
+                  {([['signature', 'Signature'], ['thumbprint', 'Thumbprint']] as const).map(([value, text]) => (
+                    <button key={value} type="button" onClick={() => { setForm({ ...form, evidenceKind: value }); setMark(''); }} className={['min-h-[44px] rounded-xl border text-base font-medium', form.evidenceKind === value ? 'border-brand-700 bg-brand-700 text-white' : 'border-slate-300 bg-white text-slate-800'].join(' ')}>{text}</button>
+                  ))}
+                </div>
+                <MarkPad key={form.evidenceKind} kind={form.evidenceKind} value={mark} onChange={setMark} />
+              </div>
+            )}
+          </>
+        ) : null}
         {item ? (
           <div>
             <label className={label}>Quality</label>

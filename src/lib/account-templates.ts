@@ -58,9 +58,19 @@ export const openingAccounts: AccountTemplate[] = [
   { code: '3090', name: 'Opening Balance Suspense', type: 'EQUITY', parentCode: '3000', category: 'opening' },
 ];
 
-/** Advances to farmers against produce to come. Traders only. */
+/** Advances to farmers, and what is owed to them for produce already received. Traders only. */
 export const farmerAdvanceAccounts: AccountTemplate[] = [
   { code: '1070', name: 'Farmer Advances', type: 'ASSET', parentCode: '1000', category: 'farmer-advance' },
+  { code: '2060', name: 'Farmer Payables', type: 'LIABILITY', parentCode: '2000', category: 'farmer-payable' },
+];
+
+/**
+ * Mobile money wallets are ordinary bank accounts; their transaction fees and
+ * levies go here rather than being left as unmatched differences on the
+ * statement. Every chart — all three entities hold wallets.
+ */
+export const mobileMoneyAccounts: AccountTemplate[] = [
+  { code: '6050', name: 'Mobile Money Charges & Levies', type: 'EXPENSE', parentCode: '6000', category: 'momo-charges' },
 ];
 
 export const sharedFxAccounts: AccountTemplate[] = [
@@ -113,6 +123,7 @@ export const manufacturingAccounts: AccountTemplate[] = [
   ...agentFloatAccounts,
   ...farmerAdvanceAccounts,
   ...contractAccounts,
+  ...mobileMoneyAccounts,
   ...openingAccounts,
   ...sharedFxAccounts,
 ];
@@ -159,6 +170,7 @@ export const ngoAccounts: AccountTemplate[] = [
   { code: '6040', name: 'Volunteer & Community Support', type: 'EXPENSE', parentCode: '6000' },
   ...sharedTaxAccounts,
   ...sharedInventoryAccounts,
+  ...mobileMoneyAccounts,
   ...openingAccounts,
   ...sharedFxAccounts,
 ];

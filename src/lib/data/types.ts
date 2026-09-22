@@ -10,6 +10,7 @@ import type { AdjustmentReason, ItemCategory, StockUnit } from '../inventory';
 import type { CommodityKind, LandedCostKind, Quality } from '../trading';
 import type { PriceUnit, SellingCostKind } from '../contracts';
 import type { ControlReconciliation, OpeningSection } from '../opening';
+import type { BankAccountKind } from '../momo';
 import type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus } from './enums';
 
 export type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus };
@@ -226,6 +227,10 @@ export type BankAccountRecord = {
   entityId: string;
   name: string;
   currency: Currency;
+  /** A mobile money wallet is a bank account; it reconciles the same way. */
+  kind: BankAccountKind;
+  provider: string;
+  number: string;
   accountCode: string;
   accountName: string;
   isActive: boolean;
@@ -340,6 +345,19 @@ export type AgentPurchaseRecord = {
   grams: number;
   priceMinor: number;
   paymentMethod: 'cash' | 'mobile-money';
+  /** Paid by the agent from the float now, or payable to the farmer and settled in a batch later. */
+  settlement: 'float' | 'payable';
+  farmerId: string | null;
+  /** Fixed at posting: advance recovered here, and the net due to the farmer. */
+  recoveredMinor: number;
+  payableMinor: number;
+  /** Paid so far against this purchase: the whole net when the agent paid it, otherwise what batches have cleared. */
+  paidMinor: number;
+  /** What the farmer still owes on their advances after this purchase's recovery. */
+  advanceRemainingMinor: number;
+  paymentRef: string;
+  evidenceKind: 'signature' | 'thumbprint' | 'reference' | null;
+  evidenceAt: string | null;
   quality: Quality;
   note: string;
   status: 'pending' | 'posted' | 'rejected';
@@ -499,6 +517,118 @@ export type OpeningStatusRecord = {
 /** Ledger balance of one inventory account, from the real journal lines. */
 export type InventoryLedgerRow = { accountCode: string; accountName: string; balanceMinor: number };
 
+export type FarmerRecord = {
+  id: string;
+  entityId: string;
+  name: string;
+  phone: string;
+  community: string;
+  district: string;
+  walletNumber: string;
+  isActive: boolean;
+  /** Advanced less recovered: what the farmer owes. */
+  advanceOutstandingMinor: number;
+  /** Payable less paid: what is owed to the farmer. */
+  payableOutstandingMinor: number;
+  deliveries: number;
+  gramsTotal: number;
+  grossMinor: number;
+};
+
+export type FarmerAdvanceRecord = {
+  id: string;
+  entityId: string;
+  farmerId: string | null;
+  farmerName: string;
+  community: string;
+  district: string;
+  date: string;
+  amountMinor: number;
+  settledMinor: number;
+  status: 'open' | 'settled';
+  note: string;
+  journal: PostedJournal | null;
+};
+
+export type FarmerPaymentRecord = {
+  id: string;
+  farmerId: string;
+  farmerName: string;
+  purchaseId: string | null;
+  amountMinor: number;
+  walletNumber: string;
+  paymentRef: string;
+};
+
+export type PaymentBatchRecord = {
+  id: string;
+  entityId: string;
+  reference: string;
+  date: string;
+  bankAccountId: string;
+  bankAccountName: string;
+  status: 'draft' | 'exported' | 'paid';
+  totalMinor: number;
+  feeMinor: number;
+  exportedAt: string | null;
+  paidAt: string | null;
+  note: string;
+  payments: FarmerPaymentRecord[];
+  journal: PostedJournal | null;
+  createdByName: string;
+};
+
+export type StatementMappingRecord = {
+  id: string;
+  entityId: string;
+  name: string;
+  dateColumn: string;
+  descriptionColumn: string;
+  referenceColumn: string;
+  amountColumn: string;
+  moneyInColumn: string;
+  moneyOutColumn: string;
+  feeColumn: string;
+  levyColumn: string;
+  balanceColumn: string;
+  chargeKeywords: string;
+  dateFormat: string;
+};
+
+export type StatementLineRecord = {
+  id: string;
+  entityId: string;
+  importId: string;
+  bankAccountId: string;
+  date: string;
+  description: string;
+  reference: string;
+  /** Signed, net of the fee and levy, which went to charges. */
+  amountMinor: number;
+  feeMinor: number;
+  levyMinor: number;
+  balanceMinor: number | null;
+  status: 'unmatched' | 'matched' | 'charge';
+  matchedBatchId: string | null;
+  note: string;
+};
+
+export type StatementImportRecord = {
+  id: string;
+  entityId: string;
+  bankAccountId: string;
+  bankAccountName: string;
+  mappingName: string;
+  fileName: string;
+  fromDate: string | null;
+  toDate: string | null;
+  lineCount: number;
+  feeMinor: number;
+  createdAt: string;
+  createdByName: string;
+  lines: StatementLineRecord[];
+};
+
 export type InitialData = {
   currentUser: CurrentUser;
   /** Only the entities the signed-in user may see. */
@@ -527,6 +657,11 @@ export type InitialData = {
   contractsByEntity: Record<string, SalesContractRecord[]>;
   seedFundsByEntity: Record<string, SeedFundRecord[]>;
   openingByEntity: Record<string, OpeningStatusRecord>;
+  farmersByEntity: Record<string, FarmerRecord[]>;
+  farmerAdvancesByEntity: Record<string, FarmerAdvanceRecord[]>;
+  paymentBatchesByEntity: Record<string, PaymentBatchRecord[]>;
+  statementMappingsByEntity: Record<string, StatementMappingRecord[]>;
+  statementImportsByEntity: Record<string, StatementImportRecord[]>;
 };
 
 export type AuditEventRecord = {
