@@ -124,11 +124,16 @@ function decimalOf(rate: string): Prisma.Decimal {
 }
 
 /** The stored shape of a converted journal line: both currencies, the rate, the direction. */
-function lineData(entityId: string, line: FxJournalLine, accountId: string, contactId: string | null) {
+function lineData(entityId: string, line: FxJournalLine, accountId: string, contactId: string | null, fundOfGrant?: Map<string, string | null>) {
   return {
     entityId,
     accountId,
     contactId,
+    grantId: line.grantId ?? null,
+    budgetLineId: line.budgetLineId ?? null,
+    // A grant names a fund, so coding to the grant codes to its fund as well:
+    // the grant layer sits on top of the fund tracking rather than beside it.
+    fundId: line.grantId ? (fundOfGrant?.get(line.grantId) ?? null) : null,
     txnCurrency: line.currency,
     txnAmountMinor: fromMinor(line.txnAmount),
     rate: decimalOf(line.rate),
@@ -274,6 +279,25 @@ async function saveDraft(entityId: string, input: unknown, principal: Principal)
     if (line.itemId || line.landedCostKind) return fail('A selling cost line cannot also receive stock or be a landed cost.');
   }
 
+  // Expenditure charged to a grant: both the grant and its budget line, the
+  // line belonging to that grant, and the document dated inside the grant —
+  // a donor will not accept a cost from outside the period they funded.
+  const grantIds = [...new Set(form.lines.flatMap((line) => (line.grantId ? [line.grantId] : [])))];
+  const grants = grantIds.length ? await prisma.grant.findMany({ where: { id: { in: grantIds }, entityId }, include: { budgetLines: { select: { id: true } } } }) : [];
+  const grantById = new Map(grants.map((grant) => [grant.id, grant]));
+  for (const line of form.lines) {
+    if (!line.grantId && !line.budgetLineId) continue;
+    if (!line.grantId) return fail('A line names a budget line without its grant.');
+    const grant = grantById.get(line.grantId);
+    if (!grant) return fail('A line names a grant that does not belong to this entity.');
+    if (grant.status === 'CLOSED') return fail(`Grant ${grant.code} is closed.`);
+    if (!line.budgetLineId) return fail(`Say which budget line of ${grant.code} this comes out of.`);
+    if (!grant.budgetLines.some((budgetLine) => budgetLine.id === line.budgetLineId)) return fail(`That budget line does not belong to ${grant.code}.`);
+    const start = grant.startDate.toISOString().slice(0, 10);
+    const end = grant.endDate.toISOString().slice(0, 10);
+    if (form.date < start || form.date > end) return fail(`${grant.code} runs from ${start} to ${end}; this document is dated ${form.date}.`);
+  }
+
   const linesData = form.lines.map((line, position) => ({
     entityId,
     position,
@@ -292,6 +316,8 @@ async function saveDraft(entityId: string, input: unknown, principal: Principal)
     landedCostLots: line.landedCostKind ? { create: line.landedCostLotIds.map((lotId) => ({ entityId, lotId })) } : undefined,
     contractId: line.contractId,
     sellingCostKind: line.sellingCostKind ? sellingToPrisma[line.sellingCostKind] : null,
+    grantId: line.grantId,
+    budgetLineId: line.budgetLineId,
   }));
 
   // The id must belong to *this* entity. One that does not — whether it is
@@ -426,6 +452,11 @@ async function post(entityId: string, documentId: string, principal: Principal):
   if (!rateInfo) {
     return fail(`No ${form.currency}→${entity.functionalCurrency} exchange rate is on file on or before ${form.date}. Enter one under Settings, or type a rate on the document.`);
   }
+  const postedGrantIds = [...new Set(txnLines.flatMap((line) => (line.grantId ? [line.grantId] : [])))];
+  const fundOfGrant = new Map(
+    (postedGrantIds.length ? await prisma.grant.findMany({ where: { id: { in: postedGrantIds }, entityId }, select: { id: true, fundId: true } }) : []).map((grant) => [grant.id, grant.fundId]),
+  );
+
   const lines = convertJournal(txnLines, form.currency, entity.functionalCurrency, rateInfo.rate, isPurchase ? controlAccounts.payables : controlAccounts.receivables);
   if (!journalEntriesBalance([{ entityId, lines: lines.map((line) => ({ ...line, amount: line.functionalAmount })) }])) {
     throw new Error('Converted journal does not balance; refusing to post');
@@ -466,7 +497,7 @@ async function post(entityId: string, documentId: string, principal: Principal):
           postedAt: document.date,
           postedById: principal.userId,
           lines: {
-            create: lines.map((line) => lineData(entityId, line, accountIdOf.get(line.accountCode) as string, document.contactId)),
+            create: lines.map((line) => lineData(entityId, line, accountIdOf.get(line.accountCode) as string, document.contactId, fundOfGrant)),
           },
         },
         select: { id: true },
@@ -662,6 +693,8 @@ function documentRecordToForm(record: DocumentRecord): DocumentFormState {
       quality: line.quality,
       contractId: line.contractId,
       sellingCostKind: line.sellingCostKind,
+      grantId: line.grantId,
+      budgetLineId: line.budgetLineId,
     })),
     evatClearanceNumber: record.evatClearanceNumber,
     evatQrCode: record.evatQrCode,
@@ -914,6 +947,8 @@ async function voidPosted(entityId: string, documentId: string, principal: Princ
             fundId: line.fundId,
             projectId: line.projectId,
             contactId: line.contactId,
+            grantId: line.grantId,
+            budgetLineId: line.budgetLineId,
             txnCurrency: line.txnCurrency,
             txnAmountMinor: line.txnAmountMinor,
             rate: line.rate, // the original rate: a reversal undoes history at history's rate

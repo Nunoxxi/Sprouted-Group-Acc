@@ -53,6 +53,17 @@ export const contractAccounts: AccountTemplate[] = [
 // was booked at and what the bank actually gave on settlement. Unrealised:
 // period-end revaluation of open foreign monetary balances at the closing
 // rate. Both are expense-type accounts where a credit balance is a net gain.
+/**
+ * Grant management, on the programme chart only: deferred grant income for
+ * the policy that holds money until it is earned, and the two sides of a
+ * donated good or service, grossed up. See src/lib/grants.ts.
+ */
+export const grantManagementAccounts: AccountTemplate[] = [
+  { code: '2070', name: 'Deferred Grant Income', type: 'LIABILITY', parentCode: '2000', category: 'grant' },
+  { code: '4035', name: 'Donated Goods & Services (in kind)', type: 'INCOME', parentCode: '4000', category: 'in-kind' },
+  { code: '6055', name: 'In-kind Goods & Services Used', type: 'EXPENSE', parentCode: '6000', category: 'in-kind' },
+];
+
 /** Opening balances: the trial balance's control accounts land here until the detail imports clear it. Every chart. */
 export const openingAccounts: AccountTemplate[] = [
   { code: '3090', name: 'Opening Balance Suspense', type: 'EQUITY', parentCode: '3000', category: 'opening' },
@@ -171,6 +182,7 @@ export const ngoAccounts: AccountTemplate[] = [
   ...sharedTaxAccounts,
   ...sharedInventoryAccounts,
   ...mobileMoneyAccounts,
+  ...grantManagementAccounts,
   ...openingAccounts,
   ...sharedFxAccounts,
 ];

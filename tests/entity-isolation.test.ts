@@ -113,6 +113,7 @@ import * as tradingActions from '@/app/actions/trading';
 import * as contractActions from '@/app/actions/contracts';
 import * as openingActions from '@/app/actions/opening';
 import * as momoActions from '@/app/actions/momo';
+import * as grantActions from '@/app/actions/grants';
 import * as userActions from '@/app/actions/users';
 import * as auditRoute from '@/app/api/audit/route';
 import * as backupsRoute from '@/app/api/backups/route';
@@ -242,6 +243,38 @@ const momoCalls: Record<keyof typeof momoActions, Call> = {
 /** The one farmer read a Viewer may make on their own entity. */
 const momoReads = new Set(['farmerHistoryReport']);
 
+/** Every grant Server Function. */
+const grantCalls: Record<keyof typeof grantActions, Call> = {
+  saveGrant: () =>
+    grantActions.saveGrant(FORBIDDEN_ENTITY, {
+      code: 'GRT-1',
+      name: 'Livelihoods',
+      donorContactId: 'donor',
+      currency: 'USD',
+      amountMinor: 100_000,
+      rate: '15.0',
+      startDate: '2026-01-01',
+      endDate: '2026-12-31',
+      restricted: true,
+      incomePolicy: 'deferred',
+      reportingFrequency: 'quarterly',
+    }),
+  setGrantStatus: () => grantActions.setGrantStatus(FORBIDDEN_ENTITY, 'grant', 'active'),
+  saveBudgetLine: () => grantActions.saveBudgetLine(FORBIDDEN_ENTITY, { grantId: 'grant', code: 'B1', name: 'Training', accountCode: '6001', budgetMinor: 1000 }),
+  removeBudgetLine: () => grantActions.removeBudgetLine(FORBIDDEN_ENTITY, 'budget-line'),
+  saveCondition: () => grantActions.saveCondition(FORBIDDEN_ENTITY, { grantId: 'grant', description: 'Baseline survey' }),
+  setConditionMet: () => grantActions.setConditionMet(FORBIDDEN_ENTITY, 'condition', true),
+  recordGrantReceipt: () => grantActions.recordGrantReceipt(FORBIDDEN_ENTITY, { grantId: 'grant', date: '2026-02-01', txnAmountMinor: 1000, bankAccountId: 'bank' }),
+  releaseGrantIncome: () => grantActions.releaseGrantIncome(FORBIDDEN_ENTITY, { grantId: 'grant', date: '2026-02-01', basis: 'spending' }),
+  recordInKind: () => grantActions.recordInKind(FORBIDDEN_ENTITY, { grantId: 'grant', date: '2026-02-01', description: 'Seedlings', kind: 'goods', valueMinor: 1000 }),
+  recordStaffTime: () =>
+    grantActions.recordStaffTime(FORBIDDEN_ENTITY, { grantId: 'grant', personName: 'Ama', periodStart: '2026-02-01', periodEnd: '2026-02-28', hours: 10, rateMinorPerHour: 250, accountCode: '6020' }),
+  donorReport: () => grantActions.donorReport(FORBIDDEN_ENTITY, 'grant'),
+  donorReportWorkbook: () => grantActions.donorReportWorkbook(FORBIDDEN_ENTITY, 'grant'),
+};
+/** The two grant reads a Viewer may make on their own entity. */
+const grantReads = new Set(['donorReport', 'donorReportWorkbook']);
+
 /** Every user-management Server Function. Owner-only, so any other role is refused. */
 const userCalls: Record<keyof typeof userActions, Call> = {
   listUsers: () => userActions.listUsers(),
@@ -310,6 +343,8 @@ describe('coverage', () => {
     expect(exportedOpening.sort()).toEqual(Object.keys(openingCalls).sort());
     const exportedMomo = Object.keys(momoActions).filter((k) => typeof (momoActions as Record<string, unknown>)[k] === 'function');
     expect(exportedMomo.sort()).toEqual(Object.keys(momoCalls).sort());
+    const exportedGrants = Object.keys(grantActions).filter((k) => typeof (grantActions as Record<string, unknown>)[k] === 'function');
+    expect(exportedGrants.sort()).toEqual(Object.keys(grantCalls).sort());
   });
 
   it('every Route Handler method has a case', () => {
@@ -321,7 +356,7 @@ describe('coverage', () => {
 // --- signed out --------------------------------------------------------------------
 
 describe('signed out', () => {
-  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...userCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...userCalls })) {
     if (!call) continue;
     it(`${name} is refused without touching the database`, async () => {
       expect(isRefusal(await call())).toBe(true);
@@ -341,7 +376,7 @@ describe('signed out', () => {
 describe('an Accountant on Sprouted Roots asking for Oikazi', () => {
   beforeEach(() => signIn({ role: 'accountant' }, [GRANTED_ENTITY]));
 
-  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls })) {
     if (!call) continue;
     it(`${name} is refused and reads nothing`, async () => {
       const result = await call();
@@ -397,8 +432,8 @@ describe('a Viewer with access to Oikazi', () => {
   }
 
   it('cannot touch rates, banks, the functional currency, revaluation or VAT registration, even on their own entity', async () => {
-    for (const [name, call] of Object.entries({ ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls })) {
-      if (name === 'listExchangeRates' || openingReads.has(name) || momoReads.has(name)) continue; // reads are reports:view
+    for (const [name, call] of Object.entries({ ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls })) {
+      if (name === 'listExchangeRates' || openingReads.has(name) || momoReads.has(name) || grantReads.has(name)) continue; // reads are reports:view
       dbCalls.length = 0;
       const result = await call();
       expect(isRefusal(result), name).toBe(true);

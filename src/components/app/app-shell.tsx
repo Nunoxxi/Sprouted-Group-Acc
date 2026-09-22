@@ -39,8 +39,10 @@ import { formatKg, inventoryAccountCategory, unitLabels } from '@/lib/inventory'
 import { BuyingPanel } from '@/components/app/buying-panel';
 import { ContractsPanel } from '@/components/app/contracts-panel';
 import { OpeningPanel } from '@/components/app/opening-panel';
+import { GrantsPanel } from '@/components/app/grants-panel';
 import { PaymentsPanel } from '@/components/app/payments-panel';
 import { sellingCostKinds, sellingCostLabels, type SellingCostKind } from '@/lib/contracts';
+import { runsGrants } from '@/lib/grants';
 import { agentFloatSummaries, floatPosition, holdsStock, landedCostKinds, landedCostLabels, qualityFieldsFor, type LandedCostKind } from '@/lib/trading';
 import { CurrencyProvider, ReportMoney, TranslationProvider } from '@/components/ui/money';
 import type { Permission } from '@/lib/authz';
@@ -76,6 +78,7 @@ const navigationItems = [
   'Purchases',
   'Bank',
   'Payments',
+  'Grants',
   'Intercompany',
   'Tax',
   'Inventory',
@@ -403,6 +406,8 @@ function formFrom(record: DocumentRecord): DocumentFormState {
       quality: line.quality,
       contractId: line.contractId,
       sellingCostKind: line.sellingCostKind,
+      grantId: line.grantId,
+      budgetLineId: line.budgetLineId,
     })),
     evatClearanceNumber: record.evatClearanceNumber,
     evatQrCode: record.evatQrCode,
@@ -658,6 +663,12 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
   const entityCommodities = initialData.commoditiesByEntity[selectedEntity.id] ?? [];
   const entityLots = initialData.lotsByEntity[selectedEntity.id] ?? [];
   const entityHoldsStock = holdsStock(selectedEntity.type);
+  // Bills can be charged to a grant that is open and running. A closed grant,
+  // or one not yet active, is not offered.
+  const entityGrants = useMemo(
+    () => (initialData.grantsByEntity[selectedEntity.id] ?? []).filter((grant) => grant.status === 'active'),
+    [initialData, selectedEntity.id],
+  );
   // Outstanding float per agent, for the dashboard: red when older than the entity's limit.
   const floatSummaries = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
@@ -685,7 +696,12 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
   // unregistered entity while on it lands on the dashboard (see the entity
   // menu); switching registration off happens from Settings, so the Tax
   // branch below only ever renders for a registered entity.
-  const visibleNavigation = navigationItems.filter((item) => (item !== 'Tax' || selectedEntity.vatRegistered) && ((item !== 'Inventory' && item !== 'Buying' && item !== 'Contracts') || holdsStock(selectedEntity.type)));
+  const visibleNavigation = navigationItems.filter(
+    (item) =>
+      (item !== 'Tax' || selectedEntity.vatRegistered) &&
+      ((item !== 'Inventory' && item !== 'Buying' && item !== 'Contracts') || holdsStock(selectedEntity.type)) &&
+      (item !== 'Grants' || runsGrants(selectedEntity.type)),
+  );
   // The table's default for this document's currency and date; the document may override it.
   const documentRateQuote = selectRate(entityRates, activeDocument.currency, functionalCurrency, activeDocument.date);
   const documentRate: string | null = activeDocument.currency === functionalCurrency ? '1.0' : (activeDocument.rate ?? documentRateQuote?.rate ?? null);
@@ -2382,7 +2398,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                     type="button"
                     onClick={() => {
                       setSelectedEntityId(entity.id);
-                      if ((activeNav === 'Tax' && !entity.vatRegistered) || ((activeNav === 'Inventory' || activeNav === 'Buying' || activeNav === 'Contracts') && !holdsStock(entity.type))) {
+                      if ((activeNav === 'Tax' && !entity.vatRegistered) || ((activeNav === 'Inventory' || activeNav === 'Buying' || activeNav === 'Contracts') && !holdsStock(entity.type)) || (activeNav === 'Grants' && !runsGrants(entity.type))) {
                         setActiveNav('Dashboard');
                       }
                       setEntityMenuOpen(false);
@@ -4529,6 +4545,20 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
               items={entityItems}
               allowed={allowed}
             />
+          ) : activeNav === 'Grants' ? (
+            <GrantsPanel
+              key={selectedEntity.id}
+              entity={selectedEntity}
+              grants={initialData.grantsByEntity[selectedEntity.id] ?? []}
+              actuals={initialData.grantActualsByEntity[selectedEntity.id] ?? []}
+              inKind={initialData.inKindByEntity[selectedEntity.id] ?? []}
+              staffTime={initialData.staffTimeByEntity[selectedEntity.id] ?? []}
+              contacts={contacts}
+              accounts={entityAccounts}
+              funds={initialData.fundsByEntity[selectedEntity.id] ?? []}
+              bankAccounts={entityBankAccounts}
+              allowed={allowed}
+            />
           ) : activeNav === 'Go-live' ? (
             <OpeningPanel key={selectedEntity.id} entity={selectedEntity} opening={initialData.openingByEntity[selectedEntity.id]} allowed={allowed} />
           ) : (
@@ -4897,6 +4927,45 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                                   : ''}
                           </p>
                         </div>
+                        {entityGrants.length > 0 ? (
+                          <div className="grid gap-3 md:grid-cols-[2fr_2fr_3fr]">
+                            <div>
+                              <label className="mb-1 block text-xs font-medium text-slate-600">Grant</label>
+                              <select
+                                value={line.grantId ?? ''}
+                                disabled={documentReadOnly}
+                                onChange={(event) => updateLine(line.id, { grantId: event.target.value || null, budgetLineId: null })}
+                                className="min-h-[40px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50"
+                              >
+                                <option value="">Not a grant cost</option>
+                                {entityGrants.map((grant) => <option key={grant.id} value={grant.id}>{grant.code} · {grant.name}</option>)}
+                              </select>
+                            </div>
+                            {line.grantId ? (
+                              <div>
+                                <label className="mb-1 block text-xs font-medium text-slate-600">Budget line</label>
+                                <select
+                                  value={line.budgetLineId ?? ''}
+                                  disabled={documentReadOnly}
+                                  onChange={(event) => updateLine(line.id, { budgetLineId: event.target.value || null })}
+                                  className="min-h-[40px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50"
+                                >
+                                  <option value="">Choose…</option>
+                                  {(entityGrants.find((grant) => grant.id === line.grantId)?.budgetLines ?? []).map((budgetLine) => (
+                                    <option key={budgetLine.id} value={budgetLine.id}>{budgetLine.code} · {budgetLine.name}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            ) : <div />}
+                            <p className="self-end pb-2 text-xs text-slate-500">
+                              {line.grantId
+                                ? line.budgetLineId
+                                  ? 'Counts against this budget line in the donor report, and against the grant\u2019s fund.'
+                                  : 'Money charged to a grant always comes out of a budget line. Choose one, or the bill will not post.'
+                                : ''}
+                            </p>
+                          </div>
+                        ) : null}
                         {line.itemId ? (
                           <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_2fr]">
                             <div><label className="mb-1 block text-xs font-medium text-slate-600">Lot ref (optional)</label><Input className="min-h-[40px]" value={line.lotRef} disabled={documentReadOnly} placeholder="auto if blank" onChange={(event) => updateLine(line.id, { lotRef: event.target.value })} /></div>

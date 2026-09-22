@@ -11,6 +11,7 @@ import type { CommodityKind, LandedCostKind, Quality } from '../trading';
 import type { PriceUnit, SellingCostKind } from '../contracts';
 import type { ControlReconciliation, OpeningSection } from '../opening';
 import type { BankAccountKind } from '../momo';
+import type { GrantActual, InKindKind, IncomePolicy, ReportingFrequency } from '../grants';
 import type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus } from './enums';
 
 export type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus };
@@ -126,6 +127,9 @@ export type DocumentLineRecord = {
   /** Bills: a selling cost attributed to a sales contract. */
   contractId: string | null;
   sellingCostKind: SellingCostKind | null;
+  /** Bills: expenditure charged to a grant, always with the budget line it comes out of. */
+  grantId: string | null;
+  budgetLineId: string | null;
 };
 
 export type PostedJournalLine = {
@@ -629,6 +633,127 @@ export type StatementImportRecord = {
   lines: StatementLineRecord[];
 };
 
+export type GrantBudgetLineRecord = {
+  id: string;
+  grantId: string;
+  code: string;
+  name: string;
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  /** In the donor's currency. */
+  budgetMinor: number;
+  note: string;
+};
+
+export type GrantConditionRecord = {
+  id: string;
+  grantId: string;
+  description: string;
+  dueDate: string | null;
+  metAt: string | null;
+  metByName: string;
+  note: string;
+  /** Deferred income released because this condition was met. */
+  releasedMinor: number;
+};
+
+export type GrantReceiptRecord = {
+  id: string;
+  grantId: string;
+  date: string;
+  txnCurrency: Currency;
+  txnAmountMinor: number;
+  rate: string;
+  /** In our functional currency: what actually reached the books. */
+  amountMinor: number;
+  bankAccountId: string;
+  bankAccountName: string;
+  reference: string;
+  journal: PostedJournal | null;
+};
+
+export type GrantReleaseRecord = {
+  id: string;
+  grantId: string;
+  date: string;
+  amountMinor: number;
+  basis: 'spending' | 'condition';
+  conditionId: string | null;
+  note: string;
+  journal: PostedJournal | null;
+};
+
+export type GrantRecord = {
+  id: string;
+  entityId: string;
+  code: string;
+  name: string;
+  donorContactId: string;
+  donorName: string;
+  fundId: string | null;
+  fundName: string;
+  projectId: string | null;
+  /** The donor's currency: the award and every budget line are in it. */
+  currency: Currency;
+  amountMinor: number;
+  /** Functional units per one unit of the donor's currency, fixed at award. */
+  rate: string;
+  startDate: string;
+  endDate: string;
+  restricted: boolean;
+  incomePolicy: IncomePolicy;
+  reportingFrequency: ReportingFrequency;
+  reportingStartDate: string | null;
+  reportingDueDays: number;
+  underspendThresholdPct: number;
+  status: 'draft' | 'active' | 'closed';
+  note: string;
+  budgetLines: GrantBudgetLineRecord[];
+  conditions: GrantConditionRecord[];
+  receipts: GrantReceiptRecord[];
+  releases: GrantReleaseRecord[];
+  /** Totals read from the ledger and the detail, in functional currency. */
+  receivedMinor: number;
+  releasedMinor: number;
+  spentMinor: number;
+  inKindMinor: number;
+  staffTimeMinor: number;
+  createdByName: string;
+};
+
+export type InKindRecord = {
+  id: string;
+  entityId: string;
+  grantId: string | null;
+  budgetLineId: string | null;
+  date: string;
+  description: string;
+  kind: InKindKind;
+  valueMinor: number;
+  basis: string;
+  donorContactId: string | null;
+  donorName: string;
+  journal: PostedJournal | null;
+};
+
+export type StaffTimeRecord = {
+  id: string;
+  entityId: string;
+  grantId: string;
+  budgetLineId: string | null;
+  personName: string;
+  role: string;
+  periodStart: string;
+  periodEnd: string;
+  hours: number;
+  rateMinorPerHour: number;
+  valueMinor: number;
+  accountCode: string;
+  note: string;
+  posted: boolean;
+};
+
 export type InitialData = {
   currentUser: CurrentUser;
   /** Only the entities the signed-in user may see. */
@@ -662,6 +787,11 @@ export type InitialData = {
   paymentBatchesByEntity: Record<string, PaymentBatchRecord[]>;
   statementMappingsByEntity: Record<string, StatementMappingRecord[]>;
   statementImportsByEntity: Record<string, StatementImportRecord[]>;
+  grantsByEntity: Record<string, GrantRecord[]>;
+  /** Every posting attributed to a grant, for budget against actual. */
+  grantActualsByEntity: Record<string, (GrantActual & { grantId: string })[]>;
+  inKindByEntity: Record<string, InKindRecord[]>;
+  staffTimeByEntity: Record<string, StaffTimeRecord[]>;
 };
 
 export type AuditEventRecord = {

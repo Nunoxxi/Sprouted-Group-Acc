@@ -103,6 +103,13 @@ model Entity {
   statementLines    StatementLine[]
   paymentBatches    FarmerPaymentBatch[]
   farmerPayments    FarmerPayment[]
+  grants            Grant[]
+  grantBudgetLines  GrantBudgetLine[]
+  grantConditions   GrantCondition[]
+  grantReceipts     GrantReceipt[]
+  grantReleases     GrantRelease[]
+  inKind            InKindContribution[]
+  staffTime         StaffTimeAllocation[]
 }
 
 // Append-only. Events form a hash chain per entity ordered by `sequence`, which
@@ -194,9 +201,11 @@ model Contact {
   createdAt            DateTime             @default(now())
   updatedAt            DateTime             @updatedAt
 
-  balances     ContactEntityBalance[]
-  documents    Document[]
-  journalLines JournalLine[]
+  balances            ContactEntityBalance[]
+  documents           Document[]
+  journalLines        JournalLine[]
+  grants              Grant[]
+  inKindContributions InKindContribution[]
 }
 
 model ContactEntityBalance {
@@ -242,41 +251,47 @@ model User {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
-  invitedBy            User?                @relation("Invitations", fields: [invitedById], references: [id])
-  invitees             User[]               @relation("Invitations")
+  invitedBy            User?                 @relation("Invitations", fields: [invitedById], references: [id])
+  invitees             User[]                @relation("Invitations")
   sessions             AuthSession[]
   authAccounts         AuthAccount[]
   twoFactors           TwoFactor[]
   entityAccess         UserEntityAccess[]
-  grantedAccess        UserEntityAccess[]   @relation("AccessGrantedBy")
+  grantedAccess        UserEntityAccess[]    @relation("AccessGrantedBy")
   auditEvents          AuditEvent[]
   postedEntries        JournalEntry[]
-  createdDocs          Document[]           @relation("DocumentCreatedBy")
-  editedDocs           Document[]           @relation("DocumentEditedBy")
+  createdDocs          Document[]            @relation("DocumentCreatedBy")
+  editedDocs           Document[]            @relation("DocumentEditedBy")
   filings              TaxPeriodFiling[]
   exchangeRates        ExchangeRate[]
   payments             Payment[]
-  revaluations         Revaluation[]        @relation("RevaluationRunBy")
-  reversedRevaluations Revaluation[]        @relation("RevaluationReversedBy")
+  revaluations         Revaluation[]         @relation("RevaluationRunBy")
+  reversedRevaluations Revaluation[]         @relation("RevaluationReversedBy")
   stockMovements       StockMovement[]
-  stockCounts          StockCount[]         @relation("StockCountCreatedBy")
-  postedStockCounts    StockCount[]         @relation("StockCountPostedBy")
+  stockCounts          StockCount[]          @relation("StockCountCreatedBy")
+  postedStockCounts    StockCount[]          @relation("StockCountPostedBy")
   nrvPrices            NrvPrice[]
   lots                 Lot[]
-  floatAdvances        FloatAdvance[]       @relation("FloatCreatedBy")
-  reconciledFloats     FloatAdvance[]       @relation("FloatReconciledBy")
+  floatAdvances        FloatAdvance[]        @relation("FloatCreatedBy")
+  reconciledFloats     FloatAdvance[]        @relation("FloatReconciledBy")
   floatReturns         FloatReturn[]
-  agentPurchases       AgentPurchase[]      @relation("PurchaseCreatedBy")
-  postedPurchases      AgentPurchase[]      @relation("PurchasePostedBy")
+  agentPurchases       AgentPurchase[]       @relation("PurchaseCreatedBy")
+  postedPurchases      AgentPurchase[]       @relation("PurchasePostedBy")
   salesContracts       SalesContract[]
-  deliveries           ContractDelivery[]   @relation("DeliveryCreatedBy")
-  acceptedDeliveries   ContractDelivery[]   @relation("DeliveryAcceptedBy")
+  deliveries           ContractDelivery[]    @relation("DeliveryCreatedBy")
+  acceptedDeliveries   ContractDelivery[]    @relation("DeliveryAcceptedBy")
   seedFunds            SeedFundMovement[]
   openingBatches       OpeningBatch[]
   farmerAdvances       FarmerAdvance[]
   statementImports     StatementImport[]
-  paymentBatches       FarmerPaymentBatch[] @relation("BatchCreatedBy")
-  paidBatches          FarmerPaymentBatch[] @relation("BatchPaidBy")
+  paymentBatches       FarmerPaymentBatch[]  @relation("BatchCreatedBy")
+  paidBatches          FarmerPaymentBatch[]  @relation("BatchPaidBy")
+  grants               Grant[]
+  grantConditions      GrantCondition[]
+  grantReceipts        GrantReceipt[]
+  grantReleases        GrantRelease[]
+  inKindContributions  InKindContribution[]
+  staffTimeAllocations StaffTimeAllocation[]
 
   @@index([deactivatedAt])
 }
@@ -387,14 +402,16 @@ model Account {
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 
-  entity         Entity          @relation(fields: [entityId], references: [id])
-  parent         Account?        @relation("AccountParent", fields: [parentId], references: [id])
-  children       Account[]       @relation("AccountParent")
-  journalLines   JournalLine[]
-  documentLines  DocumentLine[]
-  bankAccount    BankAccount?
-  items          Item[]
-  stockLocations StockLocation[]
+  entity               Entity                @relation(fields: [entityId], references: [id])
+  parent               Account?              @relation("AccountParent", fields: [parentId], references: [id])
+  children             Account[]             @relation("AccountParent")
+  journalLines         JournalLine[]
+  documentLines        DocumentLine[]
+  bankAccount          BankAccount?
+  items                Item[]
+  stockLocations       StockLocation[]
+  grantBudgetLines     GrantBudgetLine[]
+  staffTimeAllocations StaffTimeAllocation[]
 
   @@unique([entityId, code])
   @@index([entityId, parentId])
@@ -427,29 +444,33 @@ model JournalEntry {
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
-  entity              Entity              @relation(fields: [entityId], references: [id])
-  postedBy            User?               @relation(fields: [postedById], references: [id])
+  entity              Entity               @relation(fields: [entityId], references: [id])
+  postedBy            User?                @relation(fields: [postedById], references: [id])
   lines               JournalLine[]
-  reversalOf          JournalEntry?       @relation("Reversal", fields: [reversalOfId], references: [id])
-  reversedBy          JournalEntry?       @relation("Reversal")
-  postedDocument      Document?           @relation("DocumentPosting")
-  voidedDocument      Document?           @relation("DocumentVoid")
+  reversalOf          JournalEntry?        @relation("Reversal", fields: [reversalOfId], references: [id])
+  reversedBy          JournalEntry?        @relation("Reversal")
+  postedDocument      Document?            @relation("DocumentPosting")
+  voidedDocument      Document?            @relation("DocumentVoid")
   payment             Payment?
-  revaluation         Revaluation?        @relation("RevaluationEntry")
-  revaluationReversal Revaluation?        @relation("RevaluationReversal")
+  revaluation         Revaluation?         @relation("RevaluationEntry")
+  revaluationReversal Revaluation?         @relation("RevaluationReversal")
   stockMovements      StockMovement[]
   stockCount          StockCount?
   floatAdvance        FloatAdvance?
   floatReturn         FloatReturn?
   agentPurchase       AgentPurchase?
-  delivery            ContractDelivery?   @relation("DeliveryJournal")
-  acceptance          ContractDelivery?   @relation("AcceptanceJournal")
+  delivery            ContractDelivery?    @relation("DeliveryJournal")
+  acceptance          ContractDelivery?    @relation("AcceptanceJournal")
   seedFund            SeedFundMovement?
   openingBatch        OpeningBatch?
   farmerAdvance       FarmerAdvance?
-  paymentBatch        FarmerPaymentBatch? @relation("BatchJournal")
-  batchSettlement     FarmerPaymentBatch? @relation("BatchSettlementJournal")
+  paymentBatch        FarmerPaymentBatch?  @relation("BatchJournal")
+  batchSettlement     FarmerPaymentBatch?  @relation("BatchSettlementJournal")
   statementLines      StatementLine[]
+  grantReceipt        GrantReceipt?
+  grantRelease        GrantRelease?
+  inKindContribution  InKindContribution?
+  staffTimeAllocation StaffTimeAllocation?
 
   @@index([entityId, postedAt])
   @@index([entityId, kind])
@@ -463,6 +484,10 @@ model JournalLine {
   fundId         String?
   projectId      String?
   contactId      String?
+  /// Grant analysis. Expenditure charged to a grant always names a budget
+  /// line too, so budget-against-actual reads straight off the ledger.
+  grantId        String?
+  budgetLineId   String?
   /// Transaction currency and amount, the rate applied, and — in amountMinor —
   /// the functional amount that resulted. amountMinor is fixed at posting and
   /// never recomputed from the rate: a historic rate is history.
@@ -473,12 +498,15 @@ model JournalLine {
   direction      JournalDirection
   createdAt      DateTime         @default(now())
 
-  journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id])
-  account      Account      @relation(fields: [accountId], references: [id])
-  fund         Fund?        @relation(fields: [fundId], references: [id])
-  project      Project?     @relation(fields: [projectId], references: [id])
-  contact      Contact?     @relation(fields: [contactId], references: [id])
+  journalEntry JournalEntry     @relation(fields: [journalEntryId], references: [id])
+  account      Account          @relation(fields: [accountId], references: [id])
+  fund         Fund?            @relation(fields: [fundId], references: [id])
+  project      Project?         @relation(fields: [projectId], references: [id])
+  contact      Contact?         @relation(fields: [contactId], references: [id])
+  grant        Grant?           @relation(fields: [grantId], references: [id])
+  budgetLine   GrantBudgetLine? @relation(fields: [budgetLineId], references: [id])
 
+  @@index([entityId, grantId])
   @@index([entityId, journalEntryId])
   @@index([entityId, accountId])
   @@index([entityId, fundId])
@@ -506,6 +534,7 @@ model Fund {
   journalLines  JournalLine[]
   projects      Project[]
   documentLines DocumentLine[]
+  grants        Grant[]
 
   @@unique([entityId, code])
   @@index([entityId, classification])
@@ -527,6 +556,7 @@ model Project {
   fund          Fund?          @relation(fields: [fundId], references: [id])
   journalLines  JournalLine[]
   documentLines DocumentLine[]
+  grants        Grant[]
 
   @@unique([entityId, code])
   @@index([entityId, fundId])
@@ -649,6 +679,10 @@ model DocumentLine {
   /// attributed to the contract for its margin.
   contractId      String?
   sellingCostKind SellingCostKind?
+  /// Expenditure charged to a grant. Both or neither: a grant always names
+  /// the budget line the money comes out of.
+  grantId         String?
+  budgetLineId    String?
 
   document       Document               @relation(fields: [documentId], references: [id])
   entity         Entity                 @relation(fields: [entityId], references: [id])
@@ -662,6 +696,8 @@ model DocumentLine {
   landedCostLots LandedCostAllocation[]
   contract       SalesContract?         @relation(fields: [contractId], references: [id])
   sellingCost    ContractSellingCost?
+  grant          Grant?                 @relation(fields: [grantId], references: [id])
+  budgetLine     GrantBudgetLine?       @relation(fields: [budgetLineId], references: [id])
 
   @@index([documentId, position])
   @@index([entityId, accountId])
@@ -747,6 +783,7 @@ model BankAccount {
   statementImports StatementImport[]
   statementLines   StatementLine[]
   paymentBatches   FarmerPaymentBatch[]
+  grantReceipts    GrantReceipt[]
 
   @@index([entityId])
 }
@@ -1759,4 +1796,244 @@ model StatementLine {
 
   @@index([entityId, status])
   @@index([importId])
+}
+
+// --- grants -------------------------------------------------------------------
+//
+// A grant sits on top of the existing fund tracking: it names the restricted
+// fund its money belongs to, so everything coded to the grant is coded to
+// that fund as well. Amounts are in the donor currency; `rate` is what the
+// award was made at and what the budget comparison converts by.
+
+enum GrantStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+}
+
+/// Chosen per grant by a person, never inferred: income the day it arrives,
+/// or held as a liability and released as it is earned.
+enum GrantIncomePolicy {
+  ON_RECEIPT
+  DEFERRED
+}
+
+enum GrantReportingFrequency {
+  MONTHLY
+  QUARTERLY
+  HALF_YEARLY
+  ANNUAL
+  FINAL_ONLY
+}
+
+/// What earned a release of deferred income.
+enum GrantReleaseBasis {
+  SPENDING
+  CONDITION
+}
+
+enum InKindKind {
+  GOODS
+  SERVICES
+  FACILITIES
+}
+
+model Grant {
+  id                     String                  @id @default(cuid())
+  entityId               String
+  code                   String
+  name                   String
+  donorContactId         String
+  /// The restricted (or unrestricted) fund this money belongs to.
+  fundId                 String?
+  projectId              String?
+  /// The donor currency. The award and every budget line are in it.
+  currency               Currency
+  amountMinor            BigInt
+  /// Functional units per one unit of the donor currency, fixed at award.
+  rate                   Decimal                 @default(1) @db.Decimal(20, 10)
+  startDate              DateTime                @db.Date
+  endDate                DateTime                @db.Date
+  restricted             Boolean                 @default(true)
+  incomePolicy           GrantIncomePolicy       @default(ON_RECEIPT)
+  reportingFrequency     GrantReportingFrequency @default(QUARTERLY)
+  /// The donor own anchor: their periods run from here, not our year end.
+  reportingStartDate     DateTime?               @db.Date
+  reportingDueDays       Int                     @default(30)
+  /// A budget line below this share of its time-prorated budget is flagged.
+  underspendThresholdPct Int                     @default(75)
+  status                 GrantStatus             @default(DRAFT)
+  note                   String?
+  createdById            String?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+
+  entity        Entity                @relation(fields: [entityId], references: [id])
+  donor         Contact               @relation(fields: [donorContactId], references: [id])
+  fund          Fund?                 @relation(fields: [fundId], references: [id])
+  project       Project?              @relation(fields: [projectId], references: [id])
+  createdBy     User?                 @relation(fields: [createdById], references: [id])
+  budgetLines   GrantBudgetLine[]
+  conditions    GrantCondition[]
+  receipts      GrantReceipt[]
+  releases      GrantRelease[]
+  inKind        InKindContribution[]
+  staffTime     StaffTimeAllocation[]
+  journalLines  JournalLine[]
+  documentLines DocumentLine[]
+
+  @@unique([entityId, code])
+  @@index([entityId, status])
+}
+
+/// What the donor agreed the money would be spent on, in their currency.
+model GrantBudgetLine {
+  id          String   @id @default(cuid())
+  entityId    String
+  grantId     String
+  code        String
+  name        String
+  accountId   String
+  budgetMinor BigInt   @default(0)
+  note        String?
+  createdAt   DateTime @default(now())
+
+  entity        Entity                @relation(fields: [entityId], references: [id])
+  grant         Grant                 @relation(fields: [grantId], references: [id])
+  account       Account               @relation(fields: [accountId], references: [id])
+  journalLines  JournalLine[]
+  documentLines DocumentLine[]
+  inKind        InKindContribution[]
+  staffTime     StaffTimeAllocation[]
+
+  @@unique([grantId, code])
+  @@index([entityId, grantId])
+}
+
+/// Something the donor requires. Under the deferred policy, meeting one can
+/// release a stated amount of income.
+model GrantCondition {
+  id          String    @id @default(cuid())
+  entityId    String
+  grantId     String
+  description String
+  dueDate     DateTime? @db.Date
+  metAt       DateTime?
+  metById     String?
+  note        String?
+  createdAt   DateTime  @default(now())
+
+  entity   Entity         @relation(fields: [entityId], references: [id])
+  grant    Grant          @relation(fields: [grantId], references: [id])
+  metBy    User?          @relation(fields: [metById], references: [id])
+  releases GrantRelease[]
+
+  @@index([entityId, grantId])
+}
+
+/// Money in from the donor, in their currency and ours.
+model GrantReceipt {
+  id             String   @id @default(cuid())
+  entityId       String
+  grantId        String
+  date           DateTime @db.Date
+  txnCurrency    Currency
+  txnAmountMinor BigInt
+  rate           Decimal  @default(1) @db.Decimal(20, 10)
+  amountMinor    BigInt
+  bankAccountId  String
+  reference      String?
+  journalEntryId String?  @unique
+  createdById    String?
+  createdAt      DateTime @default(now())
+
+  entity       Entity        @relation(fields: [entityId], references: [id])
+  grant        Grant         @relation(fields: [grantId], references: [id])
+  bankAccount  BankAccount   @relation(fields: [bankAccountId], references: [id])
+  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id])
+  createdBy    User?         @relation(fields: [createdById], references: [id])
+
+  @@index([entityId, grantId])
+}
+
+/// Deferred income earned and moved into income. Only the deferred policy
+/// produces these.
+model GrantRelease {
+  id             String            @id @default(cuid())
+  entityId       String
+  grantId        String
+  date           DateTime          @db.Date
+  amountMinor    BigInt
+  basis          GrantReleaseBasis
+  conditionId    String?
+  note           String?
+  journalEntryId String?           @unique
+  createdById    String?
+  createdAt      DateTime          @default(now())
+
+  entity       Entity          @relation(fields: [entityId], references: [id])
+  grant        Grant           @relation(fields: [grantId], references: [id])
+  condition    GrantCondition? @relation(fields: [conditionId], references: [id])
+  journalEntry JournalEntry?   @relation(fields: [journalEntryId], references: [id])
+  createdBy    User?           @relation(fields: [createdById], references: [id])
+
+  @@index([entityId, grantId])
+}
+
+/// Donated goods, services or facilities, grossed up so the donor can see
+/// what they gave without the surplus moving.
+model InKindContribution {
+  id             String     @id @default(cuid())
+  entityId       String
+  grantId        String?
+  budgetLineId   String?
+  date           DateTime   @db.Date
+  description    String
+  kind           InKindKind @default(GOODS)
+  valueMinor     BigInt
+  /// How the value was arrived at: donors ask.
+  basis          String?
+  donorContactId String?
+  journalEntryId String?    @unique
+  createdById    String?
+  createdAt      DateTime   @default(now())
+
+  entity       Entity           @relation(fields: [entityId], references: [id])
+  grant        Grant?           @relation(fields: [grantId], references: [id])
+  budgetLine   GrantBudgetLine? @relation(fields: [budgetLineId], references: [id])
+  donor        Contact?         @relation(fields: [donorContactId], references: [id])
+  journalEntry JournalEntry?    @relation(fields: [journalEntryId], references: [id])
+  createdBy    User?            @relation(fields: [createdById], references: [id])
+
+  @@index([entityId, grantId])
+}
+
+/// Staff time charged to a grant. Posting it debits and credits the same
+/// salary account, so the total cost is unchanged and only the analysis moves.
+model StaffTimeAllocation {
+  id               String   @id @default(cuid())
+  entityId         String
+  grantId          String
+  budgetLineId     String?
+  personName       String
+  role             String?
+  periodStart      DateTime @db.Date
+  periodEnd        DateTime @db.Date
+  hours            Decimal  @db.Decimal(10, 2)
+  rateMinorPerHour BigInt
+  valueMinor       BigInt
+  accountId        String
+  note             String?
+  journalEntryId   String?  @unique
+  createdById      String?
+  createdAt        DateTime @default(now())
+
+  entity       Entity           @relation(fields: [entityId], references: [id])
+  grant        Grant            @relation(fields: [grantId], references: [id])
+  budgetLine   GrantBudgetLine? @relation(fields: [budgetLineId], references: [id])
+  account      Account          @relation(fields: [accountId], references: [id])
+  journalEntry JournalEntry?    @relation(fields: [journalEntryId], references: [id])
+  createdBy    User?            @relation(fields: [createdById], references: [id])
+
+  @@index([entityId, grantId])
 }

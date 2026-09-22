@@ -60,6 +60,13 @@ export type DocumentLine = {
   /** Bills: a selling cost attributed to a sales contract. */
   contractId: string | null;
   sellingCostKind: SellingCostKind | null;
+  /**
+   * Bills: expenditure charged to a grant. Both or neither — a grant always
+   * names the budget line the money comes out of, which is what makes
+   * budget-against-actual possible.
+   */
+  grantId: string | null;
+  budgetLineId: string | null;
 };
 
 export type DocumentFormState = {
@@ -96,6 +103,13 @@ export type JournalLineDraft = {
   accountName: string;
   amount: number;
   type: 'debit' | 'credit';
+  /**
+   * Analysis carried from the document line to the ledger. Expenditure on the
+   * same account for two different grants makes two journal lines, so a
+   * grant's actuals can be read straight off the journal.
+   */
+  grantId?: string | null;
+  budgetLineId?: string | null;
 };
 
 // Control accounts the posting rules rely on. They exist in every chart
@@ -135,6 +149,8 @@ export function makeLine(kind: DocumentKind = 'invoice'): DocumentLine {
     quality: {},
     contractId: null,
     sellingCostKind: null,
+    grantId: null,
+    budgetLineId: null,
   };
 }
 
@@ -196,6 +212,8 @@ export function normalizeLine(value: unknown, kind: DocumentKind): DocumentLine 
     quality: normalizeQuality(line.quality),
     contractId: kind === 'bill' && typeof line.contractId === 'string' && line.contractId ? line.contractId : null,
     sellingCostKind: kind === 'bill' && sellingCostKinds.includes(line.sellingCostKind as SellingCostKind) ? (line.sellingCostKind as SellingCostKind) : null,
+    grantId: kind === 'bill' && typeof line.grantId === 'string' && line.grantId ? line.grantId : null,
+    budgetLineId: kind === 'bill' && typeof line.budgetLineId === 'string' && line.budgetLineId ? line.budgetLineId : null,
   };
 }
 
@@ -361,20 +379,28 @@ export function buildJournalEntries(
     return entries;
   }
 
+  // Lines are gathered by account and by the grant coding on them: the same
+  // account charged to two grants is two journal lines, not one.
+  const codingKey = (line: Pick<DocumentLine, 'accountCode' | 'grantId' | 'budgetLineId'>) => `${line.accountCode}|${line.grantId ?? ''}|${line.budgetLineId ?? ''}`;
+  const codingOf = new Map<string, { accountCode: string; grantId: string | null; budgetLineId: string | null }>();
   const baseByAccount = documentState.lines.reduce(
     (accumulator, line) => {
       const summary = lineTaxBreakdown(line, effectiveTreatment(line, documentState, tax));
-      accumulator[line.accountCode] = (accumulator[line.accountCode] ?? 0) + summary.base;
+      const key = codingKey(line);
+      codingOf.set(key, { accountCode: line.accountCode, grantId: line.grantId, budgetLineId: line.budgetLineId });
+      accumulator[key] = (accumulator[key] ?? 0) + summary.base;
       return accumulator;
     },
     {} as Record<string, number>,
   );
+  const coded = (key: string) => codingOf.get(key) ?? { accountCode: key, grantId: null, budgetLineId: null };
 
   if (!isPurchase) {
     entries.push({ accountCode: controlAccounts.receivables, accountName: nameOf(controlAccounts.receivables, 'Trade Receivables'), amount: totals.total, type: 'debit' });
 
-    for (const [accountCode, amount] of Object.entries(baseByAccount)) {
-      entries.push({ accountCode, accountName: nameOf(accountCode, 'Revenue'), amount, type: 'credit' });
+    for (const [key, amount] of Object.entries(baseByAccount)) {
+      const { accountCode, grantId, budgetLineId } = coded(key);
+      entries.push({ accountCode, accountName: nameOf(accountCode, 'Revenue'), amount, type: 'credit', grantId, budgetLineId });
     }
 
     if (tax.vatApplies) {
@@ -384,8 +410,9 @@ export function buildJournalEntries(
     }
   } else {
     if (tax.vatApplies) {
-      for (const [accountCode, amount] of Object.entries(baseByAccount)) {
-        entries.push({ accountCode, accountName: nameOf(accountCode, 'Expense'), amount, type: 'debit' });
+      for (const [key, amount] of Object.entries(baseByAccount)) {
+        const { accountCode, grantId, budgetLineId } = coded(key);
+        entries.push({ accountCode, accountName: nameOf(accountCode, 'Expense'), amount, type: 'debit', grantId, budgetLineId });
       }
 
       // Registered: the levies on the purchase and any import VAT paid at the
@@ -408,8 +435,9 @@ export function buildJournalEntries(
       // dated on or after the registration date, `tax.vatApplies` is true
       // and the branch above posts the levies to input tax instead.
       const importVatByAccount = allocateProRata(totals.importVat, baseByAccount);
-      for (const [accountCode, amount] of Object.entries(baseByAccount)) {
-        entries.push({ accountCode, accountName: nameOf(accountCode, 'Expense'), amount: amount + (importVatByAccount[accountCode] ?? 0), type: 'debit' });
+      for (const [key, amount] of Object.entries(baseByAccount)) {
+        const { accountCode, grantId, budgetLineId } = coded(key);
+        entries.push({ accountCode, accountName: nameOf(accountCode, 'Expense'), amount: amount + (importVatByAccount[key] ?? 0), type: 'debit', grantId, budgetLineId });
       }
     }
 
