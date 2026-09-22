@@ -39,10 +39,12 @@ import { formatKg, inventoryAccountCategory, unitLabels } from '@/lib/inventory'
 import { BuyingPanel } from '@/components/app/buying-panel';
 import { ContractsPanel } from '@/components/app/contracts-panel';
 import { OpeningPanel } from '@/components/app/opening-panel';
+import { AssetsPanel } from '@/components/app/assets-panel';
 import { CashflowPanel } from '@/components/app/cashflow-panel';
 import { GrantsPanel } from '@/components/app/grants-panel';
 import { PaymentsPanel } from '@/components/app/payments-panel';
 import { sellingCostKinds, sellingCostLabels, type SellingCostKind } from '@/lib/contracts';
+import { instalments, isTaxed, monthOf, provisionalPosition } from '@/lib/assets';
 import { runsGrants } from '@/lib/grants';
 import { agentFloatSummaries, floatPosition, holdsStock, landedCostKinds, landedCostLabels, qualityFieldsFor, type LandedCostKind } from '@/lib/trading';
 import { CurrencyProvider, ReportMoney, TranslationProvider } from '@/components/ui/money';
@@ -80,6 +82,7 @@ const navigationItems = [
   'Bank',
   'Payments',
   'Cash flow',
+  'Assets',
   'Grants',
   'Intercompany',
   'Tax',
@@ -671,6 +674,25 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
     () => (initialData.grantsByEntity[selectedEntity.id] ?? []).filter((grant) => grant.status === 'active'),
     [initialData, selectedEntity.id],
   );
+  /**
+   * Where the entity stands on its provisional tax, for the dashboard. The
+   * year we are in is the one today falls inside; an exempt entity has none.
+   */
+  const provisionalTax = useMemo(() => {
+    if (!isTaxed(selectedEntity.taxStatus)) return null;
+    const today = new Date().toISOString().slice(0, 10);
+    const years = initialData.taxYearsByEntity[selectedEntity.id] ?? [];
+    const year = years.find((row) => today >= row.startDate && today <= row.endDate) ?? years[0];
+    if (!year || year.estimatedLiabilityMinor <= 0) return null;
+    const rows = instalments(
+      monthOf(year.startDate),
+      year.estimatedLiabilityMinor,
+      year.provisional.map((payment) => ({ quarter: payment.quarter, paidMinor: payment.amountMinor, paidDate: payment.date })),
+      today,
+    );
+    return { year, position: provisionalPosition(rows, today) };
+  }, [initialData, selectedEntity.id, selectedEntity.taxStatus]);
+
   // Outstanding float per agent, for the dashboard: red when older than the entity's limit.
   const floatSummaries = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
@@ -2516,6 +2538,48 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                   </Card>
                 ))}
               </div>
+
+              {provisionalTax ? (
+                <Card className={['rounded-2xl border', provisionalTax.position.overdueMinor > 0 ? 'border-red-300 bg-red-50' : 'border-slate-200'].join(' ')}>
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Provisional tax · {provisionalTax.year.label}</p>
+                      <p className="mt-2 text-sm text-slate-700">
+                        {provisionalTax.position.overdueMinor > 0 ? (
+                          <>
+                            <span className="font-semibold text-red-800">
+                              <Money value={provisionalTax.position.overdueMinor} /> is past due.
+                            </span>{' '}
+                          </>
+                        ) : null}
+                        {provisionalTax.position.next ? (
+                          <>
+                            Quarter {provisionalTax.position.next.quarter} of <Money value={provisionalTax.position.next.outstandingMinor} /> falls due on{' '}
+                            <span className="font-semibold">{provisionalTax.position.next.dueDate}</span>.
+                          </>
+                        ) : provisionalTax.position.outstandingMinor === 0 ? (
+                          'All four instalments are settled.'
+                        ) : (
+                          'Every remaining instalment is past its date.'
+                        )}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      {provisionalTax.position.instalments.map((row) => (
+                        <span
+                          key={row.quarter}
+                          className={[
+                            'rounded-lg border px-2.5 py-1.5',
+                            row.outstandingMinor === 0 ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : row.overdue ? 'border-red-300 bg-red-100 text-red-900' : 'border-slate-200 bg-white text-slate-600',
+                          ].join(' ')}
+                        >
+                          Q{row.quarter} · {row.dueDate}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </Card>
+              ) : null}
 
               <Card
                 className={[
@@ -4557,6 +4621,18 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
               seasons={initialData.seasonsByEntity[selectedEntity.id] ?? []}
               recurring={initialData.recurringByEntity[selectedEntity.id] ?? []}
               commodities={entityCommodities}
+              allowed={allowed}
+            />
+          ) : activeNav === 'Assets' ? (
+            <AssetsPanel
+              key={selectedEntity.id}
+              entity={selectedEntity}
+              assets={initialData.assetsByEntity[selectedEntity.id] ?? []}
+              runs={initialData.depreciationRunsByEntity[selectedEntity.id] ?? []}
+              classes={initialData.allowanceClassesByEntity[selectedEntity.id] ?? []}
+              taxYears={initialData.taxYearsByEntity[selectedEntity.id] ?? []}
+              contacts={contacts}
+              bankAccounts={entityBankAccounts}
               allowed={allowed}
             />
           ) : activeNav === 'Grants' ? (

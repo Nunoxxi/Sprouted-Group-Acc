@@ -80,6 +80,20 @@ export const farmerAdvanceAccounts: AccountTemplate[] = [
  * levies go here rather than being left as unmatched differences on the
  * statement. Every chart — all three entities hold wallets.
  */
+/**
+ * Fixed assets and company tax. Every chart: all three entities own things
+ * that wear out, and an exempt entity still depreciates them — it simply has
+ * no computation. The depreciation *expense* is found by category, because
+ * the two charts number it differently.
+ */
+export const fixedAssetAccounts: AccountTemplate[] = [
+  { code: '1200', name: 'Fixed Assets at Cost', type: 'ASSET', parentCode: '1000', category: 'fixed-asset' },
+  { code: '1205', name: 'Accumulated Depreciation', type: 'ASSET', parentCode: '1200', category: 'accumulated-depreciation' },
+  { code: '7030', name: 'Gain or Loss on Asset Disposal', type: 'EXPENSE', category: 'asset-disposal' },
+  { code: '2055', name: 'Corporate Income Tax Payable', type: 'LIABILITY', parentCode: '2000', category: 'income-tax' },
+  { code: '7040', name: 'Corporate Income Tax', type: 'EXPENSE', category: 'income-tax' },
+];
+
 export const mobileMoneyAccounts: AccountTemplate[] = [
   { code: '6050', name: 'Mobile Money Charges & Levies', type: 'EXPENSE', parentCode: '6000', category: 'momo-charges' },
 ];
@@ -128,13 +142,14 @@ export const manufacturingAccounts: AccountTemplate[] = [
   { code: '6025', name: 'Freight & Clearing', type: 'EXPENSE', parentCode: '6000' },
   { code: '6030', name: 'Administration', type: 'EXPENSE', parentCode: '6000' },
   { code: '6035', name: 'Bank Charges', type: 'EXPENSE', parentCode: '6000' },
-  { code: '6040', name: 'Depreciation', type: 'EXPENSE', parentCode: '6000' },
+  { code: '6040', name: 'Depreciation', type: 'EXPENSE', parentCode: '6000', category: 'depreciation' },
   ...sharedTaxAccounts,
   ...sharedInventoryAccounts,
   ...agentFloatAccounts,
   ...farmerAdvanceAccounts,
   ...contractAccounts,
   ...mobileMoneyAccounts,
+  ...fixedAssetAccounts,
   ...openingAccounts,
   ...sharedFxAccounts,
 ];
@@ -179,9 +194,11 @@ export const ngoAccounts: AccountTemplate[] = [
   { code: '6030', name: 'Office & Administration', type: 'EXPENSE', parentCode: '6000' },
   { code: '6035', name: 'Audit & Compliance', type: 'EXPENSE', parentCode: '6000' },
   { code: '6040', name: 'Volunteer & Community Support', type: 'EXPENSE', parentCode: '6000' },
+  { code: '6060', name: 'Depreciation', type: 'EXPENSE', parentCode: '6000', category: 'depreciation' },
   ...sharedTaxAccounts,
   ...sharedInventoryAccounts,
   ...mobileMoneyAccounts,
+  ...fixedAssetAccounts,
   ...grantManagementAccounts,
   ...openingAccounts,
   ...sharedFxAccounts,

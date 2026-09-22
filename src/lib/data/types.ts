@@ -13,6 +13,7 @@ import type { ControlReconciliation, OpeningSection } from '../opening';
 import type { BankAccountKind } from '../momo';
 import type { GrantActual, InKindKind, IncomePolicy, ReportingFrequency } from '../grants';
 import type { Flow, RecurringFrequency } from '../cashflow';
+import type { AdjustmentKind, AllowanceMethod, DepreciationMethod, TaxStatus } from '../assets';
 import type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus } from './enums';
 
 export type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus };
@@ -36,6 +37,8 @@ export type EntityRecord = {
   functionalCurrency: Currency;
   /** An agent's open float older than this many days is flagged. */
   floatAgeLimitDays: number;
+  /** Whether this entity has a tax computation at all, and at whose rate. */
+  taxStatus: TaxStatus;
   /** COCOBOD Licensed Buying Company mode and its settings. */
   lbcMode: boolean;
   revenuePresentation: 'gross' | 'net';
@@ -832,6 +835,85 @@ export type CashSourceRecord = {
   contracts: { id: string; contractNo: string; buyerName: string; currency: Currency; undeliveredMinor: number; deliveryDate: string; paymentTermsDays: number }[];
 };
 
+export type FixedAssetRecord = {
+  id: string;
+  entityId: string;
+  code: string;
+  description: string;
+  category: string;
+  purchaseDate: string;
+  inServiceDate: string;
+  costMinor: number;
+  residualMinor: number;
+  usefulLifeMonths: number;
+  method: DepreciationMethod;
+  supplierContactId: string | null;
+  supplierName: string;
+  location: string;
+  custodian: string;
+  serialNumber: string;
+  allowanceClassId: string | null;
+  allowanceClassName: string;
+  note: string;
+  status: 'in-use' | 'disposed';
+  /** Opening plus everything posted since. */
+  accumulatedMinor: number;
+  bookValueMinor: number;
+  /** Set once the asset has gone. */
+  disposal: { date: string; proceedsMinor: number; bookValueMinor: number; gainLossMinor: number; note: string } | null;
+};
+
+export type DepreciationRunRecord = {
+  id: string;
+  entityId: string;
+  period: string;
+  totalMinor: number;
+  postedAt: string;
+  postedByName: string;
+  journal: PostedJournal | null;
+  lines: { assetId: string; assetCode: string; description: string; amountMinor: number }[];
+};
+
+export type AllowanceClassRecord = {
+  id: string;
+  entityId: string;
+  code: string;
+  name: string;
+  ratePct: string;
+  method: AllowanceMethod;
+  note: string;
+  isActive: boolean;
+};
+
+export type TaxAdjustmentRecord = { id: string; kind: AdjustmentKind; description: string; amountMinor: number; note: string };
+
+export type ProvisionalPaymentRecord = { id: string; quarter: number; date: string; amountMinor: number; bankAccountId: string; bankAccountName: string; reference: string; journal: PostedJournal | null };
+
+export type TaxYearRecord = {
+  id: string;
+  entityId: string;
+  label: string;
+  startDate: string;
+  endDate: string;
+  ratePct: string;
+  lossBroughtForwardMinor: number;
+  estimatedLiabilityMinor: number;
+  taxChargeMinor: number | null;
+  postedAt: string | null;
+  note: string;
+  adjustments: TaxAdjustmentRecord[];
+  /** Written-down value brought into the year, per class. */
+  pools: { classId: string; openingMinor: number }[];
+  provisional: ProvisionalPaymentRecord[];
+  /** Read from the ledger for the year: the surplus, and the depreciation in it. */
+  accountingProfitMinor: number;
+  depreciationMinor: number;
+  /** Read from the register for the year. */
+  additionsByClass: Record<string, number>;
+  disposalProceedsByClass: Record<string, number>;
+  straightLineCostByClass: Record<string, number>;
+};
+
 export type InitialData = {
   currentUser: CurrentUser;
   /** Only the entities the signed-in user may see. */
@@ -874,6 +956,10 @@ export type InitialData = {
   recurringByEntity: Record<string, RecurringCostRecord[]>;
   scenariosByEntity: Record<string, CashScenarioRecord[]>;
   cashSourcesByEntity: Record<string, CashSourceRecord>;
+  assetsByEntity: Record<string, FixedAssetRecord[]>;
+  depreciationRunsByEntity: Record<string, DepreciationRunRecord[]>;
+  allowanceClassesByEntity: Record<string, AllowanceClassRecord[]>;
+  taxYearsByEntity: Record<string, TaxYearRecord[]>;
 };
 
 export type AuditEventRecord = {

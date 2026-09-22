@@ -38,6 +38,7 @@ import type { Quality } from '../trading';
 import { loadInventoryData } from './inventory';
 import { landedCostKindOf, loadTradingData } from './trading';
 import { loadContractData, sellingCostKindOf } from './contracts';
+import { loadAssetData } from './assets';
 import { loadCashflowData } from './cashflow';
 import { loadGrantData } from './grants';
 import { bankAccountKindOf, loadMomoData } from './momo';
@@ -300,5 +301,6 @@ export async function loadInitialData(principal: Principal): Promise<InitialData
     ...(await loadMomoData(entityScope, entityIds)),
     ...(await loadGrantData(entityScope, entityIds)),
     ...(await loadCashflowData(entityScope, entityIds, entities)),
+    ...(await loadAssetData(entityScope, entityIds)),
   };
 }

@@ -53,6 +53,7 @@ export function entityRecord(row: Entity): EntityRecord {
     accent: row.accent ?? '',
     functionalCurrency: row.functionalCurrency,
     floatAgeLimitDays: row.floatAgeLimitDays,
+    taxStatus: row.taxStatus === 'EXEMPT' ? 'exempt' : row.taxStatus === 'SPECIAL_RATE' ? 'special-rate' : 'taxable',
     lbcMode: row.lbcMode,
     revenuePresentation: row.revenuePresentation === 'NET' ? 'net' : 'gross',
     producerPriceMinorPerKg: row.producerPriceMinorPerKg === null ? null : toMinor(row.producerPriceMinorPerKg),

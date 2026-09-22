@@ -55,6 +55,9 @@ model Entity {
   producerPriceMinorPerKg BigInt?
   buyerMarginMinorPerKg   BigInt?
   haulageMinorPerKg       BigInt?
+  /// Whether this entity pays company tax at all, and if so at whose rate.
+  /// Sprouted Roots may be exempt; the computation is hidden when it is.
+  taxStatus               EntityTaxStatus     @default(TAXABLE)
   /// Opening balances are dated here; imports are allowed until liveAt is set.
   cutOverDate             DateTime?           @db.Date
   liveAt                  DateTime?
@@ -115,6 +118,13 @@ model Entity {
   cashScenarios     CashScenario[]
   cashScenarioRates CashScenarioRate[]
   cashScenarioLines CashScenarioLine[]
+  fixedAssets       FixedAsset[]
+  depreciationRuns  DepreciationRun[]
+  assetDisposals    AssetDisposal[]
+  allowanceClasses  CapitalAllowanceClass[]
+  taxYears          TaxYear[]
+  taxAdjustments    TaxAdjustment[]
+  provisionalTax    ProvisionalTaxPayment[]
 }
 
 // Append-only. Events form a hash chain per entity ordered by `sequence`, which
@@ -211,6 +221,7 @@ model Contact {
   journalLines        JournalLine[]
   grants              Grant[]
   inKindContributions InKindContribution[]
+  fixedAssets         FixedAsset[]
 }
 
 model ContactEntityBalance {
@@ -256,51 +267,56 @@ model User {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
-  invitedBy            User?                 @relation("Invitations", fields: [invitedById], references: [id])
-  invitees             User[]                @relation("Invitations")
-  sessions             AuthSession[]
-  authAccounts         AuthAccount[]
-  twoFactors           TwoFactor[]
-  entityAccess         UserEntityAccess[]
-  grantedAccess        UserEntityAccess[]    @relation("AccessGrantedBy")
-  auditEvents          AuditEvent[]
-  postedEntries        JournalEntry[]
-  createdDocs          Document[]            @relation("DocumentCreatedBy")
-  editedDocs           Document[]            @relation("DocumentEditedBy")
-  filings              TaxPeriodFiling[]
-  exchangeRates        ExchangeRate[]
-  payments             Payment[]
-  revaluations         Revaluation[]         @relation("RevaluationRunBy")
-  reversedRevaluations Revaluation[]         @relation("RevaluationReversedBy")
-  stockMovements       StockMovement[]
-  stockCounts          StockCount[]          @relation("StockCountCreatedBy")
-  postedStockCounts    StockCount[]          @relation("StockCountPostedBy")
-  nrvPrices            NrvPrice[]
-  lots                 Lot[]
-  floatAdvances        FloatAdvance[]        @relation("FloatCreatedBy")
-  reconciledFloats     FloatAdvance[]        @relation("FloatReconciledBy")
-  floatReturns         FloatReturn[]
-  agentPurchases       AgentPurchase[]       @relation("PurchaseCreatedBy")
-  postedPurchases      AgentPurchase[]       @relation("PurchasePostedBy")
-  salesContracts       SalesContract[]
-  deliveries           ContractDelivery[]    @relation("DeliveryCreatedBy")
-  acceptedDeliveries   ContractDelivery[]    @relation("DeliveryAcceptedBy")
-  seedFunds            SeedFundMovement[]
-  openingBatches       OpeningBatch[]
-  farmerAdvances       FarmerAdvance[]
-  statementImports     StatementImport[]
-  paymentBatches       FarmerPaymentBatch[]  @relation("BatchCreatedBy")
-  paidBatches          FarmerPaymentBatch[]  @relation("BatchPaidBy")
-  grants               Grant[]
-  grantConditions      GrantCondition[]
-  grantReceipts        GrantReceipt[]
-  grantReleases        GrantRelease[]
-  inKindContributions  InKindContribution[]
-  staffTimeAllocations StaffTimeAllocation[]
-  buyingSeasons        BuyingSeason[]
-  recurringCosts       RecurringCost[]
-  cashScenarios        CashScenario[]
-  cashScenarioLines    CashScenarioLine[]
+  invitedBy              User?                   @relation("Invitations", fields: [invitedById], references: [id])
+  invitees               User[]                  @relation("Invitations")
+  sessions               AuthSession[]
+  authAccounts           AuthAccount[]
+  twoFactors             TwoFactor[]
+  entityAccess           UserEntityAccess[]
+  grantedAccess          UserEntityAccess[]      @relation("AccessGrantedBy")
+  auditEvents            AuditEvent[]
+  postedEntries          JournalEntry[]
+  createdDocs            Document[]              @relation("DocumentCreatedBy")
+  editedDocs             Document[]              @relation("DocumentEditedBy")
+  filings                TaxPeriodFiling[]
+  exchangeRates          ExchangeRate[]
+  payments               Payment[]
+  revaluations           Revaluation[]           @relation("RevaluationRunBy")
+  reversedRevaluations   Revaluation[]           @relation("RevaluationReversedBy")
+  stockMovements         StockMovement[]
+  stockCounts            StockCount[]            @relation("StockCountCreatedBy")
+  postedStockCounts      StockCount[]            @relation("StockCountPostedBy")
+  nrvPrices              NrvPrice[]
+  lots                   Lot[]
+  floatAdvances          FloatAdvance[]          @relation("FloatCreatedBy")
+  reconciledFloats       FloatAdvance[]          @relation("FloatReconciledBy")
+  floatReturns           FloatReturn[]
+  agentPurchases         AgentPurchase[]         @relation("PurchaseCreatedBy")
+  postedPurchases        AgentPurchase[]         @relation("PurchasePostedBy")
+  salesContracts         SalesContract[]
+  deliveries             ContractDelivery[]      @relation("DeliveryCreatedBy")
+  acceptedDeliveries     ContractDelivery[]      @relation("DeliveryAcceptedBy")
+  seedFunds              SeedFundMovement[]
+  openingBatches         OpeningBatch[]
+  farmerAdvances         FarmerAdvance[]
+  statementImports       StatementImport[]
+  paymentBatches         FarmerPaymentBatch[]    @relation("BatchCreatedBy")
+  paidBatches            FarmerPaymentBatch[]    @relation("BatchPaidBy")
+  grants                 Grant[]
+  grantConditions        GrantCondition[]
+  grantReceipts          GrantReceipt[]
+  grantReleases          GrantRelease[]
+  inKindContributions    InKindContribution[]
+  staffTimeAllocations   StaffTimeAllocation[]
+  buyingSeasons          BuyingSeason[]
+  recurringCosts         RecurringCost[]
+  cashScenarios          CashScenario[]
+  cashScenarioLines      CashScenarioLine[]
+  fixedAssets            FixedAsset[]
+  depreciationRuns       DepreciationRun[]
+  assetDisposals         AssetDisposal[]
+  taxYears               TaxYear[]
+  provisionalTaxPayments ProvisionalTaxPayment[]
 
   @@index([deactivatedAt])
 }
@@ -454,33 +470,37 @@ model JournalEntry {
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
-  entity              Entity               @relation(fields: [entityId], references: [id])
-  postedBy            User?                @relation(fields: [postedById], references: [id])
-  lines               JournalLine[]
-  reversalOf          JournalEntry?        @relation("Reversal", fields: [reversalOfId], references: [id])
-  reversedBy          JournalEntry?        @relation("Reversal")
-  postedDocument      Document?            @relation("DocumentPosting")
-  voidedDocument      Document?            @relation("DocumentVoid")
-  payment             Payment?
-  revaluation         Revaluation?         @relation("RevaluationEntry")
-  revaluationReversal Revaluation?         @relation("RevaluationReversal")
-  stockMovements      StockMovement[]
-  stockCount          StockCount?
-  floatAdvance        FloatAdvance?
-  floatReturn         FloatReturn?
-  agentPurchase       AgentPurchase?
-  delivery            ContractDelivery?    @relation("DeliveryJournal")
-  acceptance          ContractDelivery?    @relation("AcceptanceJournal")
-  seedFund            SeedFundMovement?
-  openingBatch        OpeningBatch?
-  farmerAdvance       FarmerAdvance?
-  paymentBatch        FarmerPaymentBatch?  @relation("BatchJournal")
-  batchSettlement     FarmerPaymentBatch?  @relation("BatchSettlementJournal")
-  statementLines      StatementLine[]
-  grantReceipt        GrantReceipt?
-  grantRelease        GrantRelease?
-  inKindContribution  InKindContribution?
-  staffTimeAllocation StaffTimeAllocation?
+  entity                Entity                 @relation(fields: [entityId], references: [id])
+  postedBy              User?                  @relation(fields: [postedById], references: [id])
+  lines                 JournalLine[]
+  reversalOf            JournalEntry?          @relation("Reversal", fields: [reversalOfId], references: [id])
+  reversedBy            JournalEntry?          @relation("Reversal")
+  postedDocument        Document?              @relation("DocumentPosting")
+  voidedDocument        Document?              @relation("DocumentVoid")
+  payment               Payment?
+  revaluation           Revaluation?           @relation("RevaluationEntry")
+  revaluationReversal   Revaluation?           @relation("RevaluationReversal")
+  stockMovements        StockMovement[]
+  stockCount            StockCount?
+  floatAdvance          FloatAdvance?
+  floatReturn           FloatReturn?
+  agentPurchase         AgentPurchase?
+  delivery              ContractDelivery?      @relation("DeliveryJournal")
+  acceptance            ContractDelivery?      @relation("AcceptanceJournal")
+  seedFund              SeedFundMovement?
+  openingBatch          OpeningBatch?
+  farmerAdvance         FarmerAdvance?
+  paymentBatch          FarmerPaymentBatch?    @relation("BatchJournal")
+  batchSettlement       FarmerPaymentBatch?    @relation("BatchSettlementJournal")
+  statementLines        StatementLine[]
+  grantReceipt          GrantReceipt?
+  grantRelease          GrantRelease?
+  inKindContribution    InKindContribution?
+  staffTimeAllocation   StaffTimeAllocation?
+  depreciationRun       DepreciationRun?
+  assetDisposal         AssetDisposal?
+  taxYear               TaxYear?
+  provisionalTaxPayment ProvisionalTaxPayment?
 
   @@index([entityId, postedAt])
   @@index([entityId, kind])
@@ -787,13 +807,15 @@ model BankAccount {
   isActive  Boolean         @default(true)
   createdAt DateTime        @default(now())
 
-  entity           Entity               @relation(fields: [entityId], references: [id])
-  account          Account              @relation(fields: [accountId], references: [id])
-  payments         Payment[]
-  statementImports StatementImport[]
-  statementLines   StatementLine[]
-  paymentBatches   FarmerPaymentBatch[]
-  grantReceipts    GrantReceipt[]
+  entity                 Entity                  @relation(fields: [entityId], references: [id])
+  account                Account                 @relation(fields: [accountId], references: [id])
+  payments               Payment[]
+  statementImports       StatementImport[]
+  statementLines         StatementLine[]
+  paymentBatches         FarmerPaymentBatch[]
+  grantReceipts          GrantReceipt[]
+  assetDisposals         AssetDisposal[]
+  provisionalTaxPayments ProvisionalTaxPayment[]
 
   @@index([entityId])
 }
@@ -2185,4 +2207,244 @@ model CashScenarioLine {
   createdBy User?        @relation(fields: [createdById], references: [id])
 
   @@index([entityId, scenarioId])
+}
+
+// --- fixed assets and tax ------------------------------------------------------
+//
+// Accounting and tax are kept apart. Depreciation is what the books say an
+// asset lost; capital allowances are what the Revenue allows, on classes and
+// rates that are entered as settings and never written into the code, because
+// they change with the budget.
+
+enum EntityTaxStatus {
+  TAXABLE
+  EXEMPT
+  SPECIAL_RATE
+}
+
+enum DepreciationMethod {
+  STRAIGHT_LINE
+  REDUCING_BALANCE
+}
+
+enum AssetStatus {
+  IN_USE
+  DISPOSED
+}
+
+enum TaxAdjustmentKind {
+  ADD_BACK
+  DEDUCTION
+  INCENTIVE
+}
+
+model FixedAsset {
+  id                 String             @id @default(cuid())
+  entityId           String
+  code               String
+  description        String
+  category           String?
+  purchaseDate       DateTime           @db.Date
+  /// The month depreciation starts; usually the month it was bought.
+  inServiceDate      DateTime           @db.Date
+  costMinor          BigInt
+  residualMinor      BigInt             @default(0)
+  usefulLifeMonths   Int
+  method             DepreciationMethod @default(STRAIGHT_LINE)
+  supplierContactId  String?
+  location           String?
+  custodian          String?
+  serialNumber       String?
+  /// Which capital allowance pool it belongs to, for tax. Nothing to do with
+  /// the depreciation above.
+  allowanceClassId   String?
+  /// Set when the asset came in with the opening balances, so its
+  /// accumulated depreciation starts from a figure rather than from nil.
+  openingAccumulated BigInt             @default(0)
+  status             AssetStatus        @default(IN_USE)
+  note               String?
+  createdById        String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  entity         Entity                 @relation(fields: [entityId], references: [id])
+  supplier       Contact?               @relation(fields: [supplierContactId], references: [id])
+  allowanceClass CapitalAllowanceClass? @relation(fields: [allowanceClassId], references: [id])
+  createdBy      User?                  @relation(fields: [createdById], references: [id])
+  depreciation   DepreciationLine[]
+  disposal       AssetDisposal?
+
+  @@unique([entityId, code])
+  @@index([entityId, status])
+}
+
+/// One month of depreciation across every asset, posted as one journal.
+model DepreciationRun {
+  id             String   @id @default(cuid())
+  entityId       String
+  /// YYYY-MM.
+  period         String
+  totalMinor     BigInt   @default(0)
+  journalEntryId String?  @unique
+  postedById     String?
+  postedAt       DateTime @default(now())
+
+  entity       Entity             @relation(fields: [entityId], references: [id])
+  journalEntry JournalEntry?      @relation(fields: [journalEntryId], references: [id])
+  postedBy     User?              @relation(fields: [postedById], references: [id])
+  lines        DepreciationLine[]
+
+  @@unique([entityId, period])
+}
+
+model DepreciationLine {
+  id          String @id @default(cuid())
+  entityId    String
+  runId       String
+  assetId     String
+  amountMinor BigInt
+
+  run   DepreciationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  asset FixedAsset      @relation(fields: [assetId], references: [id])
+
+  @@unique([runId, assetId])
+  @@index([entityId, assetId])
+}
+
+/// Selling or scrapping an asset. The gain or loss is fixed here and never
+/// recomputed: it is what the books said on the day.
+model AssetDisposal {
+  id             String   @id @default(cuid())
+  entityId       String
+  assetId        String   @unique
+  date           DateTime @db.Date
+  proceedsMinor  BigInt   @default(0)
+  bankAccountId  String?
+  bookValueMinor BigInt
+  gainLossMinor  BigInt
+  note           String?
+  journalEntryId String?  @unique
+  createdById    String?
+  createdAt      DateTime @default(now())
+
+  entity       Entity        @relation(fields: [entityId], references: [id])
+  asset        FixedAsset    @relation(fields: [assetId], references: [id])
+  bankAccount  BankAccount?  @relation(fields: [bankAccountId], references: [id])
+  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id])
+  createdBy    User?         @relation(fields: [createdById], references: [id])
+
+  @@index([entityId, date])
+}
+
+/// A capital allowance class and its rate, as the person enters them. Ghana's
+/// classes and rates change with the budget, so none of this is in the code.
+model CapitalAllowanceClass {
+  id        String             @id @default(cuid())
+  entityId  String
+  code      String
+  name      String
+  /// Percent a year.
+  ratePct   Decimal            @db.Decimal(6, 3)
+  method    DepreciationMethod @default(REDUCING_BALANCE)
+  note      String?
+  isActive  Boolean            @default(true)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  entity Entity        @relation(fields: [entityId], references: [id])
+  assets FixedAsset[]
+  pools  TaxYearPool[]
+
+  @@unique([entityId, code])
+}
+
+/// A year of tax, with the rate and the position brought forward. The rate is
+/// a setting on the year, so a change of rate applies to the years it should.
+model TaxYear {
+  id                      String    @id @default(cuid())
+  entityId                String
+  /// A label the person recognises, e.g. "2026".
+  label                   String
+  startDate               DateTime  @db.Date
+  endDate                 DateTime  @db.Date
+  ratePct                 Decimal   @db.Decimal(6, 3)
+  lossBroughtForwardMinor BigInt    @default(0)
+  /// What provisional instalments are based on. Set by the person; it is an
+  /// estimate made before the year is finished.
+  estimatedLiabilityMinor BigInt    @default(0)
+  /// Fixed when the computation is posted; nil until then.
+  taxChargeMinor          BigInt?
+  chargeJournalEntryId    String?   @unique
+  postedAt                DateTime?
+  note                    String?
+  createdById             String?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  entity        Entity                  @relation(fields: [entityId], references: [id])
+  chargeJournal JournalEntry?           @relation(fields: [chargeJournalEntryId], references: [id])
+  createdBy     User?                   @relation(fields: [createdById], references: [id])
+  adjustments   TaxAdjustment[]
+  pools         TaxYearPool[]
+  provisional   ProvisionalTaxPayment[]
+
+  @@unique([entityId, label])
+  @@index([entityId, startDate])
+}
+
+/// What a class brought forward into a year. Additions and disposals in the
+/// year are read from the register; only the opening figure is entered.
+model TaxYearPool {
+  id           String @id @default(cuid())
+  entityId     String
+  taxYearId    String
+  classId      String
+  openingMinor BigInt @default(0)
+
+  taxYear TaxYear               @relation(fields: [taxYearId], references: [id], onDelete: Cascade)
+  class   CapitalAllowanceClass @relation(fields: [classId], references: [id])
+
+  @@unique([taxYearId, classId])
+  @@index([entityId])
+}
+
+/// An add-back, a deduction or an incentive, entered by the person with the
+/// reason it is there.
+model TaxAdjustment {
+  id          String            @id @default(cuid())
+  entityId    String
+  taxYearId   String
+  kind        TaxAdjustmentKind
+  description String
+  amountMinor BigInt
+  note        String?
+  createdAt   DateTime          @default(now())
+
+  entity  Entity  @relation(fields: [entityId], references: [id])
+  taxYear TaxYear @relation(fields: [taxYearId], references: [id], onDelete: Cascade)
+
+  @@index([entityId, taxYearId])
+}
+
+/// A quarterly instalment paid against the estimate.
+model ProvisionalTaxPayment {
+  id             String   @id @default(cuid())
+  entityId       String
+  taxYearId      String
+  quarter        Int
+  date           DateTime @db.Date
+  amountMinor    BigInt
+  bankAccountId  String
+  reference      String?
+  journalEntryId String?  @unique
+  createdById    String?
+  createdAt      DateTime @default(now())
+
+  entity       Entity        @relation(fields: [entityId], references: [id])
+  taxYear      TaxYear       @relation(fields: [taxYearId], references: [id], onDelete: Cascade)
+  bankAccount  BankAccount   @relation(fields: [bankAccountId], references: [id])
+  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id])
+  createdBy    User?         @relation(fields: [createdById], references: [id])
+
+  @@index([entityId, taxYearId])
 }
