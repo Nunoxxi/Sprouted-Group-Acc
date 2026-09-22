@@ -110,6 +110,11 @@ model Entity {
   grantReleases     GrantRelease[]
   inKind            InKindContribution[]
   staffTime         StaffTimeAllocation[]
+  buyingSeasons     BuyingSeason[]
+  recurringCosts    RecurringCost[]
+  cashScenarios     CashScenario[]
+  cashScenarioRates CashScenarioRate[]
+  cashScenarioLines CashScenarioLine[]
 }
 
 // Append-only. Events form a hash chain per entity ordered by `sequence`, which
@@ -292,6 +297,10 @@ model User {
   grantReleases        GrantRelease[]
   inKindContributions  InKindContribution[]
   staffTimeAllocations StaffTimeAllocation[]
+  buyingSeasons        BuyingSeason[]
+  recurringCosts       RecurringCost[]
+  cashScenarios        CashScenario[]
+  cashScenarioLines    CashScenarioLine[]
 
   @@index([deactivatedAt])
 }
@@ -412,6 +421,7 @@ model Account {
   stockLocations       StockLocation[]
   grantBudgetLines     GrantBudgetLine[]
   staffTimeAllocations StaffTimeAllocation[]
+  recurringCosts       RecurringCost[]
 
   @@unique([entityId, code])
   @@index([entityId, parentId])
@@ -1106,10 +1116,11 @@ model Commodity {
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt
 
-  entity    Entity          @relation(fields: [entityId], references: [id])
-  items     Item[]
-  lots      Lot[]
-  contracts SalesContract[]
+  entity        Entity          @relation(fields: [entityId], references: [id])
+  items         Item[]
+  lots          Lot[]
+  contracts     SalesContract[]
+  buyingSeasons BuyingSeason[]
 
   @@unique([entityId, code])
 }
@@ -2036,4 +2047,142 @@ model StaffTimeAllocation {
   createdBy    User?            @relation(fields: [createdById], references: [id])
 
   @@index([entityId, grantId])
+}
+
+// --- cash flow forecasting -----------------------------------------------------
+//
+// The forecast itself is computed, never stored: it is only as good as the
+// records behind it, and a stored copy would go stale the moment an invoice
+// was paid. What is stored is what a person decides — the buying seasons,
+// the recurring costs, and the scenarios with their assumptions and any
+// lines added by hand.
+
+enum RecurringFrequency {
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+}
+
+/// When a commodity is bought, how heavily, and at what price. The forecast
+/// spreads the volume across the season as a triangle peaking at peakDate,
+/// so the working capital needed before anything is sold is visible.
+model BuyingSeason {
+  id              String   @id @default(cuid())
+  entityId        String
+  commodityId     String
+  name            String
+  startDate       DateTime @db.Date
+  peakDate        DateTime @db.Date
+  endDate         DateTime @db.Date
+  /// What we expect to buy across the whole season.
+  expectedGrams   BigInt   @default(0)
+  /// What we expect to pay, minor units per kilogram.
+  priceMinorPerKg BigInt   @default(0)
+  currency        Currency @default(GHS)
+  note            String?
+  isActive        Boolean  @default(true)
+  createdById     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  entity    Entity    @relation(fields: [entityId], references: [id])
+  commodity Commodity @relation(fields: [commodityId], references: [id])
+  createdBy User?     @relation(fields: [createdById], references: [id])
+
+  @@unique([entityId, name])
+  @@index([entityId, commodityId])
+}
+
+/// Payroll, rent and anything else that goes out on a rhythm.
+model RecurringCost {
+  id          String             @id @default(cuid())
+  entityId    String
+  name        String
+  currency    Currency           @default(GHS)
+  /// What goes out each time, as a positive amount.
+  amountMinor BigInt
+  frequency   RecurringFrequency @default(MONTHLY)
+  startDate   DateTime           @db.Date
+  endDate     DateTime?          @db.Date
+  accountId   String?
+  note        String?
+  isActive    Boolean            @default(true)
+  createdById String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  entity    Entity   @relation(fields: [entityId], references: [id])
+  account   Account? @relation(fields: [accountId], references: [id])
+  createdBy User?    @relation(fields: [createdById], references: [id])
+
+  @@unique([entityId, name])
+  @@index([entityId, isActive])
+}
+
+/// A set of assumptions to forecast under. One per entity is the baseline;
+/// the rest are what-ifs to put beside it.
+model CashScenario {
+  id                  String   @id @default(cuid())
+  entityId            String
+  name                String
+  isBaseline          Boolean  @default(false)
+  /// Days later than due that customers actually pay.
+  collectionDelayDays Int      @default(0)
+  /// Percent of planned commodity price and volume; 100 leaves them alone.
+  pricePct            Int      @default(100)
+  volumePct           Int      @default(100)
+  /// Days before a purchase that the float has to be with the agent.
+  floatLeadDays       Int      @default(7)
+  /// Below this, a week or month is flagged. In the functional currency.
+  minimumCashMinor    BigInt   @default(0)
+  note                String?
+  createdById         String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  entity    Entity             @relation(fields: [entityId], references: [id])
+  createdBy User?              @relation(fields: [createdById], references: [id])
+  rates     CashScenarioRate[]
+  lines     CashScenarioLine[]
+
+  @@unique([entityId, name])
+  @@index([entityId, isBaseline])
+}
+
+/// The rate a scenario converts one currency at for its combined view.
+model CashScenarioRate {
+  id         String   @id @default(cuid())
+  entityId   String
+  scenarioId String
+  currency   Currency
+  /// Functional units per one unit of the currency.
+  rate       Decimal  @db.Decimal(20, 10)
+
+  entity   Entity       @relation(fields: [entityId], references: [id])
+  scenario CashScenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+
+  @@unique([scenarioId, currency])
+  @@index([entityId])
+}
+
+/// Anything the records do not know about: a loan drawdown, a grant we have
+/// been promised but not signed, a one-off repair.
+model CashScenarioLine {
+  id          String   @id @default(cuid())
+  entityId    String
+  scenarioId  String
+  date        DateTime @db.Date
+  currency    Currency @default(GHS)
+  /// Signed: positive is money in, negative is money out.
+  amountMinor BigInt
+  description String
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  entity    Entity       @relation(fields: [entityId], references: [id])
+  scenario  CashScenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  createdBy User?        @relation(fields: [createdById], references: [id])
+
+  @@index([entityId, scenarioId])
 }

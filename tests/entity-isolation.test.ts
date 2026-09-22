@@ -114,6 +114,7 @@ import * as contractActions from '@/app/actions/contracts';
 import * as openingActions from '@/app/actions/opening';
 import * as momoActions from '@/app/actions/momo';
 import * as grantActions from '@/app/actions/grants';
+import * as cashflowActions from '@/app/actions/cashflow';
 import * as userActions from '@/app/actions/users';
 import * as auditRoute from '@/app/api/audit/route';
 import * as backupsRoute from '@/app/api/backups/route';
@@ -275,6 +276,25 @@ const grantCalls: Record<keyof typeof grantActions, Call> = {
 /** The two grant reads a Viewer may make on their own entity. */
 const grantReads = new Set(['donorReport', 'donorReportWorkbook']);
 
+/** Every cash flow Server Function. */
+const cashflowCalls: Record<keyof typeof cashflowActions, Call> = {
+  saveBuyingSeason: () =>
+    cashflowActions.saveBuyingSeason(FORBIDDEN_ENTITY, { commodityId: 'c', name: 'Main crop', startDate: '2027-02-01', peakDate: '2027-03-15', endDate: '2027-04-30', expectedGrams: 1_000_000, priceMinorPerKg: 1200 }),
+  removeBuyingSeason: () => cashflowActions.removeBuyingSeason(FORBIDDEN_ENTITY, 'season'),
+  saveRecurringCost: () => cashflowActions.saveRecurringCost(FORBIDDEN_ENTITY, { name: 'Payroll', amountMinor: 100_000, frequency: 'monthly', startDate: '2026-10-31' }),
+  removeRecurringCost: () => cashflowActions.removeRecurringCost(FORBIDDEN_ENTITY, 'cost'),
+  saveScenario: () => cashflowActions.saveScenario(FORBIDDEN_ENTITY, { name: 'Baseline' }),
+  duplicateScenario: () => cashflowActions.duplicateScenario(FORBIDDEN_ENTITY, 'scenario', 'Poor season'),
+  setBaselineScenario: () => cashflowActions.setBaselineScenario(FORBIDDEN_ENTITY, 'scenario'),
+  removeScenario: () => cashflowActions.removeScenario(FORBIDDEN_ENTITY, 'scenario'),
+  addScenarioLine: () => cashflowActions.addScenarioLine(FORBIDDEN_ENTITY, { scenarioId: 'scenario', date: '2026-10-01', amountMinor: -1000, description: 'Vehicle' }),
+  removeScenarioLine: () => cashflowActions.removeScenarioLine(FORBIDDEN_ENTITY, 'line'),
+  cashForecastSources: () => cashflowActions.cashForecastSources(FORBIDDEN_ENTITY),
+};
+
+/** The one cash flow read a Viewer may make on their own entity. */
+const cashflowReads = new Set(['cashForecastSources']);
+
 /** Every user-management Server Function. Owner-only, so any other role is refused. */
 const userCalls: Record<keyof typeof userActions, Call> = {
   listUsers: () => userActions.listUsers(),
@@ -345,6 +365,8 @@ describe('coverage', () => {
     expect(exportedMomo.sort()).toEqual(Object.keys(momoCalls).sort());
     const exportedGrants = Object.keys(grantActions).filter((k) => typeof (grantActions as Record<string, unknown>)[k] === 'function');
     expect(exportedGrants.sort()).toEqual(Object.keys(grantCalls).sort());
+    const exportedCashflow = Object.keys(cashflowActions).filter((k) => typeof (cashflowActions as Record<string, unknown>)[k] === 'function');
+    expect(exportedCashflow.sort()).toEqual(Object.keys(cashflowCalls).sort());
   });
 
   it('every Route Handler method has a case', () => {
@@ -356,7 +378,7 @@ describe('coverage', () => {
 // --- signed out --------------------------------------------------------------------
 
 describe('signed out', () => {
-  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...userCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...userCalls })) {
     if (!call) continue;
     it(`${name} is refused without touching the database`, async () => {
       expect(isRefusal(await call())).toBe(true);
@@ -376,7 +398,7 @@ describe('signed out', () => {
 describe('an Accountant on Sprouted Roots asking for Oikazi', () => {
   beforeEach(() => signIn({ role: 'accountant' }, [GRANTED_ENTITY]));
 
-  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls })) {
     if (!call) continue;
     it(`${name} is refused and reads nothing`, async () => {
       const result = await call();
@@ -432,8 +454,8 @@ describe('a Viewer with access to Oikazi', () => {
   }
 
   it('cannot touch rates, banks, the functional currency, revaluation or VAT registration, even on their own entity', async () => {
-    for (const [name, call] of Object.entries({ ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls })) {
-      if (name === 'listExchangeRates' || openingReads.has(name) || momoReads.has(name) || grantReads.has(name)) continue; // reads are reports:view
+    for (const [name, call] of Object.entries({ ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls })) {
+      if (name === 'listExchangeRates' || openingReads.has(name) || momoReads.has(name) || grantReads.has(name) || cashflowReads.has(name)) continue; // reads are reports:view
       dbCalls.length = 0;
       const result = await call();
       expect(isRefusal(result), name).toBe(true);

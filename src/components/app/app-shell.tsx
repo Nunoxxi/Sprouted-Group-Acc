@@ -39,6 +39,7 @@ import { formatKg, inventoryAccountCategory, unitLabels } from '@/lib/inventory'
 import { BuyingPanel } from '@/components/app/buying-panel';
 import { ContractsPanel } from '@/components/app/contracts-panel';
 import { OpeningPanel } from '@/components/app/opening-panel';
+import { CashflowPanel } from '@/components/app/cashflow-panel';
 import { GrantsPanel } from '@/components/app/grants-panel';
 import { PaymentsPanel } from '@/components/app/payments-panel';
 import { sellingCostKinds, sellingCostLabels, type SellingCostKind } from '@/lib/contracts';
@@ -78,6 +79,7 @@ const navigationItems = [
   'Purchases',
   'Bank',
   'Payments',
+  'Cash flow',
   'Grants',
   'Intercompany',
   'Tax',
@@ -4543,6 +4545,18 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
               purchases={initialData.agentPurchasesByEntity[selectedEntity.id] ?? []}
               agents={initialData.agentsByEntity[selectedEntity.id] ?? []}
               items={entityItems}
+              allowed={allowed}
+            />
+          ) : activeNav === 'Cash flow' ? (
+            <CashflowPanel
+              key={selectedEntity.id}
+              entity={selectedEntity}
+              entities={entities}
+              sources={initialData.cashSourcesByEntity}
+              scenariosByEntity={initialData.scenariosByEntity}
+              seasons={initialData.seasonsByEntity[selectedEntity.id] ?? []}
+              recurring={initialData.recurringByEntity[selectedEntity.id] ?? []}
+              commodities={entityCommodities}
               allowed={allowed}
             />
           ) : activeNav === 'Grants' ? (

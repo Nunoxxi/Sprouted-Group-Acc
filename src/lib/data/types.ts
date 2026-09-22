@@ -12,6 +12,7 @@ import type { PriceUnit, SellingCostKind } from '../contracts';
 import type { ControlReconciliation, OpeningSection } from '../opening';
 import type { BankAccountKind } from '../momo';
 import type { GrantActual, InKindKind, IncomePolicy, ReportingFrequency } from '../grants';
+import type { Flow, RecurringFrequency } from '../cashflow';
 import type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus } from './enums';
 
 export type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus };
@@ -754,6 +755,83 @@ export type StaffTimeRecord = {
   posted: boolean;
 };
 
+export type BuyingSeasonRecord = {
+  id: string;
+  entityId: string;
+  commodityId: string;
+  commodityName: string;
+  name: string;
+  startDate: string;
+  peakDate: string;
+  endDate: string;
+  expectedGrams: number;
+  priceMinorPerKg: number;
+  currency: Currency;
+  note: string;
+  isActive: boolean;
+};
+
+export type RecurringCostRecord = {
+  id: string;
+  entityId: string;
+  name: string;
+  currency: Currency;
+  amountMinor: number;
+  frequency: RecurringFrequency;
+  startDate: string;
+  endDate: string | null;
+  accountCode: string;
+  note: string;
+  isActive: boolean;
+};
+
+export type CashScenarioLineRecord = {
+  id: string;
+  scenarioId: string;
+  date: string;
+  currency: Currency;
+  amountMinor: number;
+  description: string;
+};
+
+export type CashScenarioRecord = {
+  id: string;
+  entityId: string;
+  name: string;
+  isBaseline: boolean;
+  collectionDelayDays: number;
+  pricePct: number;
+  volumePct: number;
+  floatLeadDays: number;
+  minimumCashMinor: number;
+  note: string;
+  /** Currency → functional units per one unit of it. */
+  rates: Record<string, string>;
+  lines: CashScenarioLineRecord[];
+};
+
+/**
+ * Everything a forecast is built from, for one entity: the cash it starts
+ * with and every flow the records already imply. The forecast itself is
+ * computed in the browser from these, so changing a scenario's assumptions
+ * redraws it without another round trip.
+ */
+export type CashSourceRecord = {
+  entityId: string;
+  entityName: string;
+  functionalCurrency: Currency;
+  /** Bank and cash balances now, per currency. */
+  openings: Record<string, number>;
+  /** Flows that do not depend on a scenario's assumptions. */
+  fixedFlows: Flow[];
+  /** Seasons, as records: their flows depend on the price and volume assumed. */
+  seasons: BuyingSeasonRecord[];
+  recurring: RecurringCostRecord[];
+  /** Open invoices and bills, and undelivered contracts: the dates shift with the collection delay. */
+  documents: { id: string; kind: 'invoice' | 'bill'; number: string; contactName: string; currency: Currency; outstandingMinor: number; dueDate: string }[];
+  contracts: { id: string; contractNo: string; buyerName: string; currency: Currency; undeliveredMinor: number; deliveryDate: string; paymentTermsDays: number }[];
+};
+
 export type InitialData = {
   currentUser: CurrentUser;
   /** Only the entities the signed-in user may see. */
@@ -792,6 +870,10 @@ export type InitialData = {
   grantActualsByEntity: Record<string, (GrantActual & { grantId: string })[]>;
   inKindByEntity: Record<string, InKindRecord[]>;
   staffTimeByEntity: Record<string, StaffTimeRecord[]>;
+  seasonsByEntity: Record<string, BuyingSeasonRecord[]>;
+  recurringByEntity: Record<string, RecurringCostRecord[]>;
+  scenariosByEntity: Record<string, CashScenarioRecord[]>;
+  cashSourcesByEntity: Record<string, CashSourceRecord>;
 };
 
 export type AuditEventRecord = {
