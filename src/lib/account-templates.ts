@@ -53,6 +53,16 @@ export const contractAccounts: AccountTemplate[] = [
 // was booked at and what the bank actually gave on settlement. Unrealised:
 // period-end revaluation of open foreign monetary balances at the closing
 // rate. Both are expense-type accounts where a credit balance is a net gain.
+/** Opening balances: the trial balance's control accounts land here until the detail imports clear it. Every chart. */
+export const openingAccounts: AccountTemplate[] = [
+  { code: '3090', name: 'Opening Balance Suspense', type: 'EQUITY', parentCode: '3000', category: 'opening' },
+];
+
+/** Advances to farmers against produce to come. Traders only. */
+export const farmerAdvanceAccounts: AccountTemplate[] = [
+  { code: '1070', name: 'Farmer Advances', type: 'ASSET', parentCode: '1000', category: 'farmer-advance' },
+];
+
 export const sharedFxAccounts: AccountTemplate[] = [
   { code: '7010', name: 'Realised Foreign Exchange Gain/Loss', type: 'EXPENSE', category: 'fx' },
   { code: '7020', name: 'Unrealised Foreign Exchange Gain/Loss', type: 'EXPENSE', category: 'fx' },
@@ -101,7 +111,9 @@ export const manufacturingAccounts: AccountTemplate[] = [
   ...sharedTaxAccounts,
   ...sharedInventoryAccounts,
   ...agentFloatAccounts,
+  ...farmerAdvanceAccounts,
   ...contractAccounts,
+  ...openingAccounts,
   ...sharedFxAccounts,
 ];
 
@@ -147,6 +159,7 @@ export const ngoAccounts: AccountTemplate[] = [
   { code: '6040', name: 'Volunteer & Community Support', type: 'EXPENSE', parentCode: '6000' },
   ...sharedTaxAccounts,
   ...sharedInventoryAccounts,
+  ...openingAccounts,
   ...sharedFxAccounts,
 ];
 

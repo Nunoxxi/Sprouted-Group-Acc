@@ -106,6 +106,7 @@ export function floatRecord(
     date: isoDate(row.date),
     amountMinor: toMinor(row.amountMinor),
     bankAccountId: row.bankAccountId,
+    isOpening: row.bankAccountId === null,
     status: row.status === 'RECONCILED' ? 'reconciled' : 'open',
     journal: row.journalEntry ? postedJournal(row.journalEntry) : null,
     returns: [...row.returns].sort((a, b) => a.date.getTime() - b.date.getTime()).map((r) => ({ id: r.id, date: isoDate(r.date), amountMinor: toMinor(r.amountMinor), bankAccountId: r.bankAccountId, journal: r.journalEntry ? postedJournal(r.journalEntry) : null })),

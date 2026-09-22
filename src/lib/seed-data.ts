@@ -28,6 +28,8 @@ export const seedEntities: EntityRecord[] = [
     producerPriceMinorPerKg: null,
     buyerMarginMinorPerKg: null,
     haulageMinorPerKg: null,
+    cutOverDate: null,
+    liveAt: null,
   },
   {
     id: 'sprouted-crafts',
@@ -47,6 +49,8 @@ export const seedEntities: EntityRecord[] = [
     producerPriceMinorPerKg: null,
     buyerMarginMinorPerKg: null,
     haulageMinorPerKg: null,
+    cutOverDate: null,
+    liveAt: null,
   },
   {
     id: 'oikazi',
@@ -66,6 +70,8 @@ export const seedEntities: EntityRecord[] = [
     producerPriceMinorPerKg: null,
     buyerMarginMinorPerKg: null,
     haulageMinorPerKg: null,
+    cutOverDate: null,
+    liveAt: null,
   },
 ];
 

@@ -9,6 +9,7 @@ import type { Currency } from '../fx';
 import type { AdjustmentReason, ItemCategory, StockUnit } from '../inventory';
 import type { CommodityKind, LandedCostKind, Quality } from '../trading';
 import type { PriceUnit, SellingCostKind } from '../contracts';
+import type { ControlReconciliation, OpeningSection } from '../opening';
 import type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus } from './enums';
 
 export type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus };
@@ -38,6 +39,10 @@ export type EntityRecord = {
   producerPriceMinorPerKg: number | null;
   buyerMarginMinorPerKg: number | null;
   haulageMinorPerKg: number | null;
+  /** Opening balances are dated here; null until chosen. */
+  cutOverDate: string | null;
+  /** Set when the entity goes live; imports are refused after it. */
+  liveAt: string | null;
 };
 
 export type ContactRecord = {
@@ -137,7 +142,7 @@ export type PostedJournalLine = {
 
 export type PostedJournal = {
   id: string;
-  kind: 'DOCUMENT' | 'REVERSAL' | 'MANUAL' | 'PAYMENT' | 'REVALUATION' | 'STOCK' | 'CONTRACT';
+  kind: 'DOCUMENT' | 'REVERSAL' | 'MANUAL' | 'PAYMENT' | 'REVALUATION' | 'STOCK' | 'CONTRACT' | 'OPENING';
   postedAt: string; // YYYY-MM-DD
   lines: PostedJournalLine[];
 };
@@ -306,7 +311,9 @@ export type FloatAdvanceRecord = {
   agentId: string;
   date: string;
   amountMinor: number;
-  bankAccountId: string;
+  bankAccountId: string | null;
+  /** True for an opening balance: the cash left before the cut-over date, so there is no bank movement. */
+  isOpening: boolean;
   status: 'open' | 'reconciled';
   journal: PostedJournal | null;
   returns: FloatReturnRecord[];
@@ -425,7 +432,7 @@ export type ContractDeliveryRecord = {
   costMinor: number;
   marginMinor: number;
   haulageMinor: number;
-  status: 'delivered' | 'awaiting-acceptance' | 'accepted';
+  status: 'delivered' | 'awaiting-acceptance' | 'accepted' | 'before-cutover';
   journal: PostedJournal | null;
   acceptanceJournal: PostedJournal | null;
   acceptedAt: string | null;
@@ -463,6 +470,32 @@ export type SalesContractRecord = {
 
 export type SeedFundRecord = { id: string; kind: 'received' | 'repaid' | 'offset'; date: string; amountMinor: number; bankAccountId: string | null; journal: PostedJournal | null; note: string };
 
+// --- opening balances -----------------------------------------------------------
+
+export type OpeningBatchRecord = {
+  id: string;
+  section: OpeningSection;
+  fileName: string;
+  rowCount: number;
+  status: 'draft' | 'posted';
+  postedAt: string | null;
+  createdByName: string;
+  createdAt: string;
+  /** The parsed rows, for the preview. */
+  rows: unknown[];
+};
+
+export type OpeningStatusRecord = {
+  cutOverDate: string | null;
+  liveAt: string | null;
+  batches: OpeningBatchRecord[];
+  controls: ControlReconciliation[];
+  trialBalancePosted: boolean;
+  suspenseMinor: number;
+  contractsPosted: boolean;
+  contractsCount: number;
+};
+
 /** Ledger balance of one inventory account, from the real journal lines. */
 export type InventoryLedgerRow = { accountCode: string; accountName: string; balanceMinor: number };
 
@@ -493,6 +526,7 @@ export type InitialData = {
   agentPurchasesByEntity: Record<string, AgentPurchaseRecord[]>;
   contractsByEntity: Record<string, SalesContractRecord[]>;
   seedFundsByEntity: Record<string, SeedFundRecord[]>;
+  openingByEntity: Record<string, OpeningStatusRecord>;
 };
 
 export type AuditEventRecord = {

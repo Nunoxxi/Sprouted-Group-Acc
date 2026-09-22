@@ -111,6 +111,7 @@ import * as entityActions from '@/app/actions/entities';
 import * as inventoryActions from '@/app/actions/inventory';
 import * as tradingActions from '@/app/actions/trading';
 import * as contractActions from '@/app/actions/contracts';
+import * as openingActions from '@/app/actions/opening';
 import * as userActions from '@/app/actions/users';
 import * as auditRoute from '@/app/api/audit/route';
 import * as backupsRoute from '@/app/api/backups/route';
@@ -209,6 +210,19 @@ const contractCalls: Record<keyof typeof contractActions, Call> = {
   recordCmcReceipt: () => contractActions.recordCmcReceipt(FORBIDDEN_ENTITY, { date: '2026-09-21', amountMinor: 100, bankAccountId: 'b' }),
 };
 
+/** Every opening-balance Server Function, invoked against the forbidden entity. */
+const openingCalls: Record<keyof typeof openingActions, Call> = {
+  setCutOverDate: () => openingActions.setCutOverDate(FORBIDDEN_ENTITY, '2026-10-01'),
+  openingTemplate: () => openingActions.openingTemplate(FORBIDDEN_ENTITY),
+  uploadOpeningWorkbook: () => openingActions.uploadOpeningWorkbook(FORBIDDEN_ENTITY, 'x.xlsx', ''),
+  discardOpeningBatch: () => openingActions.discardOpeningBatch(FORBIDDEN_ENTITY, 'b'),
+  postOpeningBatch: () => openingActions.postOpeningBatch(FORBIDDEN_ENTITY, 'b'),
+  openingChecklist: () => openingActions.openingChecklist(FORBIDDEN_ENTITY),
+  goLive: () => openingActions.goLive(FORBIDDEN_ENTITY),
+};
+/** The one opening read a Viewer may make on their own entity. */
+const openingReads = new Set(['openingChecklist']);
+
 /** Every user-management Server Function. Owner-only, so any other role is refused. */
 const userCalls: Record<keyof typeof userActions, Call> = {
   listUsers: () => userActions.listUsers(),
@@ -273,6 +287,8 @@ describe('coverage', () => {
     expect(exportedTrading.sort()).toEqual(Object.keys(tradingCalls).sort());
     const exportedContracts = Object.keys(contractActions).filter((k) => typeof (contractActions as Record<string, unknown>)[k] === 'function');
     expect(exportedContracts.sort()).toEqual(Object.keys(contractCalls).sort());
+    const exportedOpening = Object.keys(openingActions).filter((k) => typeof (openingActions as Record<string, unknown>)[k] === 'function');
+    expect(exportedOpening.sort()).toEqual(Object.keys(openingCalls).sort());
   });
 
   it('every Route Handler method has a case', () => {
@@ -284,7 +300,7 @@ describe('coverage', () => {
 // --- signed out --------------------------------------------------------------------
 
 describe('signed out', () => {
-  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...userCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...userCalls })) {
     if (!call) continue;
     it(`${name} is refused without touching the database`, async () => {
       expect(isRefusal(await call())).toBe(true);
@@ -304,7 +320,7 @@ describe('signed out', () => {
 describe('an Accountant on Sprouted Roots asking for Oikazi', () => {
   beforeEach(() => signIn({ role: 'accountant' }, [GRANTED_ENTITY]));
 
-  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls })) {
     if (!call) continue;
     it(`${name} is refused and reads nothing`, async () => {
       const result = await call();
@@ -360,8 +376,8 @@ describe('a Viewer with access to Oikazi', () => {
   }
 
   it('cannot touch rates, banks, the functional currency, revaluation or VAT registration, even on their own entity', async () => {
-    for (const [name, call] of Object.entries({ ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls })) {
-      if (name === 'listExchangeRates') continue; // reading the rate table is reports:view
+    for (const [name, call] of Object.entries({ ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls })) {
+      if (name === 'listExchangeRates' || openingReads.has(name)) continue; // reads are reports:view
       dbCalls.length = 0;
       const result = await call();
       expect(isRefusal(result), name).toBe(true);

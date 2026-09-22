@@ -38,6 +38,7 @@ import type { Quality } from '../trading';
 import { loadInventoryData } from './inventory';
 import { landedCostKindOf, loadTradingData } from './trading';
 import { loadContractData, sellingCostKindOf } from './contracts';
+import { loadOpeningData } from './opening';
 
 // --- enum translations -------------------------------------------------------
 
@@ -287,5 +288,6 @@ export async function loadInitialData(principal: Principal): Promise<InitialData
     ...(await loadInventoryData(entityScope, entityIds)),
     ...(await loadTradingData(entityScope, entityIds)),
     ...(await loadContractData(entityScope, entityIds)),
+    ...(await loadOpeningData(entityIds)),
   };
 }

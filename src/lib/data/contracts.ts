@@ -38,7 +38,7 @@ export function deliveryRecord(row: ContractDelivery & { journalEntry: JournalRo
     costMinor: toMinor(row.costMinor),
     marginMinor: toMinor(row.marginMinor),
     haulageMinor: toMinor(row.haulageMinor),
-    status: row.status === 'ACCEPTED' ? 'accepted' : row.status === 'AWAITING_ACCEPTANCE' ? 'awaiting-acceptance' : 'delivered',
+    status: row.status === 'ACCEPTED' ? 'accepted' : row.status === 'AWAITING_ACCEPTANCE' ? 'awaiting-acceptance' : row.status === 'BEFORE_CUTOVER' ? 'before-cutover' : 'delivered',
     journal: row.journalEntry ? postedJournal(row.journalEntry) : null,
     acceptanceJournal: row.acceptanceJournal ? postedJournal(row.acceptanceJournal) : null,
     acceptedAt: row.acceptedAt ? row.acceptedAt.toISOString() : null,

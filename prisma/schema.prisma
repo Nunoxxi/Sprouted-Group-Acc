@@ -55,6 +55,9 @@ model Entity {
   producerPriceMinorPerKg BigInt?
   buyerMarginMinorPerKg   BigInt?
   haulageMinorPerKg       BigInt?
+  /// Opening balances are dated here; imports are allowed until liveAt is set.
+  cutOverDate             DateTime?           @db.Date
+  liveAt                  DateTime?
   createdAt               DateTime            @default(now())
   updatedAt               DateTime            @updatedAt
 
@@ -92,6 +95,8 @@ model Entity {
   deliveries       ContractDelivery[]
   sellingCosts     ContractSellingCost[]
   seedFunds        SeedFundMovement[]
+  openingBatches   OpeningBatch[]
+  farmerAdvances   FarmerAdvance[]
 }
 
 // Append-only. Events form a hash chain per entity ordered by `sequence`, which
@@ -261,6 +266,8 @@ model User {
   deliveries           ContractDelivery[] @relation("DeliveryCreatedBy")
   acceptedDeliveries   ContractDelivery[] @relation("DeliveryAcceptedBy")
   seedFunds            SeedFundMovement[]
+  openingBatches       OpeningBatch[]
+  farmerAdvances       FarmerAdvance[]
 
   @@index([deactivatedAt])
 }
@@ -393,6 +400,7 @@ enum JournalKind {
   REVALUATION
   STOCK
   CONTRACT
+  OPENING
 }
 
 // postedAt is the accounting date (a document's own date), never "now" —
@@ -428,6 +436,8 @@ model JournalEntry {
   delivery            ContractDelivery? @relation("DeliveryJournal")
   acceptance          ContractDelivery? @relation("AcceptanceJournal")
   seedFund            SeedFundMovement?
+  openingBatch        OpeningBatch?
+  farmerAdvance       FarmerAdvance?
 
   @@index([entityId, postedAt])
   @@index([entityId, kind])
@@ -1149,7 +1159,8 @@ model FloatAdvance {
   agentId        String
   date           DateTime
   amountMinor    BigInt
-  bankAccountId  String
+  /// Null for an opening balance: the cash left before the cut-over date.
+  bankAccountId  String?
   status         FloatStatus @default(OPEN)
   journalEntryId String?     @unique
   reconciledAt   DateTime?
@@ -1159,7 +1170,7 @@ model FloatAdvance {
 
   entity       Entity          @relation(fields: [entityId], references: [id])
   agent        BuyingAgent     @relation(fields: [agentId], references: [id])
-  bankAccount  BankAccount     @relation(fields: [bankAccountId], references: [id])
+  bankAccount  BankAccount?    @relation(fields: [bankAccountId], references: [id])
   journalEntry JournalEntry?   @relation(fields: [journalEntryId], references: [id])
   createdBy    User?           @relation("FloatCreatedBy", fields: [createdById], references: [id])
   reconciledBy User?           @relation("FloatReconciledBy", fields: [reconciledById], references: [id])
@@ -1276,6 +1287,8 @@ enum DeliveryStatus {
   DELIVERED
   AWAITING_ACCEPTANCE
   ACCEPTED
+  /// Delivered before the cut-over date: counts toward quantity, carries no revenue or cost here.
+  BEFORE_CUTOVER
 }
 
 enum SellingCostKind {
@@ -1415,4 +1428,78 @@ model SeedFundMovement {
   createdBy    User?         @relation(fields: [createdById], references: [id])
 
   @@index([entityId, date])
+}
+
+// --- opening balances ------------------------------------------------------------------
+//
+// Moving an entity onto the app at a cut-over date. The trial balance posts
+// as one OPENING journal with every control account redirected to 3010
+// Opening Balance Suspense; each detail import (open invoices and bills,
+// stock, floats, farmer advances) posts to its control account against
+// suspense, so the suspense balance is exactly the difference between the
+// detail and the trial balance. An entity cannot go live while it is not
+// zero, and nothing here can be imported once it is live.
+
+enum OpeningSection {
+  TRIAL_BALANCE
+  INVOICES
+  BILLS
+  STOCK
+  FLOATS
+  FARMER_ADVANCES
+  CONTRACTS
+}
+
+enum OpeningBatchStatus {
+  DRAFT
+  POSTED
+}
+
+/// One uploaded sheet: the parsed rows as JSON, kept as a draft until posted.
+model OpeningBatch {
+  id             String             @id @default(cuid())
+  entityId       String
+  section        OpeningSection
+  fileName       String
+  rowsJson       String
+  rowCount       Int
+  status         OpeningBatchStatus @default(DRAFT)
+  journalEntryId String?            @unique
+  postedAt       DateTime?
+  createdById    String?
+  createdAt      DateTime           @default(now())
+
+  entity       Entity        @relation(fields: [entityId], references: [id])
+  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id])
+  createdBy    User?         @relation(fields: [createdById], references: [id])
+
+  @@index([entityId, section, status])
+}
+
+enum FarmerAdvanceStatus {
+  OPEN
+  SETTLED
+}
+
+/// Money advanced to a farmer against produce to come. A receivable.
+model FarmerAdvance {
+  id             String              @id @default(cuid())
+  entityId       String
+  farmerName     String
+  community      String?
+  district       String?
+  date           DateTime
+  amountMinor    BigInt
+  settledMinor   BigInt              @default(0)
+  status         FarmerAdvanceStatus @default(OPEN)
+  journalEntryId String?             @unique
+  note           String?
+  createdById    String?
+  createdAt      DateTime            @default(now())
+
+  entity       Entity        @relation(fields: [entityId], references: [id])
+  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id])
+  createdBy    User?         @relation(fields: [createdById], references: [id])
+
+  @@index([entityId, status])
 }

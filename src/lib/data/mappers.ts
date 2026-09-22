@@ -58,6 +58,8 @@ export function entityRecord(row: Entity): EntityRecord {
     producerPriceMinorPerKg: row.producerPriceMinorPerKg === null ? null : toMinor(row.producerPriceMinorPerKg),
     buyerMarginMinorPerKg: row.buyerMarginMinorPerKg === null ? null : toMinor(row.buyerMarginMinorPerKg),
     haulageMinorPerKg: row.haulageMinorPerKg === null ? null : toMinor(row.haulageMinorPerKg),
+    cutOverDate: row.cutOverDate ? row.cutOverDate.toISOString().slice(0, 10) : null,
+    liveAt: row.liveAt ? row.liveAt.toISOString() : null,
   };
 }
 

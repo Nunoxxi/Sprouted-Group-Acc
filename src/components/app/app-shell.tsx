@@ -38,6 +38,7 @@ import { InventoryPanel } from '@/components/app/inventory-panel';
 import { formatKg, inventoryAccountCategory, unitLabels } from '@/lib/inventory';
 import { BuyingPanel } from '@/components/app/buying-panel';
 import { ContractsPanel } from '@/components/app/contracts-panel';
+import { OpeningPanel } from '@/components/app/opening-panel';
 import { sellingCostKinds, sellingCostLabels, type SellingCostKind } from '@/lib/contracts';
 import { agentFloatSummaries, floatPosition, holdsStock, landedCostKinds, landedCostLabels, qualityFieldsFor, type LandedCostKind } from '@/lib/trading';
 import { CurrencyProvider, ReportMoney, TranslationProvider } from '@/components/ui/money';
@@ -79,6 +80,7 @@ const navigationItems = [
   'Buying',
   'Contracts',
   'Reports',
+  'Go-live',
   'Settings',
 ] as const;
 
@@ -4510,6 +4512,8 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
               seedFunds={initialData.seedFundsByEntity[selectedEntity.id] ?? []}
               allowed={allowed}
             />
+          ) : activeNav === 'Go-live' ? (
+            <OpeningPanel key={selectedEntity.id} entity={selectedEntity} opening={initialData.openingByEntity[selectedEntity.id]} allowed={allowed} />
           ) : (
             <Card className="rounded-2xl">
               <div className="border-b border-slate-200 pb-4">

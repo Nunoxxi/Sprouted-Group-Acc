@@ -76,7 +76,7 @@ export function ContractsPanel({ entity, contracts, contacts, items, commodities
     const gramsPerBag = commodityOf(contract.itemId)?.gramsPerBag ?? 0;
     return contractMargin(
       { quantityGrams: contract.quantityGrams, priceMinor: contract.priceMinor, priceUnit: contract.priceUnit, currency: contract.currency, contractRate: contract.contractRate },
-      contract.deliveries.map((d) => ({ grams: d.grams, revenueTxnMinor: d.revenueTxnMinor, revenueMinor: d.revenueMinor, costMinor: d.costMinor, marginMinor: d.marginMinor, haulageMinor: d.haulageMinor, recognised: d.status !== 'awaiting-acceptance' })),
+      contract.deliveries.map((d) => ({ grams: d.grams, revenueTxnMinor: d.revenueTxnMinor, revenueMinor: d.revenueMinor, costMinor: d.costMinor, marginMinor: d.marginMinor, haulageMinor: d.haulageMinor, recognised: d.status !== 'awaiting-acceptance' && d.status !== 'before-cutover' })),
       contract.sellingCosts,
       entity.functionalCurrency,
       gramsPerBag,
