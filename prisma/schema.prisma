@@ -55,6 +55,10 @@ model Entity {
   producerPriceMinorPerKg BigInt?
   buyerMarginMinorPerKg   BigInt?
   haulageMinorPerKg       BigInt?
+  /// The day of the following month PAYE and SSNIT fall due. Settings,
+  /// because filing dates move and a date in code is one nobody can correct.
+  payeDueDay              Int                 @default(15)
+  ssnitDueDay             Int                 @default(14)
   /// Whether this entity pays company tax at all, and if so at whose rate.
   /// Sprouted Roots may be exempt; the computation is hidden when it is.
   taxStatus               EntityTaxStatus     @default(TAXABLE)
@@ -64,67 +68,74 @@ model Entity {
   createdAt               DateTime            @default(now())
   updatedAt               DateTime            @updatedAt
 
-  userAccess        UserEntityAccess[]
-  exchangeRates     ExchangeRate[]
-  bankAccounts      BankAccount[]
-  payments          Payment[]
-  revaluations      Revaluation[]
-  accounts          Account[]
-  journalEntries    JournalEntry[]
-  contactBalances   ContactEntityBalance[]
-  auditEvents       AuditEvent[]
-  funds             Fund[]
-  projects          Project[]
-  documents         Document[]
-  documentLines     DocumentLine[]
-  taxPeriodFilings  TaxPeriodFiling[]
-  documentCounters  DocumentCounter[]
-  backupRuns        BackupRun[]
-  items             Item[]
-  stockLocations    StockLocation[]
-  stockBalances     StockBalance[]
-  stockMovements    StockMovement[]
-  stockCounts       StockCount[]
-  stockCountLines   StockCountLine[]
-  nrvPrices         NrvPrice[]
-  commodities       Commodity[]
-  lots              Lot[]
-  landedCosts       LandedCostAllocation[]
-  buyingAgents      BuyingAgent[]
-  floatAdvances     FloatAdvance[]
-  floatReturns      FloatReturn[]
-  agentPurchases    AgentPurchase[]
-  salesContracts    SalesContract[]
-  deliveries        ContractDelivery[]
-  sellingCosts      ContractSellingCost[]
-  seedFunds         SeedFundMovement[]
-  openingBatches    OpeningBatch[]
-  farmerAdvances    FarmerAdvance[]
-  farmers           Farmer[]
-  statementMappings StatementMapping[]
-  statementImports  StatementImport[]
-  statementLines    StatementLine[]
-  paymentBatches    FarmerPaymentBatch[]
-  farmerPayments    FarmerPayment[]
-  grants            Grant[]
-  grantBudgetLines  GrantBudgetLine[]
-  grantConditions   GrantCondition[]
-  grantReceipts     GrantReceipt[]
-  grantReleases     GrantRelease[]
-  inKind            InKindContribution[]
-  staffTime         StaffTimeAllocation[]
-  buyingSeasons     BuyingSeason[]
-  recurringCosts    RecurringCost[]
-  cashScenarios     CashScenario[]
-  cashScenarioRates CashScenarioRate[]
-  cashScenarioLines CashScenarioLine[]
-  fixedAssets       FixedAsset[]
-  depreciationRuns  DepreciationRun[]
-  assetDisposals    AssetDisposal[]
-  allowanceClasses  CapitalAllowanceClass[]
-  taxYears          TaxYear[]
-  taxAdjustments    TaxAdjustment[]
-  provisionalTax    ProvisionalTaxPayment[]
+  userAccess         UserEntityAccess[]
+  exchangeRates      ExchangeRate[]
+  bankAccounts       BankAccount[]
+  payments           Payment[]
+  revaluations       Revaluation[]
+  accounts           Account[]
+  journalEntries     JournalEntry[]
+  contactBalances    ContactEntityBalance[]
+  auditEvents        AuditEvent[]
+  funds              Fund[]
+  projects           Project[]
+  documents          Document[]
+  documentLines      DocumentLine[]
+  taxPeriodFilings   TaxPeriodFiling[]
+  documentCounters   DocumentCounter[]
+  backupRuns         BackupRun[]
+  items              Item[]
+  stockLocations     StockLocation[]
+  stockBalances      StockBalance[]
+  stockMovements     StockMovement[]
+  stockCounts        StockCount[]
+  stockCountLines    StockCountLine[]
+  nrvPrices          NrvPrice[]
+  commodities        Commodity[]
+  lots               Lot[]
+  landedCosts        LandedCostAllocation[]
+  buyingAgents       BuyingAgent[]
+  floatAdvances      FloatAdvance[]
+  floatReturns       FloatReturn[]
+  agentPurchases     AgentPurchase[]
+  salesContracts     SalesContract[]
+  deliveries         ContractDelivery[]
+  sellingCosts       ContractSellingCost[]
+  seedFunds          SeedFundMovement[]
+  openingBatches     OpeningBatch[]
+  farmerAdvances     FarmerAdvance[]
+  farmers            Farmer[]
+  statementMappings  StatementMapping[]
+  statementImports   StatementImport[]
+  statementLines     StatementLine[]
+  paymentBatches     FarmerPaymentBatch[]
+  farmerPayments     FarmerPayment[]
+  grants             Grant[]
+  grantBudgetLines   GrantBudgetLine[]
+  grantConditions    GrantCondition[]
+  grantReceipts      GrantReceipt[]
+  grantReleases      GrantRelease[]
+  inKind             InKindContribution[]
+  staffTime          StaffTimeAllocation[]
+  buyingSeasons      BuyingSeason[]
+  recurringCosts     RecurringCost[]
+  cashScenarios      CashScenario[]
+  cashScenarioRates  CashScenarioRate[]
+  cashScenarioLines  CashScenarioLine[]
+  fixedAssets        FixedAsset[]
+  depreciationRuns   DepreciationRun[]
+  assetDisposals     AssetDisposal[]
+  allowanceClasses   CapitalAllowanceClass[]
+  taxYears           TaxYear[]
+  taxAdjustments     TaxAdjustment[]
+  provisionalTax     ProvisionalTaxPayment[]
+  payrollMappings    PayrollMapping[]
+  payrollRuns        PayrollRun[]
+  payrollLines       PayrollLine[]
+  payrollAllocations PayrollAllocation[]
+  payrollDepartments PayrollDepartment[]
+  payrollLiabilities PayrollLiability[]
+  payrollPayments    PayrollLiabilityPayment[]
 }
 
 // Append-only. Events form a hash chain per entity ordered by `sequence`, which
@@ -267,41 +278,41 @@ model User {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
-  invitedBy              User?                   @relation("Invitations", fields: [invitedById], references: [id])
-  invitees               User[]                  @relation("Invitations")
+  invitedBy              User?                     @relation("Invitations", fields: [invitedById], references: [id])
+  invitees               User[]                    @relation("Invitations")
   sessions               AuthSession[]
   authAccounts           AuthAccount[]
   twoFactors             TwoFactor[]
   entityAccess           UserEntityAccess[]
-  grantedAccess          UserEntityAccess[]      @relation("AccessGrantedBy")
+  grantedAccess          UserEntityAccess[]        @relation("AccessGrantedBy")
   auditEvents            AuditEvent[]
   postedEntries          JournalEntry[]
-  createdDocs            Document[]              @relation("DocumentCreatedBy")
-  editedDocs             Document[]              @relation("DocumentEditedBy")
+  createdDocs            Document[]                @relation("DocumentCreatedBy")
+  editedDocs             Document[]                @relation("DocumentEditedBy")
   filings                TaxPeriodFiling[]
   exchangeRates          ExchangeRate[]
   payments               Payment[]
-  revaluations           Revaluation[]           @relation("RevaluationRunBy")
-  reversedRevaluations   Revaluation[]           @relation("RevaluationReversedBy")
+  revaluations           Revaluation[]             @relation("RevaluationRunBy")
+  reversedRevaluations   Revaluation[]             @relation("RevaluationReversedBy")
   stockMovements         StockMovement[]
-  stockCounts            StockCount[]            @relation("StockCountCreatedBy")
-  postedStockCounts      StockCount[]            @relation("StockCountPostedBy")
+  stockCounts            StockCount[]              @relation("StockCountCreatedBy")
+  postedStockCounts      StockCount[]              @relation("StockCountPostedBy")
   nrvPrices              NrvPrice[]
   lots                   Lot[]
-  floatAdvances          FloatAdvance[]          @relation("FloatCreatedBy")
-  reconciledFloats       FloatAdvance[]          @relation("FloatReconciledBy")
+  floatAdvances          FloatAdvance[]            @relation("FloatCreatedBy")
+  reconciledFloats       FloatAdvance[]            @relation("FloatReconciledBy")
   floatReturns           FloatReturn[]
-  agentPurchases         AgentPurchase[]         @relation("PurchaseCreatedBy")
-  postedPurchases        AgentPurchase[]         @relation("PurchasePostedBy")
+  agentPurchases         AgentPurchase[]           @relation("PurchaseCreatedBy")
+  postedPurchases        AgentPurchase[]           @relation("PurchasePostedBy")
   salesContracts         SalesContract[]
-  deliveries             ContractDelivery[]      @relation("DeliveryCreatedBy")
-  acceptedDeliveries     ContractDelivery[]      @relation("DeliveryAcceptedBy")
+  deliveries             ContractDelivery[]        @relation("DeliveryCreatedBy")
+  acceptedDeliveries     ContractDelivery[]        @relation("DeliveryAcceptedBy")
   seedFunds              SeedFundMovement[]
   openingBatches         OpeningBatch[]
   farmerAdvances         FarmerAdvance[]
   statementImports       StatementImport[]
-  paymentBatches         FarmerPaymentBatch[]    @relation("BatchCreatedBy")
-  paidBatches            FarmerPaymentBatch[]    @relation("BatchPaidBy")
+  paymentBatches         FarmerPaymentBatch[]      @relation("BatchCreatedBy")
+  paidBatches            FarmerPaymentBatch[]      @relation("BatchPaidBy")
   grants                 Grant[]
   grantConditions        GrantCondition[]
   grantReceipts          GrantReceipt[]
@@ -317,6 +328,9 @@ model User {
   assetDisposals         AssetDisposal[]
   taxYears               TaxYear[]
   provisionalTaxPayments ProvisionalTaxPayment[]
+  payrollPosted          PayrollRun[]              @relation("PayrollPostedBy")
+  payrollCreated         PayrollRun[]              @relation("PayrollCreatedBy")
+  payrollPayments        PayrollLiabilityPayment[]
 
   @@index([deactivatedAt])
 }
@@ -438,6 +452,8 @@ model Account {
   grantBudgetLines     GrantBudgetLine[]
   staffTimeAllocations StaffTimeAllocation[]
   recurringCosts       RecurringCost[]
+  payrollMappings      PayrollMapping[]
+  payrollDepartments   PayrollDepartment[]
 
   @@unique([entityId, code])
   @@index([entityId, parentId])
@@ -470,28 +486,28 @@ model JournalEntry {
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
-  entity                Entity                 @relation(fields: [entityId], references: [id])
-  postedBy              User?                  @relation(fields: [postedById], references: [id])
+  entity                Entity                   @relation(fields: [entityId], references: [id])
+  postedBy              User?                    @relation(fields: [postedById], references: [id])
   lines                 JournalLine[]
-  reversalOf            JournalEntry?          @relation("Reversal", fields: [reversalOfId], references: [id])
-  reversedBy            JournalEntry?          @relation("Reversal")
-  postedDocument        Document?              @relation("DocumentPosting")
-  voidedDocument        Document?              @relation("DocumentVoid")
+  reversalOf            JournalEntry?            @relation("Reversal", fields: [reversalOfId], references: [id])
+  reversedBy            JournalEntry?            @relation("Reversal")
+  postedDocument        Document?                @relation("DocumentPosting")
+  voidedDocument        Document?                @relation("DocumentVoid")
   payment               Payment?
-  revaluation           Revaluation?           @relation("RevaluationEntry")
-  revaluationReversal   Revaluation?           @relation("RevaluationReversal")
+  revaluation           Revaluation?             @relation("RevaluationEntry")
+  revaluationReversal   Revaluation?             @relation("RevaluationReversal")
   stockMovements        StockMovement[]
   stockCount            StockCount?
   floatAdvance          FloatAdvance?
   floatReturn           FloatReturn?
   agentPurchase         AgentPurchase?
-  delivery              ContractDelivery?      @relation("DeliveryJournal")
-  acceptance            ContractDelivery?      @relation("AcceptanceJournal")
+  delivery              ContractDelivery?        @relation("DeliveryJournal")
+  acceptance            ContractDelivery?        @relation("AcceptanceJournal")
   seedFund              SeedFundMovement?
   openingBatch          OpeningBatch?
   farmerAdvance         FarmerAdvance?
-  paymentBatch          FarmerPaymentBatch?    @relation("BatchJournal")
-  batchSettlement       FarmerPaymentBatch?    @relation("BatchSettlementJournal")
+  paymentBatch          FarmerPaymentBatch?      @relation("BatchJournal")
+  batchSettlement       FarmerPaymentBatch?      @relation("BatchSettlementJournal")
   statementLines        StatementLine[]
   grantReceipt          GrantReceipt?
   grantRelease          GrantRelease?
@@ -501,6 +517,8 @@ model JournalEntry {
   assetDisposal         AssetDisposal?
   taxYear               TaxYear?
   provisionalTaxPayment ProvisionalTaxPayment?
+  payrollRun            PayrollRun?
+  payrollPayment        PayrollLiabilityPayment?
 
   @@index([entityId, postedAt])
   @@index([entityId, kind])
@@ -807,8 +825,8 @@ model BankAccount {
   isActive  Boolean         @default(true)
   createdAt DateTime        @default(now())
 
-  entity                 Entity                  @relation(fields: [entityId], references: [id])
-  account                Account                 @relation(fields: [accountId], references: [id])
+  entity                 Entity                    @relation(fields: [entityId], references: [id])
+  account                Account                   @relation(fields: [accountId], references: [id])
   payments               Payment[]
   statementImports       StatementImport[]
   statementLines         StatementLine[]
@@ -816,6 +834,7 @@ model BankAccount {
   grantReceipts          GrantReceipt[]
   assetDisposals         AssetDisposal[]
   provisionalTaxPayments ProvisionalTaxPayment[]
+  payrollPayments        PayrollLiabilityPayment[]
 
   @@index([entityId])
 }
@@ -1901,19 +1920,20 @@ model Grant {
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
 
-  entity        Entity                @relation(fields: [entityId], references: [id])
-  donor         Contact               @relation(fields: [donorContactId], references: [id])
-  fund          Fund?                 @relation(fields: [fundId], references: [id])
-  project       Project?              @relation(fields: [projectId], references: [id])
-  createdBy     User?                 @relation(fields: [createdById], references: [id])
-  budgetLines   GrantBudgetLine[]
-  conditions    GrantCondition[]
-  receipts      GrantReceipt[]
-  releases      GrantRelease[]
-  inKind        InKindContribution[]
-  staffTime     StaffTimeAllocation[]
-  journalLines  JournalLine[]
-  documentLines DocumentLine[]
+  entity             Entity                @relation(fields: [entityId], references: [id])
+  donor              Contact               @relation(fields: [donorContactId], references: [id])
+  fund               Fund?                 @relation(fields: [fundId], references: [id])
+  project            Project?              @relation(fields: [projectId], references: [id])
+  createdBy          User?                 @relation(fields: [createdById], references: [id])
+  budgetLines        GrantBudgetLine[]
+  conditions         GrantCondition[]
+  receipts           GrantReceipt[]
+  releases           GrantRelease[]
+  inKind             InKindContribution[]
+  staffTime          StaffTimeAllocation[]
+  journalLines       JournalLine[]
+  documentLines      DocumentLine[]
+  payrollAllocations PayrollAllocation[]
 
   @@unique([entityId, code])
   @@index([entityId, status])
@@ -1931,13 +1951,14 @@ model GrantBudgetLine {
   note        String?
   createdAt   DateTime @default(now())
 
-  entity        Entity                @relation(fields: [entityId], references: [id])
-  grant         Grant                 @relation(fields: [grantId], references: [id])
-  account       Account               @relation(fields: [accountId], references: [id])
-  journalLines  JournalLine[]
-  documentLines DocumentLine[]
-  inKind        InKindContribution[]
-  staffTime     StaffTimeAllocation[]
+  entity             Entity                @relation(fields: [entityId], references: [id])
+  grant              Grant                 @relation(fields: [grantId], references: [id])
+  account            Account               @relation(fields: [accountId], references: [id])
+  journalLines       JournalLine[]
+  documentLines      DocumentLine[]
+  inKind             InKindContribution[]
+  staffTime          StaffTimeAllocation[]
+  payrollAllocations PayrollAllocation[]
 
   @@unique([grantId, code])
   @@index([entityId, grantId])
@@ -2447,4 +2468,186 @@ model ProvisionalTaxPayment {
   createdBy    User?         @relation(fields: [createdById], references: [id])
 
   @@index([entityId, taxYearId])
+}
+
+// --- payroll import ------------------------------------------------------------
+//
+// There is no payroll engine here. Payroll is run in a Ghanaian payroll
+// system or a spreadsheet; this takes the summary it produces, reads it
+// against a mapping the app remembers, and posts one journal a month.
+//
+// Casual and seasonal labour paid by a buying agent is not payroll. It goes
+// through the agent float, where the money actually left.
+
+enum PayrollRunStatus {
+  DRAFT
+  POSTED
+}
+
+enum PayrollLiabilityKind {
+  PAYE
+  SSNIT_TIER_1
+  SSNIT_TIER_2
+  NET_PAY
+  OTHER_DEDUCTIONS
+}
+
+/// Which column of the payroll file holds what, matched once and kept.
+model PayrollMapping {
+  id                    String   @id @default(cuid())
+  entityId              String
+  name                  String
+  employeeRefColumn     String?
+  employeeNameColumn    String
+  departmentColumn      String?
+  grossColumn           String
+  payeColumn            String?
+  employeeSsnitColumn   String?
+  employerSsnitColumn   String?
+  ssnitTier2Column      String?
+  otherDeductionsColumn String?
+  netColumn             String?
+  /// Where gross pay goes when a department has not been given its own account.
+  defaultAccountId      String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  entity         Entity       @relation(fields: [entityId], references: [id])
+  defaultAccount Account?     @relation(fields: [defaultAccountId], references: [id])
+  runs           PayrollRun[]
+
+  @@unique([entityId, name])
+}
+
+/// Which account a department's gross pay is charged to.
+model PayrollDepartment {
+  id        String   @id @default(cuid())
+  entityId  String
+  name      String
+  accountId String
+  createdAt DateTime @default(now())
+
+  entity  Entity  @relation(fields: [entityId], references: [id])
+  account Account @relation(fields: [accountId], references: [id])
+
+  @@unique([entityId, name])
+}
+
+/// One month of payroll, imported and posted as a single journal.
+model PayrollRun {
+  id                   String           @id @default(cuid())
+  entityId             String
+  /// YYYY-MM.
+  period               String
+  payDate              DateTime         @db.Date
+  mappingId            String?
+  fileName             String
+  grossMinor           BigInt           @default(0)
+  payeMinor            BigInt           @default(0)
+  employeeSsnitMinor   BigInt           @default(0)
+  employerSsnitMinor   BigInt           @default(0)
+  ssnitTier2Minor      BigInt           @default(0)
+  otherDeductionsMinor BigInt           @default(0)
+  netMinor             BigInt           @default(0)
+  status               PayrollRunStatus @default(DRAFT)
+  note                 String?
+  journalEntryId       String?          @unique
+  postedById           String?
+  postedAt             DateTime?
+  createdById          String?
+  createdAt            DateTime         @default(now())
+
+  entity       Entity             @relation(fields: [entityId], references: [id])
+  mapping      PayrollMapping?    @relation(fields: [mappingId], references: [id])
+  journalEntry JournalEntry?      @relation(fields: [journalEntryId], references: [id])
+  postedBy     User?              @relation("PayrollPostedBy", fields: [postedById], references: [id])
+  createdBy    User?              @relation("PayrollCreatedBy", fields: [createdById], references: [id])
+  lines        PayrollLine[]
+  liabilities  PayrollLiability[]
+
+  @@unique([entityId, period])
+  @@index([entityId, status])
+}
+
+/// One person in one month, exactly as the payroll system reported them.
+model PayrollLine {
+  id                   String  @id @default(cuid())
+  entityId             String
+  runId                String
+  employeeRef          String?
+  employeeName         String
+  department           String?
+  grossMinor           BigInt  @default(0)
+  payeMinor            BigInt  @default(0)
+  employeeSsnitMinor   BigInt  @default(0)
+  employerSsnitMinor   BigInt  @default(0)
+  ssnitTier2Minor      BigInt  @default(0)
+  otherDeductionsMinor BigInt  @default(0)
+  netMinor             BigInt  @default(0)
+
+  entity Entity     @relation(fields: [entityId], references: [id])
+  run    PayrollRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([entityId, runId])
+}
+
+/// How much of one person's cost each grant carries. Kept against the person,
+/// not the month, so it is set once and applies to every payroll after it.
+model PayrollAllocation {
+  id           String   @id @default(cuid())
+  entityId     String
+  /// The staff reference in the payroll file, or their name when there is none.
+  employeeKey  String
+  employeeName String?
+  grantId      String
+  budgetLineId String?
+  pct          Decimal  @db.Decimal(6, 3)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  entity     Entity           @relation(fields: [entityId], references: [id])
+  grant      Grant            @relation(fields: [grantId], references: [id])
+  budgetLine GrantBudgetLine? @relation(fields: [budgetLineId], references: [id])
+
+  @@unique([entityId, employeeKey, grantId])
+  @@index([entityId])
+}
+
+/// What a month of payroll left owing, and when it has to be paid.
+model PayrollLiability {
+  id           String               @id @default(cuid())
+  entityId     String
+  runId        String
+  kind         PayrollLiabilityKind
+  amountMinor  BigInt
+  settledMinor BigInt               @default(0)
+  dueDate      DateTime             @db.Date
+
+  entity   Entity                    @relation(fields: [entityId], references: [id])
+  run      PayrollRun                @relation(fields: [runId], references: [id], onDelete: Cascade)
+  payments PayrollLiabilityPayment[]
+
+  @@unique([runId, kind])
+  @@index([entityId, dueDate])
+}
+
+model PayrollLiabilityPayment {
+  id             String   @id @default(cuid())
+  entityId       String
+  liabilityId    String
+  date           DateTime @db.Date
+  amountMinor    BigInt
+  bankAccountId  String
+  reference      String?
+  journalEntryId String?  @unique
+  createdById    String?
+  createdAt      DateTime @default(now())
+
+  entity       Entity           @relation(fields: [entityId], references: [id])
+  liability    PayrollLiability @relation(fields: [liabilityId], references: [id], onDelete: Cascade)
+  bankAccount  BankAccount      @relation(fields: [bankAccountId], references: [id])
+  journalEntry JournalEntry?    @relation(fields: [journalEntryId], references: [id])
+  createdBy    User?            @relation(fields: [createdById], references: [id])
+
+  @@index([entityId, liabilityId])
 }

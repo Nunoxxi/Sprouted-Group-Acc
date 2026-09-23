@@ -14,6 +14,7 @@ import type { BankAccountKind } from '../momo';
 import type { GrantActual, InKindKind, IncomePolicy, ReportingFrequency } from '../grants';
 import type { Flow, RecurringFrequency } from '../cashflow';
 import type { AdjustmentKind, AllowanceMethod, DepreciationMethod, TaxStatus } from '../assets';
+import type { LiabilityKind } from '../payroll';
 import type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus } from './enums';
 
 export type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus };
@@ -39,6 +40,9 @@ export type EntityRecord = {
   floatAgeLimitDays: number;
   /** Whether this entity has a tax computation at all, and at whose rate. */
   taxStatus: TaxStatus;
+  /** The day of the following month PAYE and SSNIT fall due. Settings. */
+  payeDueDay: number;
+  ssnitDueDay: number;
   /** COCOBOD Licensed Buying Company mode and its settings. */
   lbcMode: boolean;
   revenuePresentation: 'gross' | 'net';
@@ -914,6 +918,87 @@ export type TaxYearRecord = {
   straightLineCostByClass: Record<string, number>;
 };
 
+export type PayrollMappingRecord = {
+  id: string;
+  entityId: string;
+  name: string;
+  employeeRefColumn: string;
+  employeeNameColumn: string;
+  departmentColumn: string;
+  grossColumn: string;
+  payeColumn: string;
+  employeeSsnitColumn: string;
+  employerSsnitColumn: string;
+  ssnitTier2Column: string;
+  otherDeductionsColumn: string;
+  netColumn: string;
+  defaultAccountCode: string;
+};
+
+export type PayrollDepartmentRecord = { id: string; entityId: string; name: string; accountCode: string; accountName: string };
+
+export type PayrollLineRecord = {
+  id: string;
+  employeeRef: string;
+  employeeName: string;
+  department: string;
+  grossMinor: number;
+  payeMinor: number;
+  employeeSsnitMinor: number;
+  employerSsnitMinor: number;
+  ssnitTier2Minor: number;
+  otherDeductionsMinor: number;
+  netMinor: number;
+};
+
+export type PayrollLiabilityRecord = {
+  id: string;
+  runId: string;
+  period: string;
+  kind: LiabilityKind;
+  amountMinor: number;
+  settledMinor: number;
+  dueDate: string;
+  payments: { id: string; date: string; amountMinor: number; bankAccountName: string; reference: string }[];
+};
+
+export type PayrollRunRecord = {
+  id: string;
+  entityId: string;
+  period: string;
+  payDate: string;
+  mappingName: string;
+  fileName: string;
+  grossMinor: number;
+  payeMinor: number;
+  employeeSsnitMinor: number;
+  employerSsnitMinor: number;
+  ssnitTier2Minor: number;
+  otherDeductionsMinor: number;
+  netMinor: number;
+  employerCostMinor: number;
+  status: 'draft' | 'posted';
+  note: string;
+  postedAt: string | null;
+  postedByName: string;
+  journal: PostedJournal | null;
+  lines: PayrollLineRecord[];
+  liabilities: PayrollLiabilityRecord[];
+};
+
+/** How much of one person's cost each grant carries. Set once, used every month. */
+export type PayrollAllocationRecord = {
+  id: string;
+  entityId: string;
+  employeeKey: string;
+  employeeName: string;
+  grantId: string;
+  grantCode: string;
+  budgetLineId: string | null;
+  budgetLineName: string;
+  pct: string;
+};
+
 export type InitialData = {
   currentUser: CurrentUser;
   /** Only the entities the signed-in user may see. */
@@ -960,6 +1045,10 @@ export type InitialData = {
   depreciationRunsByEntity: Record<string, DepreciationRunRecord[]>;
   allowanceClassesByEntity: Record<string, AllowanceClassRecord[]>;
   taxYearsByEntity: Record<string, TaxYearRecord[]>;
+  payrollMappingsByEntity: Record<string, PayrollMappingRecord[]>;
+  payrollDepartmentsByEntity: Record<string, PayrollDepartmentRecord[]>;
+  payrollRunsByEntity: Record<string, PayrollRunRecord[]>;
+  payrollAllocationsByEntity: Record<string, PayrollAllocationRecord[]>;
 };
 
 export type AuditEventRecord = {

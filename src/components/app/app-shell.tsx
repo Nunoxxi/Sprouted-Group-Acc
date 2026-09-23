@@ -40,11 +40,13 @@ import { BuyingPanel } from '@/components/app/buying-panel';
 import { ContractsPanel } from '@/components/app/contracts-panel';
 import { OpeningPanel } from '@/components/app/opening-panel';
 import { AssetsPanel } from '@/components/app/assets-panel';
+import { PayrollPanel } from '@/components/app/payroll-panel';
 import { CashflowPanel } from '@/components/app/cashflow-panel';
 import { GrantsPanel } from '@/components/app/grants-panel';
 import { PaymentsPanel } from '@/components/app/payments-panel';
 import { sellingCostKinds, sellingCostLabels, type SellingCostKind } from '@/lib/contracts';
 import { instalments, isTaxed, monthOf, provisionalPosition } from '@/lib/assets';
+import { liabilityKindLabels, liabilityPosition } from '@/lib/payroll';
 import { runsGrants } from '@/lib/grants';
 import { agentFloatSummaries, floatPosition, holdsStock, landedCostKinds, landedCostLabels, qualityFieldsFor, type LandedCostKind } from '@/lib/trading';
 import { CurrencyProvider, ReportMoney, TranslationProvider } from '@/components/ui/money';
@@ -83,6 +85,7 @@ const navigationItems = [
   'Payments',
   'Cash flow',
   'Assets',
+  'Payroll',
   'Grants',
   'Intercompany',
   'Tax',
@@ -674,6 +677,23 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
     () => (initialData.grantsByEntity[selectedEntity.id] ?? []).filter((grant) => grant.status === 'active'),
     [initialData, selectedEntity.id],
   );
+  /** What payroll still owes and when, for the dashboard. */
+  const payrollOwed = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const rows = (initialData.payrollRunsByEntity[selectedEntity.id] ?? []).flatMap((run) =>
+      run.liabilities.map((liability) => ({
+        id: liability.id,
+        period: liability.period,
+        kind: liability.kind,
+        amountMinor: liability.amountMinor,
+        settledMinor: liability.settledMinor,
+        dueDate: liability.dueDate,
+      })),
+    );
+    const position = liabilityPosition(rows, today);
+    return position.rows.length ? position : null;
+  }, [initialData, selectedEntity.id]);
+
   /**
    * Where the entity stands on its provisional tax, for the dashboard. The
    * year we are in is the one today falls inside; an exempt entity has none.
@@ -2538,6 +2558,47 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                   </Card>
                 ))}
               </div>
+
+              {payrollOwed ? (
+                <Card className={['rounded-2xl border', payrollOwed.overdueMinor > 0 ? 'border-red-300 bg-red-50' : 'border-slate-200'].join(' ')}>
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Payroll outstanding</p>
+                      <p className="mt-2 text-sm text-slate-700">
+                        <span className="font-semibold">
+                          <Money value={payrollOwed.outstandingMinor} />
+                        </span>{' '}
+                        still to pay
+                        {payrollOwed.overdueMinor > 0 ? (
+                          <>
+                            , of which{' '}
+                            <span className="font-semibold text-red-800">
+                              <Money value={payrollOwed.overdueMinor} /> is past due
+                            </span>
+                          </>
+                        ) : null}
+                        .
+                        {payrollOwed.next ? (
+                          <>
+                            {' '}
+                            Next: {liabilityKindLabels[payrollOwed.next.kind]} for {payrollOwed.next.period} by <span className="font-semibold">{payrollOwed.next.dueDate}</span>.
+                          </>
+                        ) : null}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      {payrollOwed.rows.slice(0, 6).map((row) => (
+                        <span
+                          key={row.id}
+                          className={['rounded-lg border px-2.5 py-1.5', row.overdue ? 'border-red-300 bg-red-100 text-red-900' : 'border-slate-200 bg-white text-slate-600'].join(' ')}
+                        >
+                          {liabilityKindLabels[row.kind]} · {row.dueDate}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </Card>
+              ) : null}
 
               {provisionalTax ? (
                 <Card className={['rounded-2xl border', provisionalTax.position.overdueMinor > 0 ? 'border-red-300 bg-red-50' : 'border-slate-200'].join(' ')}>
@@ -4632,6 +4693,19 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
               classes={initialData.allowanceClassesByEntity[selectedEntity.id] ?? []}
               taxYears={initialData.taxYearsByEntity[selectedEntity.id] ?? []}
               contacts={contacts}
+              bankAccounts={entityBankAccounts}
+              allowed={allowed}
+            />
+          ) : activeNav === 'Payroll' ? (
+            <PayrollPanel
+              key={selectedEntity.id}
+              entity={selectedEntity}
+              runs={initialData.payrollRunsByEntity[selectedEntity.id] ?? []}
+              mappings={initialData.payrollMappingsByEntity[selectedEntity.id] ?? []}
+              departments={initialData.payrollDepartmentsByEntity[selectedEntity.id] ?? []}
+              allocations={initialData.payrollAllocationsByEntity[selectedEntity.id] ?? []}
+              grants={initialData.grantsByEntity[selectedEntity.id] ?? []}
+              accounts={entityAccounts}
               bankAccounts={entityBankAccounts}
               allowed={allowed}
             />

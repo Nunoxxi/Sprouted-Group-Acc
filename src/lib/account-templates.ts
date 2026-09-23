@@ -86,6 +86,17 @@ export const farmerAdvanceAccounts: AccountTemplate[] = [
  * no computation. The depreciation *expense* is found by category, because
  * the two charts number it differently.
  */
+/**
+ * Payroll. There is no payroll engine: the summary is imported and posted.
+ * PAYE and SSNIT tier 1 already exist among the tax accounts; tier 2, net pay
+ * and the employer's own contribution are added here. Every chart.
+ */
+export const payrollAccounts: AccountTemplate[] = [
+  { code: '2046', name: 'SSNIT Tier 2 Payable', type: 'LIABILITY', parentCode: '2000', category: 'payroll-liability' },
+  { code: '2047', name: 'Net Pay Payable', type: 'LIABILITY', parentCode: '2000', category: 'payroll-liability' },
+  { code: '6065', name: 'Employer SSNIT Contributions', type: 'EXPENSE', parentCode: '6000', category: 'employer-ssnit' },
+];
+
 export const fixedAssetAccounts: AccountTemplate[] = [
   { code: '1200', name: 'Fixed Assets at Cost', type: 'ASSET', parentCode: '1000', category: 'fixed-asset' },
   { code: '1205', name: 'Accumulated Depreciation', type: 'ASSET', parentCode: '1200', category: 'accumulated-depreciation' },
@@ -150,6 +161,7 @@ export const manufacturingAccounts: AccountTemplate[] = [
   ...contractAccounts,
   ...mobileMoneyAccounts,
   ...fixedAssetAccounts,
+  ...payrollAccounts,
   ...openingAccounts,
   ...sharedFxAccounts,
 ];
@@ -199,6 +211,7 @@ export const ngoAccounts: AccountTemplate[] = [
   ...sharedInventoryAccounts,
   ...mobileMoneyAccounts,
   ...fixedAssetAccounts,
+  ...payrollAccounts,
   ...grantManagementAccounts,
   ...openingAccounts,
   ...sharedFxAccounts,

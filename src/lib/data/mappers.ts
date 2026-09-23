@@ -54,6 +54,8 @@ export function entityRecord(row: Entity): EntityRecord {
     functionalCurrency: row.functionalCurrency,
     floatAgeLimitDays: row.floatAgeLimitDays,
     taxStatus: row.taxStatus === 'EXEMPT' ? 'exempt' : row.taxStatus === 'SPECIAL_RATE' ? 'special-rate' : 'taxable',
+    payeDueDay: row.payeDueDay,
+    ssnitDueDay: row.ssnitDueDay,
     lbcMode: row.lbcMode,
     revenuePresentation: row.revenuePresentation === 'NET' ? 'net' : 'gross',
     producerPriceMinorPerKg: row.producerPriceMinorPerKg === null ? null : toMinor(row.producerPriceMinorPerKg),

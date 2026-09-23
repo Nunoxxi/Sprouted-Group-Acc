@@ -116,6 +116,7 @@ import * as momoActions from '@/app/actions/momo';
 import * as grantActions from '@/app/actions/grants';
 import * as cashflowActions from '@/app/actions/cashflow';
 import * as assetActions from '@/app/actions/assets';
+import * as payrollActions from '@/app/actions/payroll';
 import * as userActions from '@/app/actions/users';
 import * as auditRoute from '@/app/api/audit/route';
 import * as backupsRoute from '@/app/api/backups/route';
@@ -314,6 +315,20 @@ const assetCalls: Record<keyof typeof assetActions, Call> = {
 /** The one asset read a Viewer may make on their own entity. */
 const assetReads = new Set(['taxWorksheet']);
 
+/** Every payroll import Server Function. */
+const payrollCalls: Record<keyof typeof payrollActions, Call> = {
+  setPayrollDueDays: () => payrollActions.setPayrollDueDays(FORBIDDEN_ENTITY, 15, 14),
+  savePayrollMapping: () => payrollActions.savePayrollMapping(FORBIDDEN_ENTITY, { name: 'Summary', employeeNameColumn: 'Name', grossColumn: 'Gross' }),
+  savePayrollDepartment: () => payrollActions.savePayrollDepartment(FORBIDDEN_ENTITY, 'Programmes', '6020'),
+  savePayrollAllocation: () => payrollActions.savePayrollAllocation(FORBIDDEN_ENTITY, { employeeKey: 'E001', grantId: 'grant', pct: '60' }),
+  removePayrollAllocation: () => payrollActions.removePayrollAllocation(FORBIDDEN_ENTITY, 'allocation'),
+  importPayroll: () => payrollActions.importPayroll(FORBIDDEN_ENTITY, { period: '2026-09', payDate: '2026-09-28', mappingId: 'mapping', fileName: 'p.csv', csv: 'Name,Gross\nAma,100.00' }),
+  payPayrollLiability: () => payrollActions.payPayrollLiability(FORBIDDEN_ENTITY, { liabilityId: 'liability', date: '2026-10-15', amountMinor: 1000, bankAccountId: 'bank' }),
+  payrollAllocationTotal: () => payrollActions.payrollAllocationTotal(FORBIDDEN_ENTITY, 'E001'),
+};
+/** The one payroll read a Viewer may make on their own entity. */
+const payrollReads = new Set(['payrollAllocationTotal']);
+
 /** Every user-management Server Function. Owner-only, so any other role is refused. */
 const userCalls: Record<keyof typeof userActions, Call> = {
   listUsers: () => userActions.listUsers(),
@@ -388,6 +403,8 @@ describe('coverage', () => {
     expect(exportedCashflow.sort()).toEqual(Object.keys(cashflowCalls).sort());
     const exportedAssets = Object.keys(assetActions).filter((k) => typeof (assetActions as Record<string, unknown>)[k] === 'function');
     expect(exportedAssets.sort()).toEqual(Object.keys(assetCalls).sort());
+    const exportedPayroll = Object.keys(payrollActions).filter((k) => typeof (payrollActions as Record<string, unknown>)[k] === 'function');
+    expect(exportedPayroll.sort()).toEqual(Object.keys(payrollCalls).sort());
   });
 
   it('every Route Handler method has a case', () => {
@@ -399,7 +416,7 @@ describe('coverage', () => {
 // --- signed out --------------------------------------------------------------------
 
 describe('signed out', () => {
-  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...userCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...userCalls })) {
     if (!call) continue;
     it(`${name} is refused without touching the database`, async () => {
       expect(isRefusal(await call())).toBe(true);
@@ -419,7 +436,7 @@ describe('signed out', () => {
 describe('an Accountant on Sprouted Roots asking for Oikazi', () => {
   beforeEach(() => signIn({ role: 'accountant' }, [GRANTED_ENTITY]));
 
-  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls })) {
     if (!call) continue;
     it(`${name} is refused and reads nothing`, async () => {
       const result = await call();
@@ -475,8 +492,8 @@ describe('a Viewer with access to Oikazi', () => {
   }
 
   it('cannot touch rates, banks, the functional currency, revaluation or VAT registration, even on their own entity', async () => {
-    for (const [name, call] of Object.entries({ ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls })) {
-      if (name === 'listExchangeRates' || openingReads.has(name) || momoReads.has(name) || grantReads.has(name) || cashflowReads.has(name) || assetReads.has(name)) continue; // reads are reports:view
+    for (const [name, call] of Object.entries({ ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls })) {
+      if (name === 'listExchangeRates' || openingReads.has(name) || momoReads.has(name) || grantReads.has(name) || cashflowReads.has(name) || assetReads.has(name) || payrollReads.has(name)) continue; // reads are reports:view
       dbCalls.length = 0;
       const result = await call();
       expect(isRefusal(result), name).toBe(true);
