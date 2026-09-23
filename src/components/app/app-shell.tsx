@@ -640,14 +640,19 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
     intercompanyBalance: 0,
   };
 
+  // Everyone this company trades with. A contact gets a balance with every
+  // entity the moment it is created, so the balance is what says the two of
+  // them deal with each other; the type only says which way round.
+  //
+  // This used to also test the type and the category, which quietly hid any
+  // contact typed Customer whose category was not Customer — added, then
+  // missing from the list and from the picker, with nothing to explain it.
+  //
+  // It deliberately does not narrow to customers on invoices and suppliers on
+  // bills. That would be truer, but a contact's type cannot be edited yet, so
+  // a type set wrong once would hide the contact with no way to put it right.
   const entityContacts = useMemo(
-    () =>
-      contacts.filter((contact) => {
-        const hasSelectedEntityBalance = contact.balances[selectedEntity.id] !== undefined;
-        const isSupplierVisible = contact.type === 'supplier' || contact.type === 'both';
-        const isGroupEntityVisible = contact.category === 'group-entity' && contact.balances[selectedEntity.id] !== undefined;
-        return hasSelectedEntityBalance && (isSupplierVisible || isGroupEntityVisible || contact.category === 'customer');
-      }),
+    () => contacts.filter((contact) => contact.balances[selectedEntity.id] !== undefined),
     [contacts, selectedEntity.id],
   );
 
