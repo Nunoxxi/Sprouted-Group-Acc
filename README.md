@@ -70,6 +70,7 @@ Copy `.env.example` to `.env`. Relevant variables:
 | `EXPORT_DIR` | Where ledger export files are written. Defaults to `exports/` next to the app; point it at durable storage in production. |
 | `BETTER_AUTH_SECRET` | Signs session cookies and encrypts TOTP secrets. `openssl rand -base64 32`. Changing it signs everyone out. |
 | `BETTER_AUTH_URL` | The app's public URL; invite and reset links are built from it. |
+| `PII_ENCRYPTION_KEY` | 32 random bytes, base64, encrypting telephone numbers, mobile money numbers, addresses, email addresses and signatures before they are stored. `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`. Keep a copy somewhere safe: change it or lose it and every encrypted value becomes unreadable (the financial records are unaffected). |
 | `RESEND_API_KEY`, `EMAIL_FROM` | Outbound email for invitations and resets. `EMAIL_FROM` is the group sender and its domain is the one verified with Resend; each entity may set its own sender on that domain under Settings. Without a key, development prints the email to the console; production refuses to send. |
 
 `.env` is git-ignored and holds real credentials. Never commit it.
@@ -78,7 +79,7 @@ Copy `.env.example` to `.env`. Relevant variables:
 
 ```text
 src/app/              App Router entry, layout, and API routes (audit, backups)
-src/components/app/   app-shell.tsx — the UI shell with sidebar nav; inventory-panel.tsx — Inventory; buying-panel.tsx — agents and floats; contracts-panel.tsx — sales contracts and LBC; opening-panel.tsx — go-live; payments-panel.tsx — wallets, statements, farmer payments; grants-panel.tsx — grants, budgets, donor reports; cashflow-panel.tsx — 13-week and 12-month forecasts; assets-panel.tsx — the register, depreciation and the tax computation; payroll-panel.tsx — the payroll import and its liabilities; inbox-panel.tsx — the attachment inbox and its rules
+src/components/app/   app-shell.tsx — the UI shell with sidebar nav; inventory-panel.tsx — Inventory; buying-panel.tsx — agents and floats; contracts-panel.tsx — sales contracts and LBC; opening-panel.tsx — go-live; payments-panel.tsx — wallets, statements, farmer payments; grants-panel.tsx — grants, budgets, donor reports; cashflow-panel.tsx — 13-week and 12-month forecasts; assets-panel.tsx — the register, depreciation and the tax computation; payroll-panel.tsx — the payroll import and its liabilities; inbox-panel.tsx — the attachment inbox and its rules; privacy-panel.tsx — the register of personal data, subject access requests and erasure
 src/app/field/        The buying agent's phone form: mobile-first, works offline, syncs when it can
 src/components/ui/    Design system primitives (Button, Card, Input, Money, Badge)
 src/lib/              Shared logic (see below)
@@ -111,6 +112,8 @@ The files worth reading first in `src/lib/`:
 - **`trading.ts`** — commodity trading: landed cost per kilogram, shrinkage within and beyond tolerance, buying-agent floats and their reconciliation, quality fields per commodity. Pure and fully tested.
 - **`fx.ts`** — multi-currency: exact rate arithmetic, rate selection, journal conversion, realised FX on settlement, period-end revaluation, intercompany across currencies. Pure and fully tested.
 - **`audit.ts`** — append-only audit log with a SHA-256 hash chain per entity; runs inside the caller's transaction when given one.
+- **`privacy.ts`** — the register of every field in the app that is about a person, who may see it, how numbers are masked, and what erasure does and does not touch. Pure and fully tested; it is what [DATA-PROTECTION.md](DATA-PROTECTION.md) is written from.
+- **`pii-crypto.ts`** — AES-256-GCM for the personal details, with the field's own name bound into the ciphertext so a value cannot be moved between columns.
 - **`authz.ts`** — the role matrix and entity-access rules. Pure; every decision about who may do what comes from here.
 - **`dal.ts`** — turns the session into a principal and refuses anything not allowed. Every server function and route handler starts here.
 - **`auth.ts`** — the Better Auth configuration: the library owns passwords, sessions, tokens, TOTP and rate limits; hooks add the ten-failure lock and the deactivation check.
@@ -118,5 +121,7 @@ The files worth reading first in `src/lib/`:
 ## A caution on the current state
 
 Entities, contacts, charts of accounts, invoices, bills, journals, filed periods, the audit log and exports all live in Postgres and round-trip through it. **Reports, the VAT return, intercompany, bank reconciliation and the dashboard do not yet** — they still read demo arrays in `report-data.ts` and the shell, so a document you post is in the ledger but not on any report. Pointing the reports at the ledger is the next pass; see [PROJECT_STATE.md](PROJECT_STATE.md).
+
+**Personal data is encrypted, masked and logged.** What the app holds about farmers, agents, staff and the people it trades with, where it is stored, who can see it and what happens when somebody asks for a copy or asks to be erased is written out in plain language in [DATA-PROTECTION.md](DATA-PROTECTION.md), for the registration with Ghana's Data Protection Commission.
 
 **Authentication is built in** (Better Auth): invite-only email + password, mandatory TOTP for roles that can post, four roles, per-entity access checked on every server function and route, an Owner-only users and sessions screen. See PROJECT_STATE.md. `render.yaml` describes the deployment; nothing has been deployed yet. Before deploying, set `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` and an email transport (`RESEND_API_KEY`, `EMAIL_FROM`) — invitations cannot be sent without one.

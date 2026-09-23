@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Money } from '@/components/ui/money';
+import { MaskedDetail, revealForEditing } from '@/components/app/reveal';
 import { advanceFloat, assignPurchaseFloat, postAgentPurchases, reconcileFloat, rejectAgentPurchase, returnFloatCash, saveAgent, setFloatAgeLimit } from '@/app/actions/trading';
 import type { Permission } from '@/lib/authz';
 import type { AgentPurchaseRecord, BankAccountRecord, BuyingAgentRecord, CommodityRecord, EntityRecord, FloatAdvanceRecord, ItemRecord, StockLocationRecord } from '@/lib/data/types';
@@ -241,8 +242,17 @@ export function BuyingPanel({ entity, agents, floats, purchases, items, commodit
             <div className="mt-3 divide-y divide-slate-200 text-sm">
               {agents.map((agent) => (
                 <div key={agent.id} className="flex items-center justify-between gap-3 py-2">
-                  <div><span className="font-medium text-slate-900">{agent.name}</span><span className="block text-xs text-slate-500">{agent.phone || 'no phone'} · receives at {agent.defaultLocationId ? locationById.get(agent.defaultLocationId)?.name : 'no default location'}{agent.isActive ? '' : ' · inactive'}</span></div>
-                  {allowed('inventory:manage') ? <Button size="sm" variant="ghost" onClick={() => setAgentForm({ id: agent.id, name: agent.name, phone: agent.phone, defaultLocationId: agent.defaultLocationId ?? '' })}>Edit</Button> : null}
+                  <div><span className="font-medium text-slate-900">{agent.name}</span><span className="block text-xs text-slate-500"><MaskedDetail entityId={entity.id} subjectKind="agent" subjectId={agent.id} field="BuyingAgent.phone" masked={agent.phone} allowed={allowed} empty="no phone" /> · receives at {agent.defaultLocationId ? locationById.get(agent.defaultLocationId)?.name : 'no default location'}{agent.isActive ? '' : ' · inactive'}</span></div>
+                  {allowed('inventory:manage') ? (
+                    <Button size="sm" variant="ghost" disabled={pending} onClick={() => {
+                      startTransition(async () => {
+                        // The form holds the real number, not the mask.
+                        const revealed = await revealForEditing(entity.id, 'agent', agent.id, ['BuyingAgent.phone']);
+                        if (typeof revealed === 'string') { setMessage({ tone: 'error', text: revealed }); return; }
+                        setAgentForm({ id: agent.id, name: agent.name, phone: revealed['BuyingAgent.phone'] ?? '', defaultLocationId: agent.defaultLocationId ?? '' });
+                      });
+                    }}>Edit</Button>
+                  ) : null}
                 </div>
               ))}
               {agents.length === 0 ? <p className="py-2 text-slate-600">No agents yet.</p> : null}

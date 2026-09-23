@@ -27,6 +27,7 @@ import { attachmentCount, rulesFor } from '@/lib/data/attachments';
 import { periodOf } from '@/lib/documents';
 import { accountForStock, formatKg, inventoryAccountCategory, type StockPosition } from '@/lib/inventory';
 import { momoAccounts, planRecovery, purchaseJournal } from '@/lib/momo';
+import { encryptField } from '@/lib/pii-crypto';
 import {
   abnormalLossValue,
   commodityKinds,
@@ -214,7 +215,7 @@ export async function saveAgent(entityId: string, input: AgentInput): Promise<Ac
           if (!(await tx.stockLocation.findFirst({ where: { id: input.defaultLocationId, entityId, isActive: true } }))) throw new StockRefusal('Choose a location of this entity.');
           defaultLocationId = input.defaultLocationId;
         }
-        const data = { name, phone: input.phone?.trim() || null, defaultLocationId };
+        const data = { name, phone: encryptField('BuyingAgent.phone', input.phone?.trim()), defaultLocationId };
         if (input.id) {
           const existing = await tx.buyingAgent.findFirst({ where: { id: input.id, entityId } });
           if (!existing) throw new StockRefusal('Agent not found.');
@@ -426,9 +427,16 @@ export async function syncAgentPurchases(entityId: string, purchases: FieldPurch
             const resolved = farmer
               ? await tx.farmer.update({
                   where: { id: farmer.id },
-                  data: { phone: farmer.phone ?? purchase.farmerPhone?.trim() ?? null, community: farmer.community ?? community, district: farmer.district ?? district, walletNumber: farmer.walletNumber ?? walletNumber },
+                  data: {
+                    phone: farmer.phone ?? encryptField('Farmer.phone', purchase.farmerPhone?.trim()),
+                    community: farmer.community ?? community,
+                    district: farmer.district ?? district,
+                    walletNumber: farmer.walletNumber ?? encryptField('Farmer.walletNumber', walletNumber),
+                  },
                 })
-              : await tx.farmer.create({ data: { entityId, name: farmerName, phone: purchase.farmerPhone?.trim() || null, community, district, walletNumber } });
+              : await tx.farmer.create({
+                  data: { entityId, name: farmerName, phone: encryptField('Farmer.phone', purchase.farmerPhone?.trim()), community, district, walletNumber: encryptField('Farmer.walletNumber', walletNumber) },
+                });
             await tx.agentPurchase.create({
               data: {
                 entityId, agentId: agent.id, floatId: purchase.floatId || null, clientRef, date: dateOf(purchase.date), farmerId: resolved.id, farmerName,
@@ -436,7 +444,7 @@ export async function syncAgentPurchases(entityId: string, purchases: FieldPurch
                 bags: purchase.bags === null || purchase.bags === undefined ? null : new Prisma.Decimal(purchase.bags), grams: fromMinor(grams), priceMinor: fromMinor(priceMinor),
                 paymentMethod: paymentToPrisma[purchase.paymentMethod === 'mobile-money' ? 'mobile-money' : 'cash'],
                 settlement: settlementToPrisma[settlement], paymentRef: paymentRef || null,
-                evidenceKind: evidenceKind ? evidenceToPrisma[evidenceKind] : null, evidenceData: evidenceData || null, evidenceAt: evidenceKind ? new Date() : null,
+                evidenceKind: evidenceKind ? evidenceToPrisma[evidenceKind] : null, evidenceData: encryptField('AgentPurchase.evidenceData', evidenceData), evidenceAt: evidenceKind ? new Date() : null,
                 ...qualityData(purchase.quality), note: purchase.note?.trim() || null, createdById: principal.userId,
               },
             });

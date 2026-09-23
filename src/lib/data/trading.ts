@@ -26,6 +26,7 @@ import type {
 } from '@prisma/client';
 
 import { prisma } from '../prisma';
+import { decryptField } from '../pii-crypto';
 import { evidenceKindOf, settlementOf } from './momo';
 import type { CommodityKind, LandedCostKind, Quality } from '../trading';
 import { postedJournal } from './documents';
@@ -97,7 +98,7 @@ export function lotRecord(row: Lot & { supplier: Pick<Contact, 'name'> | null; c
 }
 
 export function agentRecord(row: BuyingAgent): BuyingAgentRecord {
-  return { id: row.id, entityId: row.entityId, name: row.name, phone: row.phone ?? '', defaultLocationId: row.defaultLocationId, isActive: row.isActive };
+  return { id: row.id, entityId: row.entityId, name: row.name, phone: decryptField('BuyingAgent.phone', row.phone) ?? '', defaultLocationId: row.defaultLocationId, isActive: row.isActive };
 }
 
 export function floatRecord(

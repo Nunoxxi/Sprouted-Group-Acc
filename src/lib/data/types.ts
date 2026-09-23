@@ -16,6 +16,7 @@ import type { Flow, RecurringFrequency } from '../cashflow';
 import type { AdjustmentKind, AllowanceMethod, DepreciationMethod, TaxStatus } from '../assets';
 import type { LiabilityKind } from '../payroll';
 import type { AttachmentTarget } from '../attachments';
+import type { SubjectKind } from '../privacy';
 import type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus } from './enums';
 
 export type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus };
@@ -1079,6 +1080,10 @@ export type InitialData = {
   payrollAllocationsByEntity: Record<string, PayrollAllocationRecord[]>;
   attachmentsByEntity: Record<string, AttachmentRecord[]>;
   attachmentRulesByEntity: Record<string, AttachmentRuleRecord[]>;
+  dataRequestsByEntity: Record<string, DataRequestRecord[]>;
+  /** Every time somebody looked at or erased personal data, newest first. */
+  piiAccessByEntity: Record<string, AuditEventRecord[]>;
+  personalDataCountsByEntity: Record<string, PersonalDataCount[]>;
 };
 
 export type AuditEventRecord = {
@@ -1091,4 +1096,34 @@ export type AuditEventRecord = {
   resourceRef: string;
   summary: string;
   createdAt: string;
+};
+
+/** A request from a person about their own data, and how it was answered. */
+export type DataRequestRecord = {
+  id: string;
+  entityId: string;
+  kind: 'access' | 'erasure';
+  subjectKind: SubjectKind;
+  subjectId: string;
+  subjectRef: string;
+  requestedBy: string;
+  note: string;
+  /** Set on an erasure: the reference that replaced the name. */
+  pseudonym: string;
+  fieldsChanged: number;
+  handledByName: string;
+  createdAt: string;
+};
+
+/** How many people of one kind the entity holds details on. */
+export type PersonalDataCount = {
+  subject: string;
+  label: string;
+  people: number;
+  /** Stored values that are encrypted. */
+  encryptedValues: number;
+  /** Stored values still in plain text, waiting for the one-off pass. */
+  pendingValues: number;
+  /** What is held about them, in plain words. */
+  holds: string;
 };

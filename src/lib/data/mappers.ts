@@ -17,6 +17,7 @@ import {
   whtToRecord,
 } from './enums';
 import { normalizeRate } from '../fx';
+import { decryptField } from '../pii-crypto';
 import { toMinor } from './money';
 import type {
   AccountRecord,
@@ -84,9 +85,9 @@ export function contactRecord(row: Contact & { balances: ContactEntityBalance[] 
     type: contactTypeToRecord[row.type],
     category: contactCategoryToRecord[row.category],
     tin: row.tin ?? '',
-    phone: row.phone ?? '',
-    email: row.email ?? '',
-    address: row.address ?? '',
+    phone: decryptField('Contact.phone', row.phone) ?? '',
+    email: decryptField('Contact.email', row.email) ?? '',
+    address: decryptField('Contact.address', row.address) ?? '',
     withholdingTaxStatus: whtToRecord[row.withholdingTaxStatus],
     isFarmerAggregator: row.isFarmerAggregator,
     isActive: row.isActive,

@@ -43,6 +43,8 @@ import { AssetsPanel } from '@/components/app/assets-panel';
 import { PayrollPanel } from '@/components/app/payroll-panel';
 import { Attachments } from '@/components/app/attachments';
 import { InboxPanel } from '@/components/app/inbox-panel';
+import { PrivacyPanel } from '@/components/app/privacy-panel';
+import { MaskedDetail } from '@/components/app/reveal';
 import { CashflowPanel } from '@/components/app/cashflow-panel';
 import { GrantsPanel } from '@/components/app/grants-panel';
 import { PaymentsPanel } from '@/components/app/payments-panel';
@@ -96,6 +98,7 @@ const navigationItems = [
   'Buying',
   'Contracts',
   'Reports',
+  'Personal data',
   'Go-live',
   'Settings',
 ] as const;
@@ -2735,8 +2738,14 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
 
                       <div className="mt-3 space-y-2 text-sm text-slate-600">
                         <div><span className="font-medium text-slate-700">TIN:</span> {contact.tin}</div>
-                        <div><span className="font-medium text-slate-700">Phone:</span> {contact.phone || '—'}</div>
-                        <div><span className="font-medium text-slate-700">Email:</span> {contact.email || '—'}</div>
+                        <div>
+                          <span className="font-medium text-slate-700">Phone:</span>{' '}
+                          <MaskedDetail entityId={selectedEntity.id} subjectKind="contact" subjectId={contact.id} field="Contact.phone" masked={contact.phone} allowed={allowed} />
+                        </div>
+                        <div>
+                          <span className="font-medium text-slate-700">Email:</span>{' '}
+                          <MaskedDetail entityId={selectedEntity.id} subjectKind="contact" subjectId={contact.id} field="Contact.email" masked={contact.email} allowed={allowed} />
+                        </div>
                         <div><span className="font-medium text-slate-700">WHT:</span> {contact.withholdingTaxStatus}</div>
                         {contact.isFarmerAggregator ? (
                           <div className="font-medium text-emerald-700">Farmer / aggregation buyer</div>
@@ -4697,6 +4706,15 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
               taxYears={initialData.taxYearsByEntity[selectedEntity.id] ?? []}
               contacts={contacts}
               bankAccounts={entityBankAccounts}
+              allowed={allowed}
+            />
+          ) : activeNav === 'Personal data' ? (
+            <PrivacyPanel
+              key={selectedEntity.id}
+              entity={selectedEntity}
+              counts={initialData.personalDataCountsByEntity[selectedEntity.id] ?? []}
+              requests={initialData.dataRequestsByEntity[selectedEntity.id] ?? []}
+              access={initialData.piiAccessByEntity[selectedEntity.id] ?? []}
               allowed={allowed}
             />
           ) : activeNav === 'Inbox' ? (

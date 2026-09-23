@@ -40,10 +40,14 @@ const expected: Record<Role, Permission[]> = {
     'stock:enter',
     'stock:post',
     'reports:view',
+    'pii:view',
+    'privacy:manage',
     'audit:read',
     'export:run',
   ],
-  'data-entry': ['document:draft', 'contact:create', 'stock:enter', 'reports:view'],
+  // Field staff telephone farmers and pay them, so they see contact details;
+  // they cannot report on a person or erase one.
+  'data-entry': ['document:draft', 'contact:create', 'stock:enter', 'reports:view', 'pii:view'],
   viewer: ['reports:view'],
 };
 

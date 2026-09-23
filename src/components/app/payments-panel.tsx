@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Money } from '@/components/ui/money';
+import { MaskedDetail, revealForEditing } from '@/components/app/reveal';
 import {
   addDefaultStatementMappings,
   createPaymentBatch,
@@ -398,7 +399,13 @@ export function PaymentsPanel({ entity, bankAccounts, farmers, advances, batches
                             <td className="py-2 text-right font-semibold">
                               <Money value={purchase.payableMinor - purchase.paidMinor} />
                             </td>
-                            <td className="py-2 font-mono text-xs text-slate-600">{farmer?.walletNumber || <span className="text-rose-600">no wallet</span>}</td>
+                            <td className="py-2 font-mono text-xs text-slate-600">
+                              {farmer?.walletNumber ? (
+                                <MaskedDetail entityId={entity.id} subjectKind="farmer" subjectId={farmer.id} field="Farmer.walletNumber" masked={farmer.walletNumber} allowed={allowed} />
+                              ) : (
+                                <span className="text-rose-600">no wallet</span>
+                              )}
+                            </td>
                           </tr>
                         );
                       })}
@@ -461,7 +468,9 @@ export function PaymentsPanel({ entity, bankAccounts, farmers, advances, batches
                     {batch.payments.map((payment) => (
                       <tr key={payment.id}>
                         <td className="py-2 text-slate-900">{payment.farmerName}</td>
-                        <td className="py-2 font-mono text-xs text-slate-600">{payment.walletNumber}</td>
+                        <td className="py-2 font-mono text-xs text-slate-600">
+                          <MaskedDetail entityId={entity.id} subjectKind="farmer" subjectId={payment.farmerId} field="Farmer.walletNumber" masked={payment.walletNumber} allowed={allowed} empty="no wallet" />
+                        </td>
                         <td className="py-2 text-right">
                           <Money value={payment.amountMinor} />
                         </td>
@@ -640,7 +649,9 @@ export function PaymentsPanel({ entity, bankAccounts, farmers, advances, batches
                     <tr key={farmer.id}>
                       <td className="py-2 text-slate-900">
                         {farmer.name}
-                        {farmer.walletNumber ? <span className="ml-2 font-mono text-xs text-slate-500">{farmer.walletNumber}</span> : null}
+                        {farmer.walletNumber ? (
+                          <MaskedDetail entityId={entity.id} subjectKind="farmer" subjectId={farmer.id} field="Farmer.walletNumber" masked={farmer.walletNumber} allowed={allowed} className="ml-2 font-mono text-xs text-slate-500" />
+                        ) : null}
                       </td>
                       <td className="py-2 text-slate-600">{[farmer.community, farmer.district].filter(Boolean).join(', ')}</td>
                       <td className="py-2 text-right text-slate-600">{farmer.deliveries}</td>
@@ -662,7 +673,16 @@ export function PaymentsPanel({ entity, bankAccounts, farmers, advances, batches
                         }}>
                           History
                         </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setFarmerForm({ id: farmer.id, name: farmer.name, phone: farmer.phone, community: farmer.community, district: farmer.district, walletNumber: farmer.walletNumber })}>
+                        <Button size="sm" variant="ghost" disabled={pending} onClick={() => {
+                          setMessage(null);
+                          startTransition(async () => {
+                            // The form holds real numbers, not dots, or saving
+                            // it would write the mask back over the number.
+                            const revealed = await revealForEditing(entity.id, 'farmer', farmer.id, ['Farmer.phone', 'Farmer.walletNumber']);
+                            if (typeof revealed === 'string') { setMessage({ tone: 'error', text: revealed }); return; }
+                            setFarmerForm({ id: farmer.id, name: farmer.name, phone: revealed['Farmer.phone'] ?? '', community: farmer.community, district: farmer.district, walletNumber: revealed['Farmer.walletNumber'] ?? '' });
+                          });
+                        }}>
                           Edit
                         </Button>
                       </td>

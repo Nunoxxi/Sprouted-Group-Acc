@@ -42,6 +42,7 @@ import {
   type BankAccountKind,
   type StatementMapping,
 } from '@/lib/momo';
+import { decryptField, encryptField } from '@/lib/pii-crypto';
 import { holdsStock, type TradingJournalLine } from '@/lib/trading';
 import { prisma } from '@/lib/prisma';
 
@@ -130,10 +131,10 @@ export async function saveFarmer(entityId: string, input: FarmerInput): Promise<
       if (!name) return fail("Give the farmer's name.");
       const data = {
         name,
-        phone: input.phone?.trim() || null,
+        phone: encryptField('Farmer.phone', input.phone?.trim()),
         community: input.community?.trim() || null,
         district: input.district?.trim() || null,
-        walletNumber: input.walletNumber?.trim() || null,
+        walletNumber: encryptField('Farmer.walletNumber', input.walletNumber?.trim()),
         isActive: input.isActive ?? true,
       };
       const row = await prisma.$transaction(async (tx) => {
@@ -225,7 +226,8 @@ export async function createPaymentBatch(entityId: string, input: BatchInput): P
           if (!purchase.farmer) throw new StockRefusal(`The purchase from ${purchase.farmerName} is not linked to a farmer record.`);
           const outstanding = toMinor(purchase.payableMinor) - purchase.payments.reduce((s, p) => s + toMinor(p.amountMinor), 0);
           if (outstanding <= 0) throw new StockRefusal(`${purchase.farmerName} has already been paid for the purchase of ${purchase.date.toISOString().slice(0, 10)}.`);
-          return { purchaseId: purchase.id, farmerId: purchase.farmer.id, amountMinor: outstanding, walletNumber: purchase.farmer.walletNumber };
+          const wallet = decryptField('Farmer.walletNumber', purchase.farmer.walletNumber);
+          return { purchaseId: purchase.id, farmerId: purchase.farmer.id, amountMinor: outstanding, walletNumber: encryptField('FarmerPayment.walletNumber', wallet) };
         });
         const totalMinor = lines.reduce((s, l) => s + l.amountMinor, 0);
         const reference = await nextBatchReference(tx, entityId);
@@ -255,11 +257,11 @@ export async function exportPaymentBatch(entityId: string, batchId: string): Pro
         const batch = await tx.farmerPaymentBatch.findFirst({ where: { id: batchId, entityId }, include: batchInclude });
         if (!batch) throw new StockRefusal('Unknown payment batch.');
         if (batch.status === 'PAID') throw new StockRefusal(`${batch.reference} has already been paid.`);
-        const missing = batch.payments.filter((p) => !p.walletNumber?.trim()).map((p) => p.farmer.name);
+        const missing = batch.payments.filter((p) => !decryptField('FarmerPayment.walletNumber', p.walletNumber)?.trim()).map((p) => p.farmer.name);
         if (missing.length) throw new StockRefusal(`No wallet number for ${missing.slice(0, 3).join(', ')}${missing.length > 3 ? ` and ${missing.length - 3} more` : ''}. Add it on the farmer.`);
         const csv = disbursementCsv(
           batch.reference,
-          batch.payments.map((p) => ({ farmerName: p.farmer.name, walletNumber: p.walletNumber ?? '', amountMinor: toMinor(p.amountMinor), reference: p.paymentRef ?? '' })),
+          batch.payments.map((p) => ({ farmerName: p.farmer.name, walletNumber: decryptField('FarmerPayment.walletNumber', p.walletNumber) ?? '', amountMinor: toMinor(p.amountMinor), reference: p.paymentRef ?? '' })),
         );
         const updated = await tx.farmerPaymentBatch.update({ where: { id: batch.id }, data: { status: 'EXPORTED', exportedAt: new Date() }, include: batchInclude });
         await recordAuditEvent({ entityId, userId: principal.userId, userName: principal.name, action: 'EDIT', resourceType: 'payment-batch', resourceRef: batch.reference, summary: `Payment batch ${batch.reference} exported for disbursement: ${batch.payments.length} farmers, ${(toMinor(batch.totalMinor) / 100).toFixed(2)}` }, tx);

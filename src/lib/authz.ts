@@ -38,6 +38,10 @@ export const permissions = [
   'stock:enter', // enter a stock count or an NRV selling price (nothing posts)
   'stock:post', // transfers, adjustments, posting a count, write-downs — each writes a journal
   'reports:view',
+  // Seeing a person's telephone number, mobile money number or signature —
+  // not the transactions, which a Viewer may read. See src/lib/privacy.ts.
+  'pii:view',
+  'privacy:manage', // produce a subject access report, erase a person
   'audit:read',
   'export:run',
   'users:manage', // invite, change role and entity access, deactivate, unlock
@@ -60,10 +64,15 @@ const matrix: Record<Role, ReadonlySet<Permission>> = {
     'stock:enter',
     'stock:post',
     'reports:view',
+    'pii:view',
+    'privacy:manage',
     'audit:read',
     'export:run',
   ]),
-  'data-entry': new Set<Permission>(['document:draft', 'contact:create', 'stock:enter', 'reports:view']),
+  // Field staff need to be able to telephone a farmer and to pay them, so
+  // they see contact details — but they cannot produce a report about a
+  // person or erase one.
+  'data-entry': new Set<Permission>(['document:draft', 'contact:create', 'stock:enter', 'reports:view', 'pii:view']),
   viewer: new Set<Permission>(['reports:view']),
 };
 

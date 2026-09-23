@@ -23,6 +23,7 @@ import { refresh } from 'next/cache';
 
 import { journalEntriesBalance } from '@/lib/accounting-integrity';
 import { attachmentGate } from '@/lib/attachments';
+import { encryptField } from '@/lib/pii-crypto';
 import { attachmentCount, rulesFor } from '@/lib/data/attachments';
 import { recordAuditEvent } from '@/lib/audit';
 import type { Permission, Principal } from '@/lib/authz';
@@ -1117,9 +1118,9 @@ async function addContact(input: NewContactInput): Promise<ActionResult<ContactR
       type: toPrismaEnum.contactType[input.type],
       category: toPrismaEnum.contactCategory[input.category],
       tin: input.tin.trim() || null,
-      phone: input.phone.trim() || null,
-      email: input.email.trim() || null,
-      address: input.address.trim() || null,
+      phone: encryptField('Contact.phone', input.phone.trim()),
+      email: encryptField('Contact.email', input.email.trim()),
+      address: encryptField('Contact.address', input.address.trim()),
       withholdingTaxStatus: toPrismaEnum.withholdingTaxStatus[input.withholdingTaxStatus],
       isFarmerAggregator: input.isFarmerAggregator,
       balances: { create: entities.map((entity) => ({ entityId: entity.id, balanceMinor: BigInt(0) })) },

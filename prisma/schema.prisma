@@ -138,6 +138,7 @@ model Entity {
   payrollPayments    PayrollLiabilityPayment[]
   attachments        Attachment[]
   attachmentRules    AttachmentRule[]
+  dataRequests       DataSubjectRequest[]
 }
 
 // Append-only. Events form a hash chain per entity ordered by `sequence`, which
@@ -151,7 +152,7 @@ model AuditEvent {
   /// NULL only for system events (scheduled exports). Part of the hashed record.
   userId       String?
   userName     String
-  action       String // POST | EDIT | VOID | MATCH | BACKUP | FILE_PERIOD | USER
+  action       String // POST | EDIT | VOID | MATCH | BACKUP | FILE_PERIOD | USER | VIEW_PII | ERASE
   resourceType String // invoice | bill | bank-line | intercompany | vat-period | backup
   resourceRef  String
   summary      String
@@ -334,6 +335,7 @@ model User {
   payrollCreated         PayrollRun[]              @relation("PayrollCreatedBy")
   payrollPayments        PayrollLiabilityPayment[]
   attachments            Attachment[]
+  dataSubjectRequests    DataSubjectRequest[]
 
   @@index([deactivatedAt])
 }
@@ -2717,4 +2719,40 @@ model AttachmentRule {
   entity Entity @relation(fields: [entityId], references: [id])
 
   @@unique([entityId, targetKind])
+}
+
+/// A request from a person to be told what is held about them, or to have
+/// their personal details erased. Kept as the proof that the request was
+/// answered, and as the link between a pseudonym and the request that
+/// created it. Never deleted.
+model DataSubjectRequest {
+  id            String   @id @default(cuid())
+  entityId      String
+  /// ACCESS | ERASURE
+  kind          String
+  /// farmer | agent | contact | employee
+  subjectKind   String
+  /// The row the request is about: a Farmer id, a BuyingAgent id, a Contact
+  /// id, or for staff the employee key on the payroll.
+  subjectId     String
+  /// What the person was called when the request came in. For an erasure
+  /// this is the last place their real name is written down, so it is only
+  /// ever shown to someone allowed to manage privacy.
+  subjectRef    String
+  /// Who asked, as they gave it, and anything they said.
+  requestedBy   String
+  note          String?
+  /// Set on an erasure: the reference that replaced their name.
+  pseudonym     String?
+  /// How many stored values the erasure wrote over or emptied.
+  fieldsChanged Int      @default(0)
+  handledById   String?
+  handledByName String
+  createdAt     DateTime @default(now())
+
+  entity    Entity @relation(fields: [entityId], references: [id])
+  handledBy User?  @relation(fields: [handledById], references: [id])
+
+  @@index([entityId, createdAt])
+  @@index([entityId, subjectKind, subjectId])
 }

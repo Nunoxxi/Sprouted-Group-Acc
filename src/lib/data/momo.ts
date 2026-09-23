@@ -28,6 +28,7 @@ import type {
 } from '@prisma/client';
 
 import type { BankAccountKind } from '../momo';
+import { decryptField } from '../pii-crypto';
 import { prisma } from '../prisma';
 import { postedJournal } from './documents';
 import { toMinor } from './money';
@@ -88,10 +89,10 @@ export function farmerRecord(row: FarmerRow): FarmerRecord {
     id: row.id,
     entityId: row.entityId,
     name: row.name,
-    phone: row.phone ?? '',
+    phone: decryptField('Farmer.phone', row.phone) ?? '',
     community: row.community ?? '',
     district: row.district ?? '',
-    walletNumber: row.walletNumber ?? '',
+    walletNumber: decryptField('Farmer.walletNumber', row.walletNumber) ?? '',
     isActive: row.isActive,
     advanceOutstandingMinor: row.advances.filter((a) => a.status === 'OPEN').reduce((s, a) => s + toMinor(a.amountMinor) - toMinor(a.settledMinor), 0),
     payableOutstandingMinor,
@@ -156,7 +157,7 @@ export function paymentBatchRecord(
         farmerName: payment.farmer.name,
         purchaseId: payment.purchaseId,
         amountMinor: toMinor(payment.amountMinor),
-        walletNumber: payment.walletNumber ?? '',
+        walletNumber: decryptField('FarmerPayment.walletNumber', payment.walletNumber) ?? '',
         paymentRef: payment.paymentRef ?? '',
       })),
     journal: row.journalEntry ? postedJournal(row.journalEntry) : null,

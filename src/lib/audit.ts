@@ -5,7 +5,7 @@ import type { Prisma } from '@prisma/client';
 import { assertNoBigInt } from './data/money';
 import { prisma } from './prisma';
 
-export type AuditAction = 'POST' | 'EDIT' | 'VOID' | 'MATCH' | 'BACKUP' | 'FILE_PERIOD' | 'USER';
+export type AuditAction = 'POST' | 'EDIT' | 'VOID' | 'MATCH' | 'BACKUP' | 'FILE_PERIOD' | 'USER' | 'VIEW_PII' | 'ERASE';
 
 export type AuditEventInput = {
   entityId: string;

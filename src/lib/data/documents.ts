@@ -41,7 +41,9 @@ import { loadContractData, sellingCostKindOf } from './contracts';
 import { loadAssetData } from './assets';
 import { loadCashflowData } from './cashflow';
 import { loadAttachmentData } from './attachments';
+import { redactInitialData } from './redact';
 import { loadPayrollData } from './payroll';
+import { loadPrivacyData } from './privacy';
 import { loadGrantData } from './grants';
 import { bankAccountKindOf, loadMomoData } from './momo';
 import { loadOpeningData } from './opening';
@@ -248,7 +250,16 @@ function groupBy<T>(items: T[], keyOf: (item: T) => string): Record<string, T[]>
  * ... }` — not applied afterwards, so nothing from another entity is ever
  * read. Contacts are group-wide by design; their balances are filtered.
  */
+/**
+ * Everything the signed-in person may see, assembled once. Personal details
+ * are held back here, on the server, for a role that has no reason for them:
+ * hiding them in the interface would leave them in the page source.
+ */
 export async function loadInitialData(principal: Principal): Promise<InitialData> {
+  return redactInitialData(await loadEverything(principal), principal.role);
+}
+
+async function loadEverything(principal: Principal): Promise<InitialData> {
   const entityScope = principal.entityIds === 'all' ? {} : { entityId: { in: [...principal.entityIds] } };
   const entityFilter = principal.entityIds === 'all' ? {} : { id: { in: [...principal.entityIds] } };
 
@@ -306,5 +317,6 @@ export async function loadInitialData(principal: Principal): Promise<InitialData
     ...(await loadAssetData(entityScope, entityIds)),
     ...(await loadPayrollData(entityScope, entityIds)),
     ...(await loadAttachmentData(entityScope, entityIds)),
+    ...(await loadPrivacyData(entityScope, entityIds)),
   };
 }
