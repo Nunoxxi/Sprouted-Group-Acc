@@ -89,7 +89,6 @@ export function contactRecord(row: Contact & { balances: ContactEntityBalance[] 
     email: decryptField('Contact.email', row.email) ?? '',
     address: decryptField('Contact.address', row.address) ?? '',
     withholdingTaxStatus: whtToRecord[row.withholdingTaxStatus],
-    isFarmerAggregator: row.isFarmerAggregator,
     isActive: row.isActive,
     balances,
   };

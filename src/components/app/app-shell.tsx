@@ -475,7 +475,6 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
     email: '',
     address: '',
     withholdingTaxStatus: 'none' as WithholdingTaxStatus,
-    isFarmerAggregator: false,
   });
   const [salesDocument, setSalesDocument] = useState<DocumentFormState>(() => initialDocumentFor(initialData, initialData.entities[0]?.id ?? '', 'invoice'));
   const [purchaseDocument, setPurchaseDocument] = useState<DocumentFormState>(() => initialDocumentFor(initialData, initialData.entities[0]?.id ?? '', 'bill'));
@@ -1511,7 +1510,6 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
       email: '',
       address: '',
       withholdingTaxStatus: 'none',
-      isFarmerAggregator: false,
     });
   }
 
@@ -2747,9 +2745,6 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                           <MaskedDetail entityId={selectedEntity.id} subjectKind="contact" subjectId={contact.id} field="Contact.email" masked={contact.email} allowed={allowed} />
                         </div>
                         <div><span className="font-medium text-slate-700">WHT:</span> {contact.withholdingTaxStatus}</div>
-                        {contact.isFarmerAggregator ? (
-                          <div className="font-medium text-emerald-700">Farmer / aggregation buyer</div>
-                        ) : null}
                       </div>
 
                       <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3">
@@ -5242,7 +5237,6 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                         <div><span className="font-medium text-slate-900">{activeContact.name}</span></div>
                         <div>TIN: {activeContact.tin}</div>
                         <div>WHT status: {activeContact.withholdingTaxStatus}</div>
-                        {activeContact.isFarmerAggregator ? <div>Farmer / aggregation buyer</div> : null}
                       </div>
                     </div>
                   ) : null}
@@ -5722,22 +5716,6 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                     <option value="10%">10%</option>
                     <option value="exempt">Exempt</option>
                   </select>
-                </div>
-
-                <div className="flex items-end pb-1.5">
-                  <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={contactFormValues.isFarmerAggregator}
-                      onChange={(event) =>
-                        setContactFormValues((current) => ({
-                          ...current,
-                          isFarmerAggregator: event.target.checked,
-                        }))
-                      }
-                    />
-                    Farmer / aggregation flag
-                  </label>
                 </div>
               </div>
 

@@ -67,7 +67,6 @@ export type ContactRecord = {
   email: string;
   address: string;
   withholdingTaxStatus: WithholdingTaxStatus;
-  isFarmerAggregator: boolean;
   isActive: boolean;
   /** Balance with each entity, keyed by entity id. Absent means no dealings. */
   balances: Record<string, number>;

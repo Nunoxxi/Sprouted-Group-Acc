@@ -68,7 +68,6 @@ async function main() {
           email: contact.email || null,
           address: contact.address || null,
           withholdingTaxStatus: whtToPrisma[contact.withholdingTaxStatus],
-          isFarmerAggregator: contact.isFarmerAggregator,
           isActive: contact.isActive,
         },
         create: {
@@ -81,7 +80,6 @@ async function main() {
           email: contact.email || null,
           address: contact.address || null,
           withholdingTaxStatus: whtToPrisma[contact.withholdingTaxStatus],
-          isFarmerAggregator: contact.isFarmerAggregator,
           isActive: contact.isActive,
         },
       });

@@ -1095,7 +1095,6 @@ export type NewContactInput = {
   email: string;
   address: string;
   withholdingTaxStatus: WithholdingTaxStatus;
-  isFarmerAggregator: boolean;
 };
 
 // Contacts are shared across the group, so this is a role check, not an
@@ -1122,7 +1121,6 @@ async function addContact(input: NewContactInput): Promise<ActionResult<ContactR
       email: encryptField('Contact.email', input.email.trim()),
       address: encryptField('Contact.address', input.address.trim()),
       withholdingTaxStatus: toPrismaEnum.withholdingTaxStatus[input.withholdingTaxStatus],
-      isFarmerAggregator: input.isFarmerAggregator,
       balances: { create: entities.map((entity) => ({ entityId: entity.id, balanceMinor: BigInt(0) })) },
     },
     include: { balances: true },

@@ -571,7 +571,6 @@ describe('roles that are not Owner', () => {
       email: '',
       address: '',
       withholdingTaxStatus: 'none',
-      isFarmerAggregator: false,
     });
     expect(isRefusal(result)).toBe(true);
     onlyAccessLookup();
