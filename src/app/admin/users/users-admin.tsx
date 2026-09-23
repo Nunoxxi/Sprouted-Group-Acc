@@ -6,7 +6,7 @@ import { deactivateUser, inviteUser, reactivateUser, resendInvite, unlockUser, u
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { roleLabels, roles, type Role } from '@/lib/authz';
+import { roleDescriptions, roleLabels, roles, type Role } from '@/lib/authz';
 import { formatDateTime } from '@/lib/format-date';
 
 type EntityOption = { id: string; name: string };
@@ -161,13 +161,7 @@ function RoleAndEntities({
           ))}
         </select>
         <p className="mt-1 text-xs text-slate-500">
-          {role === 'owner'
-            ? 'Full access to every entity; can invite and remove users.'
-            : role === 'accountant'
-              ? 'Post, reconcile, file returns, lock periods. Two-factor required.'
-              : role === 'data-entry'
-                ? 'Create and edit drafts and bills. Cannot post, void or unlock periods.'
-                : 'Reports only. Nothing editable.'}
+          {roleDescriptions[role]}
         </p>
       </div>
       <div>

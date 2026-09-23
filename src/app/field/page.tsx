@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 
-import { can, mustSetUpTwoFactor, visibleEntityIds } from '@/lib/authz';
+import { can, mustSetUpTwoFactor, roleLabels, visibleEntityIds } from '@/lib/authz';
 import { getPrincipal } from '@/lib/dal';
 import { entityTypeOf } from '@/lib/data/mappers';
 import { agentRecord } from '@/lib/data/trading';
@@ -31,7 +31,7 @@ export default async function FieldPage() {
   if (!principal) redirect('/sign-in?next=%2Ffield');
   if (mustSetUpTwoFactor(principal)) redirect('/two-factor/setup');
   if (!can(principal, 'stock:enter')) {
-    return <p className="p-6 text-sm text-slate-700">Your role ({principal.role}) cannot record field purchases.</p>;
+    return <p className="p-6 text-sm text-slate-700">Your role ({roleLabels[principal.role]}) cannot record field purchases.</p>;
   }
 
   const entities = await prisma.entity.findMany({ orderBy: { code: 'asc' } });

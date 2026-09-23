@@ -270,7 +270,7 @@ model User {
   email               String    @unique
   emailVerified       Boolean   @default(false)
   image               String?
-  /// owner | accountant | data-entry | viewer — see src/lib/authz.ts
+  /// owner | accountant | bookkeeper | data-entry | viewer — see src/lib/authz.ts
   role                String    @default("viewer")
   /// Better Auth admin plugin. A "ban" is how the library refuses sign-in;
   /// banReason distinguishes LOCKED (ten failed attempts) from DEACTIVATED.

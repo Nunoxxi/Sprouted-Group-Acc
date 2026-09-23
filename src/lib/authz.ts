@@ -8,14 +8,29 @@
  * post there and cannot see Oikazi at all. Owners hold every entity.
  */
 
-export const roles = ['owner', 'accountant', 'data-entry', 'viewer'] as const;
+export const roles = ['owner', 'accountant', 'bookkeeper', 'data-entry', 'viewer'] as const;
 export type Role = (typeof roles)[number];
 
 export const roleLabels: Record<Role, string> = {
   owner: 'Owner',
   accountant: 'Accountant',
+  bookkeeper: 'Bookkeeper',
   'data-entry': 'Data entry',
   viewer: 'Viewer',
+};
+
+/**
+ * One line on what each role may do, for whoever is choosing one. A Record, so
+ * that adding a role without describing it does not compile — the alternative
+ * was a chain of ifs whose last branch silently described the new role as a
+ * Viewer.
+ */
+export const roleDescriptions: Record<Role, string> = {
+  owner: 'Full access to every entity; can invite and remove users.',
+  accountant: 'Post, reconcile, file returns, lock periods. Two-factor required.',
+  bookkeeper: 'Enter and post invoices and bills, reconcile them, add accounts. Cannot void, close periods or manage people. Two-factor required.',
+  'data-entry': 'Create and edit drafts and bills. Cannot post, void or unlock periods.',
+  viewer: 'Reports only. Nothing editable.',
 };
 
 export function isRole(value: unknown): value is Role {
@@ -74,6 +89,24 @@ const matrix: Record<Role, ReadonlySet<Permission>> = {
     'reports:view',
     'pii:view',
     'privacy:manage',
+    'audit:read',
+    'export:run',
+  ]),
+  // Keeps the books day to day: enters and posts invoices and bills and
+  // reconciles them, and adds an account when one is missing. Correcting a
+  // posted entry, closing a period, revaluing at period end and anything to do
+  // with a person's data are an Accountant's or an Owner's — a bookkeeper
+  // records what happened, they do not decide how to restate it.
+  bookkeeper: new Set<Permission>([
+    'chart:edit',
+    'document:draft',
+    'document:post',
+    'document:mark-paid',
+    'contact:create',
+    'rates:manage',
+    'stock:enter',
+    'reports:view',
+    'pii:view',
     'audit:read',
     'export:run',
   ]),

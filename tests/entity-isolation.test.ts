@@ -124,6 +124,7 @@ import * as settingsActions from '@/app/actions/settings';
 import * as userActions from '@/app/actions/users';
 import * as auditRoute from '@/app/api/audit/route';
 import * as backupsRoute from '@/app/api/backups/route';
+import { roles } from '@/lib/authz';
 import { getPrincipal } from '@/lib/dal';
 import { loadInitialData } from '@/lib/data/documents';
 
@@ -575,7 +576,9 @@ describe('a Viewer with access to Oikazi', () => {
 });
 
 describe('roles that are not Owner', () => {
-  for (const role of ['accountant', 'data-entry', 'viewer']) {
+  // Every role that is not an Owner, taken from the tuple so a new one is
+  // covered here the day it is added.
+  for (const role of roles.filter((name) => name !== 'owner')) {
     for (const [name, call] of Object.entries(userCalls)) {
       it(`${role}: ${name} is refused and reads nothing`, async () => {
         signIn({ role }, [GRANTED_ENTITY, FORBIDDEN_ENTITY]);

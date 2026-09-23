@@ -14,7 +14,7 @@
  * Pure: no I/O, no Prisma.
  */
 
-import type { Role } from './authz';
+import { roleHas, roles, type Role } from './authz';
 
 // --- the data map ----------------------------------------------------------------------------
 
@@ -128,7 +128,10 @@ export function encryptedFields(): PiiField[] {
  * farmer exists and what they were paid — which is the accounting record —
  * but not how to telephone them.
  */
-export const rolesWithPersonalDetail: Role[] = ['owner', 'accountant', 'data-entry'];
+// Read from the permission matrix rather than listed again here: a role that
+// holds pii:view is a role that may see a person's details, and writing the
+// list out twice is how the two come to disagree.
+export const rolesWithPersonalDetail: Role[] = roles.filter((role) => roleHas(role, 'pii:view'));
 
 export function canSeePersonalDetail(role: Role): boolean {
   return rolesWithPersonalDetail.includes(role);

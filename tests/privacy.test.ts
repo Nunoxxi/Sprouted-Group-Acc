@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { roleHas, type Role } from '@/lib/authz';
+import { roleHas, roles, type Role } from '@/lib/authz';
 import { decryptField, encryptField, isEncrypted } from '@/lib/pii-crypto';
 import { redactedFields } from '@/lib/data/redact';
 import {
@@ -92,13 +92,20 @@ describe('who may see personal details', () => {
   });
 
   it('the roles that do the work may', () => {
-    for (const role of ['owner', 'accountant', 'data-entry'] as Role[]) expect(canSeePersonalDetail(role)).toBe(true);
+    for (const role of ['owner', 'accountant', 'bookkeeper', 'data-entry'] as Role[]) expect(canSeePersonalDetail(role)).toBe(true);
+  });
+
+  it('is the same thing as holding pii:view, not a second list that can drift', () => {
+    for (const role of roles) {
+      expect(canSeePersonalDetail(role)).toBe(roleHas(role, 'pii:view'));
+    }
   });
 
   it('the permission matrix agrees: a Viewer can read reports but not personal detail', () => {
     expect(roleHas('viewer', 'reports:view')).toBe(true);
     expect(roleHas('viewer', 'pii:view')).toBe(false);
     expect(roleHas('accountant', 'pii:view')).toBe(true);
+    expect(roleHas('bookkeeper', 'pii:view')).toBe(true);
     expect(roleHas('data-entry', 'pii:view')).toBe(true);
     expect(roleHas('owner', 'pii:view')).toBe(true);
   });

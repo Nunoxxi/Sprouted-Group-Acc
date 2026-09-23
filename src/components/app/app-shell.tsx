@@ -4219,7 +4219,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">System</p>
               <h2 className="mt-1 text-2xl font-semibold text-slate-900">Settings</h2>
               <p className="mt-3 text-sm text-slate-600">
-                Ledger exports and the audit trail are available to Owners and Accountants. Your role is {currentUser.roleLabel}.
+                Ledger exports and the audit trail are not yours to run. Your role is {currentUser.roleLabel}.
               </p>
             </Card>
           ) : activeNav === 'Settings' ? (

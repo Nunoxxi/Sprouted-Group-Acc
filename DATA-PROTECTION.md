@@ -127,7 +127,7 @@ under the same access controls.
 
 ## 5. Who can see it
 
-Everybody who uses the system has one of four roles, and the role decides what
+Everybody who uses the system has one of five roles, and the role decides what
 they can see. The rules are enforced on the server, before the page is built —
 not hidden in the interface, where the data would still be in the page.
 
@@ -135,6 +135,7 @@ not hidden in the interface, where the data would still be in the page.
 | --- | --- |
 | **Owner** | Everything, including the ability to answer a subject access request and to erase a person |
 | **Accountant** | Everything about the money, personal details when they ask for them, and the same privacy powers |
+| **Bookkeeper** | Farmer and agent details, so they can pay farmers and telephone agents. They enter and post the day's transactions but cannot answer a data request or erase anybody |
 | **Data entry** | Farmer and agent details, so they can pay farmers and telephone agents. They cannot answer a data request or erase anybody |
 | **Viewer** | The accounting record only. They see that a farmer was paid and how much. They do not see any telephone number, mobile money number, staff name or pay figure |
 

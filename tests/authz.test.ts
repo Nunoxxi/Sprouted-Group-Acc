@@ -46,6 +46,21 @@ const expected: Record<Role, Permission[]> = {
     'audit:read',
     'export:run',
   ],
+  // Keeps the books: enters and posts, reconciles, adds an account. Does not
+  // correct a posted entry, close a period or touch a person's data.
+  bookkeeper: [
+    'chart:edit',
+    'document:draft',
+    'document:post',
+    'document:mark-paid',
+    'contact:create',
+    'rates:manage',
+    'stock:enter',
+    'reports:view',
+    'pii:view',
+    'audit:read',
+    'export:run',
+  ],
   // Field staff telephone farmers and pay them, so they see contact details;
   // they cannot report on a person or erase one.
   'data-entry': ['document:draft', 'contact:create', 'stock:enter', 'reports:view', 'pii:view'],
@@ -70,6 +85,31 @@ describe('role matrix', () => {
     expect(roleHas('data-entry', 'inventory:manage')).toBe(false);
   });
 
+  it('a Bookkeeper posts the day to day but does not correct or close', () => {
+    // What the role is for.
+    expect(roleHas('bookkeeper', 'document:draft')).toBe(true);
+    expect(roleHas('bookkeeper', 'document:post')).toBe(true);
+    expect(roleHas('bookkeeper', 'document:mark-paid')).toBe(true);
+    expect(roleHas('bookkeeper', 'chart:edit')).toBe(true);
+    expect(roleHas('bookkeeper', 'pii:view')).toBe(true);
+    // Correcting what is posted, and closing the period it sits in, are an
+    // Accountant's. So is anything to do with a person's own data.
+    expect(roleHas('bookkeeper', 'document:void')).toBe(false);
+    expect(roleHas('bookkeeper', 'period:file')).toBe(false);
+    expect(roleHas('bookkeeper', 'revaluation:run')).toBe(false);
+    expect(roleHas('bookkeeper', 'privacy:manage')).toBe(false);
+    // And the Settings area, with everything in the chart that reaches
+    // history, stays with the Owner.
+    expect(roleHas('bookkeeper', 'settings:manage')).toBe(false);
+    expect(roleHas('bookkeeper', 'stock:post')).toBe(false);
+    expect(roleHas('bookkeeper', 'inventory:manage')).toBe(false);
+  });
+
+  it('a Bookkeeper can do strictly less than an Accountant', () => {
+    const wider = permissions.filter((permission) => roleHas('bookkeeper', permission) && !roleHas('accountant', permission));
+    expect(wider).toEqual([]);
+  });
+
   it('Viewer can edit nothing', () => {
     const editing = permissions.filter((permission) => permission !== 'reports:view');
     expect(editing.some((permission) => roleHas('viewer', permission))).toBe(false);
@@ -89,6 +129,7 @@ describe('two-factor requirement', () => {
     }
     expect(roleRequiresTwoFactor('owner')).toBe(true);
     expect(roleRequiresTwoFactor('accountant')).toBe(true);
+    expect(roleRequiresTwoFactor('bookkeeper')).toBe(true);
     expect(roleRequiresTwoFactor('data-entry')).toBe(false);
     expect(roleRequiresTwoFactor('viewer')).toBe(false);
   });
