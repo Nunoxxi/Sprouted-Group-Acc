@@ -11,6 +11,14 @@ export async function register() {
     return;
   }
 
+  // One clear line in the logs beats a page of stack traces later: without the
+  // key, telephone and mobile money numbers cannot be read back, and the app
+  // says so on screen rather than pretending there are none.
+  if (!process.env.PII_ENCRYPTION_KEY) {
+    const how = process.env.NODE_ENV === 'production' ? 'Set it on the service before anyone signs in.' : 'Set it in .env.';
+    console.error(`PII_ENCRYPTION_KEY is not set. Telephone numbers, mobile money numbers, addresses and signatures already stored cannot be read back, and no new one can be saved. ${how}`);
+  }
+
   const { ensureExportScheduler } = await import('./lib/export');
 
   // Deliberately not awaited: register() blocks the server from accepting

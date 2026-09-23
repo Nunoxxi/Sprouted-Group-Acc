@@ -2855,3 +2855,21 @@ model TaxRateSetting {
 
   entity Entity @relation(fields: [entityId], references: [id])
 }
+
+/// Which database this is. One row, set once by `npm run db:mark`.
+///
+/// It lives in the database rather than in an environment variable so that it
+/// cannot be got wrong by pointing a development machine at the wrong
+/// connection string: the answer travels with the database being connected to,
+/// not with the machine connecting. scripts/db-guard.ts reads it before any
+/// migration and refuses to touch a production database from a developer's
+/// machine.
+model DatabaseMarker {
+  id          String   @id @default("singleton")
+  /// production | development
+  environment String
+  /// Something a person recognises, e.g. "Supabase sprouted-prod".
+  label       String
+  markedAt    DateTime @default(now())
+  markedBy    String?
+}

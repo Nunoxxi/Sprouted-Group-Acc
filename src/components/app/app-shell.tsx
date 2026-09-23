@@ -2569,6 +2569,20 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
         </header>
 
         <main className="space-y-6 p-6">
+          {/* Shown on every screen, to anyone who may see a contact detail:
+              a blank telephone number means the key is missing, not that
+              nobody has one. */}
+          {!initialData.encryptionConfigured && allowed('pii:view') ? (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <p className="font-medium">Telephone and mobile money numbers cannot be shown.</p>
+              <p className="mt-1">
+                This server has no encryption key set, so numbers already stored cannot be read back and no new one can be saved. They are not lost. Set
+                <span className="font-mono"> PII_ENCRYPTION_KEY </span>
+                on the server to the value it was encrypted with, and they will reappear.
+              </p>
+            </div>
+          ) : null}
+
           {activeNav === 'Dashboard' ? (
             <>
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">

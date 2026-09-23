@@ -41,6 +41,7 @@ import { loadContractData, sellingCostKindOf } from './contracts';
 import { loadAssetData } from './assets';
 import { loadCashflowData } from './cashflow';
 import { loadAttachmentData } from './attachments';
+import { encryptionConfigured } from '../pii-crypto';
 import { redactInitialData } from './redact';
 import { loadPayrollData } from './payroll';
 import { loadPrivacyData } from './privacy';
@@ -296,6 +297,9 @@ async function loadEverything(principal: Principal): Promise<InitialData> {
       roleLabel: roleLabels[principal.role],
       permissions: permissions.filter((permission) => can(principal, permission)),
     },
+    // False only when PII_ENCRYPTION_KEY is unset. Numbers then read as blank,
+    // and the interface has to say why rather than look like there are none.
+    encryptionConfigured: encryptionConfigured(),
     entities: entities.map(entityRecord),
     contacts: contacts.map(contactRecord),
     accountsByEntity: withAllEntities(groupBy(accounts.map(accountRecord), (account) => account.entityId)),

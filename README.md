@@ -75,6 +75,36 @@ Copy `.env.example` to `.env`. Relevant variables:
 
 `.env` is git-ignored and holds real credentials. Never commit it.
 
+### Two databases, not one
+
+Development and production must not share a Supabase project. They did once, and
+a migration run on a laptop dropped a column the deployed code still read: every
+page of the live site returned a server error until the deploy caught up.
+
+Each database says which it is, in a `DatabaseMarker` row, so the answer travels
+with the database rather than with whichever machine connects to it:
+
+```powershell
+npm run db:mark -- development "my laptop"
+npm run db:mark -- production  "Supabase sprouted-prod"
+```
+
+`npm run prisma:migrate` and `npm run prisma:deploy` both run `db:guard` first,
+which refuses to touch a database marked production unless it is the deployed
+service itself (`NODE_ENV=production`, which Render sets) or you say
+`ALLOW_PRODUCTION_MIGRATION=1` out loud. Production is migrated by the deploy:
+`render.yaml` runs `prisma migrate deploy` at startup, after the build succeeds.
+
+To set up a development database: create a second Supabase project, point
+`DATABASE_URL` and `DIRECT_URL` at it, then:
+
+```powershell
+npm run prisma:deploy   # every migration, on an empty database
+npm run prisma:seed     # entities, charts, contacts, funds, projects
+npm run db:mark -- development "my laptop"
+npm run auth:create-owner
+```
+
 ## Where things live
 
 ```text

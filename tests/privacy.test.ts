@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { roleHas, roles, type Role } from '@/lib/authz';
-import { decryptField, encryptField, isEncrypted } from '@/lib/pii-crypto';
+import { decryptField, encryptField, encryptionConfigured, isEncrypted } from '@/lib/pii-crypto';
 import { redactedFields } from '@/lib/data/redact';
 import {
   accessSummary,
@@ -176,6 +176,28 @@ describe('encryption', () => {
   it('encrypting twice does not double-wrap it', () => {
     const once = encryptField('Farmer.phone', '0244111222') as string;
     expect(encryptField('Farmer.phone', once)).toBe(once);
+  });
+
+  it('with no key set, reading gives nothing back rather than bringing the app down', () => {
+    // An unset key once took every page down, because reading raised. Reading
+    // is the safe direction to degrade: the interface says the key is missing.
+    const sealed = encryptField('Farmer.phone', '0244111222') as string;
+    const key = process.env.PII_ENCRYPTION_KEY;
+    delete process.env.PII_ENCRYPTION_KEY;
+    try {
+      expect(encryptionConfigured()).toBe(false);
+      expect(() => decryptField('Farmer.phone', sealed)).not.toThrow();
+      expect(decryptField('Farmer.phone', sealed)).toBeNull();
+      // Anything stored before encryption was switched on still reads.
+      expect(decryptField('Farmer.phone', '0244111222')).toBe('0244111222');
+      // Writing still refuses: a number stored in plain text while believed
+      // encrypted is the failure that actually matters.
+      expect(() => encryptField('Farmer.phone', '0244111222')).toThrow();
+    } finally {
+      process.env.PII_ENCRYPTION_KEY = key;
+    }
+    expect(encryptionConfigured()).toBe(true);
+    expect(decryptField('Farmer.phone', sealed)).toBe('0244111222');
   });
 
   it('nothing is nothing', () => {

@@ -31,7 +31,7 @@ import { toMinor } from '@/lib/data/money';
 import type { DataRequestRecord } from '@/lib/data/types';
 import { formatMoney } from '@/lib/fx';
 import { formatKg } from '@/lib/inventory';
-import { decryptField, encryptField } from '@/lib/pii-crypto';
+import { decryptField, encryptField, encryptionConfigured } from '@/lib/pii-crypto';
 import {
   accessSummary,
   erasurePlan,
@@ -170,7 +170,15 @@ export async function revealPersonalDetail(entityId: string, input: RevealInput)
       return fail('Nothing hidden is held about a member of staff: payroll figures come from the payroll system.');
     }
 
-    if (!stored) return fail('Nothing is held there.');
+    if (!stored) {
+      // Tell the two apart: a number nobody entered, and a number that is
+      // there but unreadable because the key is missing.
+      return fail(
+        encryptionConfigured()
+          ? 'Nothing is held there.'
+          : 'That number cannot be read: this server has no encryption key set. It is not lost — set PII_ENCRYPTION_KEY and try again.',
+      );
+    }
 
     await recordAuditEvent({
       entityId,

@@ -1094,6 +1094,8 @@ export type InitialData = {
   budgetLinesByEntity: Record<string, ProjectBudgetLineRecord[]>;
   assetCategoriesByEntity: Record<string, AssetCategoryRecord[]>;
   taxRatesByEntity: Record<string, TaxRates>;
+  /** False when the server has no PII_ENCRYPTION_KEY: numbers cannot be read back. */
+  encryptionConfigured: boolean;
 };
 
 export type AuditEventRecord = {

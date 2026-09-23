@@ -11,8 +11,10 @@
     "start": "next start",
     "lint": "eslint .",
     "postinstall": "prisma generate",
-    "prisma:migrate": "prisma migrate dev",
-    "prisma:deploy": "prisma migrate deploy",
+    "db:guard": "node scripts/db-guard.ts",
+    "db:mark": "node scripts/mark-database.ts",
+    "prisma:migrate": "npm run db:guard && prisma migrate dev",
+    "prisma:deploy": "npm run db:guard && prisma migrate deploy",
     "prisma:seed": "node scripts/seed-accounts.ts",
     "test": "vitest run",
     "auth:create-owner": "node scripts/create-owner.ts"
