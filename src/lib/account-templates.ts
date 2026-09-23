@@ -24,7 +24,7 @@ export const sharedTaxAccounts: AccountTemplate[] = [
   { code: '2030', name: 'GETFund Payable', type: 'LIABILITY', parentCode: '2000', category: 'tax' },
   { code: '2035', name: 'Withholding Tax Payable', type: 'LIABILITY', parentCode: '2000', category: 'tax' },
   { code: '2040', name: 'PAYE Payable', type: 'LIABILITY', parentCode: '2000', category: 'tax' },
-  { code: '2045', name: 'SSNIT Payable', type: 'LIABILITY', parentCode: '2000', category: 'tax' },
+  { code: '2045', name: 'SSNIT Tier 1 Payable', type: 'LIABILITY', parentCode: '2000', category: 'tax' },
 ];
 
 /** Stock adjustments, NRV write-downs and shrinkage beyond tolerance post here; see src/lib/inventory.ts and trading.ts. */
@@ -109,9 +109,16 @@ export const mobileMoneyAccounts: AccountTemplate[] = [
   { code: '6050', name: 'Mobile Money Charges & Levies', type: 'EXPENSE', parentCode: '6000', category: 'momo-charges' },
 ];
 
+/**
+ * Exchange differences, split by which way they went rather than by realised
+ * and unrealised. A gain is income; a loss is a finance cost in the 8000s, the
+ * same numbering on every entity. Whether a difference was realised on
+ * settlement or is still only on paper is carried by the journal that made it
+ * - a revaluation entry, which reverses - not by a separate account.
+ */
 export const sharedFxAccounts: AccountTemplate[] = [
-  { code: '7010', name: 'Realised Foreign Exchange Gain/Loss', type: 'EXPENSE', category: 'fx' },
-  { code: '7020', name: 'Unrealised Foreign Exchange Gain/Loss', type: 'EXPENSE', category: 'fx' },
+  { code: '4015', name: 'Foreign Exchange Gain', type: 'INCOME', category: 'fx-gain' },
+  { code: '8001', name: 'Foreign Exchange Loss', type: 'EXPENSE', category: 'fx-loss' },
 ];
 
 export const manufacturingAccounts: AccountTemplate[] = [
@@ -167,46 +174,99 @@ export const manufacturingAccounts: AccountTemplate[] = [
 ];
 
 export const ngoAccounts: AccountTemplate[] = [
-  { code: '1001', name: 'Cash and Bank', type: 'ASSET', parentCode: '1000' },
-  { code: '1005', name: 'Petty Cash', type: 'ASSET', parentCode: '1000' },
-  { code: '1010', name: 'Trade Receivables', type: 'ASSET', parentCode: '1000' },
-  { code: '1015', name: 'Grants Receivable', type: 'ASSET', parentCode: '1010' },
-  { code: '1020', name: 'Donations Receivable', type: 'ASSET', parentCode: '1010' },
-  { code: '1025', name: 'Intercompany Receivable - Sprouted Crafts', type: 'ASSET', parentCode: '1010' },
-  { code: '1026', name: 'Intercompany Receivable - Oikazi', type: 'ASSET', parentCode: '1010' },
-  { code: '1030', name: 'Aggregation Inventory', type: 'ASSET', parentCode: '1000' },
-  { code: '1035', name: 'Farm Inputs Inventory', type: 'ASSET', parentCode: '1000' },
-  { code: '1040', name: 'Program Advances', type: 'ASSET', parentCode: '1000' },
-  { code: '2001', name: 'Trade Payables', type: 'LIABILITY', parentCode: '2000' },
-  { code: '2005', name: 'Supplier Payables', type: 'LIABILITY', parentCode: '2001' },
-  { code: '2010', name: 'Intercompany Payable - Sprouted Crafts', type: 'LIABILITY', parentCode: '2001' },
-  { code: '2011', name: 'Intercompany Payable - Oikazi', type: 'LIABILITY', parentCode: '2001' },
-  { code: '3001', name: 'Net Assets', type: 'EQUITY', parentCode: '3000' },
-  { code: '3005', name: 'Restricted Funds', type: 'EQUITY', parentCode: '3001' },
-  { code: '3010', name: 'Unrestricted Funds', type: 'EQUITY', parentCode: '3001' },
-  { code: '3015', name: 'Accumulated Surplus', type: 'EQUITY', parentCode: '3001' },
-  { code: '4001', name: 'Grants - Unrestricted', type: 'INCOME', parentCode: '4000' },
-  { code: '4005', name: 'Grants - Restricted', type: 'INCOME', parentCode: '4000' },
-  { code: '4010', name: 'Donations - General', type: 'INCOME', parentCode: '4000' },
-  { code: '4015', name: 'Donations - Restricted', type: 'INCOME', parentCode: '4000' },
-  { code: '4020', name: 'Program Service Income', type: 'INCOME', parentCode: '4000' },
-  { code: '4025', name: 'Aggregation & Sourcing Income', type: 'INCOME', parentCode: '4000' },
-  { code: '4030', name: 'Other Income', type: 'INCOME', parentCode: '4000' },
-  { code: '5001', name: 'Aggregation Purchase Cost', type: 'COST_OF_SALES', parentCode: '5000' },
-  { code: '5005', name: 'Sourcing & Procurement Cost', type: 'COST_OF_SALES', parentCode: '5000' },
-  { code: '5010', name: 'Program Materials Consumed', type: 'COST_OF_SALES', parentCode: '5000' },
-  { code: '5015', name: 'Direct Program Delivery Cost', type: 'COST_OF_SALES', parentCode: '5000' },
-  { code: '5020', name: 'Farmer Support & Inputs', type: 'COST_OF_SALES', parentCode: '5000' },
-  { code: '6001', name: 'Program Expenditure', type: 'EXPENSE', parentCode: '6000' },
-  { code: '6005', name: 'Support Costs', type: 'EXPENSE', parentCode: '6000' },
-  { code: '6010', name: 'Governance Costs', type: 'EXPENSE', parentCode: '6000' },
-  { code: '6015', name: 'Fundraising Costs', type: 'EXPENSE', parentCode: '6000' },
-  { code: '6020', name: 'Staff Salaries', type: 'EXPENSE', parentCode: '6000' },
-  { code: '6025', name: 'Travel & Transport', type: 'EXPENSE', parentCode: '6000' },
-  { code: '6030', name: 'Office & Administration', type: 'EXPENSE', parentCode: '6000' },
-  { code: '6035', name: 'Audit & Compliance', type: 'EXPENSE', parentCode: '6000' },
-  { code: '6040', name: 'Volunteer & Community Support', type: 'EXPENSE', parentCode: '6000' },
-  { code: '6060', name: 'Depreciation', type: 'EXPENSE', parentCode: '6000', category: 'depreciation' },
+  // --- assets -------------------------------------------------------------
+  // 1001 is the default bank account every entity starts with, and 1010 is
+  // the receivables control every invoice debits; both are fixed by code
+  // elsewhere, so they keep their numbers.
+  { code: '1001', name: 'Bank - Operating Account (GHS)', type: 'ASSET' },
+  { code: '1005', name: 'Cash on Hand / Petty Cash', type: 'ASSET' },
+  { code: '1008', name: 'Bank - Foreign Currency (USD)', type: 'ASSET' },
+  { code: '1009', name: 'Bank - Foreign Currency (EUR)', type: 'ASSET' },
+  { code: '1010', name: 'Grants & Contracts Receivable', type: 'ASSET' },
+  { code: '1012', name: 'Mobile Money Account', type: 'ASSET' },
+  { code: '1015', name: 'Other Receivables', type: 'ASSET' },
+  { code: '1025', name: 'Intercompany Receivable - Sprouted Crafts', type: 'ASSET' },
+  { code: '1026', name: 'Intercompany Receivable - Oikazi', type: 'ASSET' },
+  { code: '1040', name: 'Staff Advances', type: 'ASSET' },
+  { code: '1045', name: 'Prepayments', type: 'ASSET' },
+  // Asset classes hang off 1200 Fixed Assets at Cost. The audited register
+  // holds no vehicles: they are hired, so vehicle spend is an expense.
+  { code: '1210', name: 'Computers & Accessories', type: 'ASSET', parentCode: '1200' },
+  { code: '1215', name: 'Furniture & Fittings', type: 'ASSET', parentCode: '1200' },
+  { code: '1220', name: 'Office Equipment', type: 'ASSET', parentCode: '1200' },
+
+  // --- liabilities --------------------------------------------------------
+  { code: '2001', name: 'Accounts Payable', type: 'LIABILITY' },
+  { code: '2005', name: 'Accrued Expenses', type: 'LIABILITY' },
+  { code: '2010', name: 'Intercompany Payable - Sprouted Crafts', type: 'LIABILITY' },
+  { code: '2011', name: 'Intercompany Payable - Oikazi', type: 'LIABILITY' },
+  { code: '2015', name: 'Other Payables', type: 'LIABILITY' },
+  { code: '2048', name: 'Provident Fund Payable', type: 'LIABILITY' },
+  { code: '2075', name: 'Funds Repayable to Donors', type: 'LIABILITY' },
+
+  // --- funds --------------------------------------------------------------
+  // Restriction is a property of the fund, never of an expense account.
+  { code: '3001', name: 'Unrestricted Accumulated Fund', type: 'EQUITY' },
+  { code: '3020', name: 'Restricted Fund - Human Rights & Communities', type: 'EQUITY' },
+  { code: '3021', name: 'Restricted Fund - Productivity, Environment, Health & Safety', type: 'EQUITY' },
+  { code: '3022', name: 'Restricted Fund - Traceability + Data', type: 'EQUITY' },
+  { code: '3023', name: 'Restricted Fund - Strong Coops', type: 'EQUITY' },
+  { code: '3024', name: 'Restricted Fund - Bridge Fund', type: 'EQUITY' },
+
+  // --- income -------------------------------------------------------------
+  { code: '4001', name: 'Unrestricted Grant Income', type: 'INCOME' },
+  { code: '4005', name: 'Restricted Grant Income', type: 'INCOME' },
+  { code: '4010', name: 'Service Contract Revenue', type: 'INCOME' },
+  { code: '4020', name: 'Other Income', type: 'INCOME' },
+
+  // --- direct project costs -----------------------------------------------
+  // The nature of the cost only. Which programme it belongs to is the project
+  // on the transaction line, so there is one Training account, not one per
+  // programme area.
+  { code: '5001', name: 'Training & Capacity Building', type: 'EXPENSE' },
+  { code: '5005', name: 'Community & Cooperative Support', type: 'EXPENSE' },
+  { code: '5010', name: 'Field Data Collection', type: 'EXPENSE' },
+  { code: '5015', name: 'Mapping & Survey', type: 'EXPENSE' },
+  { code: '5020', name: 'Inputs & Seedlings', type: 'EXPENSE' },
+  { code: '5025', name: 'Equipment for Partners', type: 'EXPENSE' },
+  { code: '5040', name: 'Consultants & Subcontractors', type: 'EXPENSE' },
+  { code: '5050', name: 'Stakeholder Events', type: 'EXPENSE' },
+  { code: '5055', name: 'Participant Costs', type: 'EXPENSE' },
+  { code: '5060', name: 'Project Travel', type: 'EXPENSE' },
+
+  // --- staff costs ---------------------------------------------------------
+  // People are records, not accounts: no account per named role. The employer
+  // SSNIT Tier 1 charge is 6065, shared with the other entities.
+  { code: '6001', name: 'Salaries & Wages', type: 'EXPENSE' },
+  { code: '6005', name: 'Per Diems', type: 'EXPENSE' },
+  { code: '6010', name: 'Employer SSNIT Tier 2', type: 'EXPENSE' },
+  { code: '6015', name: 'Provident Fund', type: 'EXPENSE' },
+  { code: '6020', name: 'Staff Health Insurance', type: 'EXPENSE' },
+  { code: '6025', name: 'Stipends & Interns', type: 'EXPENSE' },
+  { code: '6030', name: 'Recruitment & Onboarding', type: 'EXPENSE' },
+  { code: '6035', name: 'Staff Training & Development', type: 'EXPENSE' },
+
+  // --- operating and administrative ----------------------------------------
+  { code: '7001', name: 'Vehicle Running & Maintenance', type: 'EXPENSE' },
+  { code: '7005', name: 'Fuel', type: 'EXPENSE' },
+  { code: '7008', name: 'Vehicle Hire', type: 'EXPENSE' },
+  { code: '7012', name: 'Office Rent', type: 'EXPENSE' },
+  { code: '7015', name: 'Utilities', type: 'EXPENSE' },
+  { code: '7018', name: 'Internet & Communications', type: 'EXPENSE' },
+  { code: '7022', name: 'Office Supplies & Stationery', type: 'EXPENSE' },
+  { code: '7025', name: 'Repairs & Maintenance', type: 'EXPENSE' },
+  { code: '7028', name: 'Software & IT Subscriptions', type: 'EXPENSE' },
+  { code: '7032', name: 'Regulatory & Compliance', type: 'EXPENSE' },
+  { code: '7035', name: 'Legal & Professional Fees', type: 'EXPENSE' },
+  { code: '7038', name: 'Audit & Accounting Fees', type: 'EXPENSE' },
+  { code: '7045', name: 'Business Promotion', type: 'EXPENSE' },
+  // Found by category, not by code: the two charts number it differently.
+  { code: '7048', name: 'Depreciation', type: 'EXPENSE', category: 'depreciation' },
+  { code: '7050', name: 'General Expenses', type: 'EXPENSE' },
+
+  // --- finance --------------------------------------------------------------
+  { code: '8005', name: 'Bank Interest & Charges', type: 'EXPENSE' },
+
   ...sharedTaxAccounts,
   ...sharedInventoryAccounts,
   ...mobileMoneyAccounts,

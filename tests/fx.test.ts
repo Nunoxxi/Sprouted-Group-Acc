@@ -157,7 +157,7 @@ describe('settled at a different rate: realised FX', () => {
     expect(s.reliefMinor).toBe(1250000);
     expect(s.bankFunctionalMinor).toBe(1300000);
     expect(s.gainLossMinor).toBe(50000);
-    const fx = s.lines.find((l) => l.accountCode === fxAccounts.realised)!;
+    const fx = s.lines.find((l) => l.accountCode === fxAccounts.gain)!;
     expect(fx.type).toBe('credit');
     expect(fx.functionalAmount).toBe(50000);
     expect(s.lines.find((l) => l.accountCode === '1010')!.type).toBe('credit');
@@ -168,7 +168,7 @@ describe('settled at a different rate: realised FX', () => {
   it('invoice: received at 12.10 is a GH₵400 realised loss, debited, and still balances', () => {
     const s = settlementFor({ ...base, kind: 'invoice', documentRate: '12.5', settlementRate: '12.1', txnAmount: 100000, bankCurrency: 'USD', remainingBookMinor: 1250000, isFinal: true });
     expect(s.gainLossMinor).toBe(-40000);
-    const fx = s.lines.find((l) => l.accountCode === fxAccounts.realised)!;
+    const fx = s.lines.find((l) => l.accountCode === fxAccounts.loss)!;
     expect(fx.type).toBe('debit');
     expect(fx.functionalAmount).toBe(40000);
     expect(balanced(s.lines)).toBe(true);
@@ -179,7 +179,7 @@ describe('settled at a different rate: realised FX', () => {
     expect(s.gainLossMinor).toBe(-50000);
     expect(s.lines.find((l) => l.accountCode === '2001')!.type).toBe('debit');
     expect(s.lines.find((l) => l.accountCode === '1002')!.type).toBe('credit');
-    expect(s.lines.find((l) => l.accountCode === fxAccounts.realised)!.type).toBe('debit');
+    expect(s.lines.find((l) => l.accountCode === fxAccounts.loss)!.type).toBe('debit');
     expect(balanced(s.lines)).toBe(true);
   });
 
@@ -218,7 +218,7 @@ describe('settled at a different rate: realised FX', () => {
     expect(net('1010', (l) => l.txnAmount)).toBe(0);
     expect(net('1010', (l) => l.functionalAmount)).toBe(0);
     expect(net('1002', (l) => l.functionalAmount)).toBe(1300000);
-    expect(net(fxAccounts.realised, (l) => l.functionalAmount)).toBe(-50000); // credit = gain
+    expect(net(fxAccounts.gain, (l) => l.functionalAmount)).toBe(-50000); // credit = gain
     expect(balanced(all)).toBe(true);
   });
 
@@ -228,12 +228,12 @@ describe('settled at a different rate: realised FX', () => {
 });
 
 describe('period-end revaluation: unrealised FX', () => {
-  it('revalues a USD receivable at the closing rate and posts the difference to 7020', () => {
+  it('revalues a USD receivable at the closing rate and posts the gain to 4015', () => {
     const [adj] = revaluationFor([{ accountCode: '1010', currency: 'USD', foreignMinor: 100000, bookMinor: 1250000 }], { USD: '12.8' }, 'GHS');
     expect(adj.revaluedMinor).toBe(1280000);
     expect(adj.differenceMinor).toBe(30000);
     expect(adj.lines[0]).toMatchObject({ accountCode: '1010', type: 'debit', currency: 'USD', txnAmount: 0, functionalAmount: 30000 });
-    expect(adj.lines[1]).toMatchObject({ accountCode: fxAccounts.unrealised, type: 'credit', functionalAmount: 30000 });
+    expect(adj.lines[1]).toMatchObject({ accountCode: fxAccounts.gain, type: 'credit', functionalAmount: 30000 });
     expect(balanced(adj.lines)).toBe(true);
   });
 
@@ -241,7 +241,7 @@ describe('period-end revaluation: unrealised FX', () => {
     const [adj] = revaluationFor([{ accountCode: '2001', currency: 'USD', foreignMinor: -100000, bookMinor: -1250000 }], { USD: '12.8' }, 'GHS');
     expect(adj.differenceMinor).toBe(-30000);
     expect(adj.lines[0]).toMatchObject({ accountCode: '2001', type: 'credit', functionalAmount: 30000 });
-    expect(adj.lines[1]).toMatchObject({ accountCode: fxAccounts.unrealised, type: 'debit', functionalAmount: 30000 });
+    expect(adj.lines[1]).toMatchObject({ accountCode: fxAccounts.loss, type: 'debit', functionalAmount: 30000 });
     expect(balanced(adj.lines)).toBe(true);
   });
 

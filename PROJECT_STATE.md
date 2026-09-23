@@ -95,6 +95,52 @@ Beyond those, `scripts/` has no auth test; the full flow (invite → set passwor
 
 On 2026-09-23 the invite link was exercised again after a reported "it expires on the first click". It did: the library's `/reset-password` consumes the one-time token **before** hashing, and the Have I Been Pwned check runs *inside* hashing, so a password refused as breached used the link up and the next attempt was told the token was invalid. The check now runs in a `before` hook, ahead of the handler. Verified end to end: following the link twice still works; a too-short password leaves it alive (it always did — length is checked before the token is consumed); **a breached password is still refused, with the same message, and the link survives**; a token that was actually used is spent; the new password signs in; and `/change-password` still refuses a breached password.
 
+## Sprouted Roots' chart, restructured around dimensions (2026-09-23)
+
+The programme chart no longer bakes the programme into the account name. An
+expense account says what the cost *is* — one Training & Capacity Building, not
+one per programme area — and which programme it belongs to is the **project on
+the transaction line**. Restriction is a property of the **fund**, never of an
+expense account, so no expense account is marked restricted any more.
+
+Numbering: 1000s assets, 2000s liabilities, 3000s funds (unrestricted
+accumulated fund plus a restricted fund per programme), 4000s income, 5000s
+direct project costs by nature, 6000s staff costs, 7000s operating and
+administrative, 8000s finance. 1001 and 1010 keep their numbers because the
+default bank account and the receivables control are fixed by code elsewhere.
+
+Carried over from the old list: **Vehicle Purchase is gone** — the vehicles are
+hired, which the audited register confirms by holding no vehicle class, so
+vehicle spend is 7001/7005/7008 and there is no vehicle asset class. **Net
+Assets Released from Restrictions is not an account**: it is a transfer between
+funds that nets to zero. **The funders are not accounts** — Tony's Chocolonely,
+TCHO, Guittard, Tachibana International, Tachibana Ghana and Vumbuzi are
+contacts, and a funder may fund any programme, so which one an award was for is
+recorded on its grant rather than on the project. Added: withholding tax
+payable and receivable, SSNIT Tier 1 and Tier 2, provident fund, deferred
+income, staff advances, and intercompany accounts for Crafts and Oikazi.
+
+**Exchange differences moved out of the 7000s on every entity**, for one
+numbering across the group: a gain is income at **4015**, a loss a finance cost
+at **8001**, chosen by the sign of the difference. Realised and unrealised are
+no longer separate accounts — which a difference was is carried by the journal
+that made it, since a revaluation reverses and a settlement does not.
+
+Projects are the five restricted programmes: Human Rights and Communities;
+Productivity, Environment, Health and Safety; Traceability + Data; Strong
+Coops; Bridge Fund. International travel, regional travel, running costs and
+staff costs are general expenses, not restricted programmes, so they are not
+projects. Sprouted Roots' financial year ends **30 September**.
+
+Existing entities were moved over by `scripts/restructure-chart.ts`, which
+never repoints a posting and never deletes an account: a code that still means
+the same thing is renamed in place, one that is gone and was never posted to is
+deactivated, and one carrying postings whose code now means something else is
+prefixed `LEG-` and deactivated with its name and postings intact. On Roots
+that moved seven accounts aside and deactivated ten; on Crafts and Oikazi only
+the two old FX accounts. All 110 of Roots' journal lines still read as they
+were written.
+
 ## Known gaps / next steps
 
 1. **Reports, tax, intercompany, bank and the dashboard still read demo arrays** — `ledgerLines` and `reportAccounts` in `report-data.ts`, and `taxTransactions`, `intercompanyTransactions`, `bankDocuments`, `initialBankLines`, `metricsByEntity`, `summaryRows` in the shell. Documents you post are in the ledger but do not yet appear in any report. Next-pass path: a query over `JournalLine` ⋈ `Account`/`Contact`/`Project` producing the existing `LedgerLine` DTO shape, so the report memos in the shell need no change; then `report-data.ts` is deleted.

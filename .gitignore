@@ -31,3 +31,7 @@ start_test.txt
 
 # typescript incremental build output
 *.tsbuildinfo
+
+# Reference documents from the accountant — real financial statements, not code.
+Sprouted Roots Accounts*.pdf
+*.pdf

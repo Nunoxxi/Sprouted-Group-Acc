@@ -202,10 +202,21 @@ export function journalBalances(lines: readonly { type: 'debit' | 'credit'; func
 
 // --- settlement: realised gains and losses --------------------------------------------
 
+/**
+ * Exchange differences post by direction, not by whether they were realised:
+ * a gain is income, a loss is a finance cost. Realised and unrealised are
+ * told apart by the journal that made them - a revaluation reverses, a
+ * settlement does not - which is what the accounts actually need to show.
+ */
 export const fxAccounts = {
-  realised: '7010',
-  unrealised: '7020',
+  gain: '4015',
+  loss: '8001',
 } as const;
+
+/** Which account an exchange difference belongs in. Positive is a gain. */
+export function fxAccountFor(differenceMinor: number): string {
+  return differenceMinor > 0 ? fxAccounts.gain : fxAccounts.loss;
+}
 
 export type SettlementInput = {
   kind: 'invoice' | 'bill';
@@ -291,8 +302,8 @@ export function settlementFor(input: SettlementInput): Settlement {
   const lines = [bankLine, controlLine];
   if (gainLossMinor !== 0) {
     lines.push({
-      accountCode: fxAccounts.realised,
-      accountName: name(fxAccounts.realised, 'Realised Foreign Exchange Gain/Loss'),
+      accountCode: fxAccountFor(gainLossMinor),
+      accountName: name(fxAccountFor(gainLossMinor), gainLossMinor > 0 ? 'Foreign Exchange Gain' : 'Foreign Exchange Loss'),
       // A gain is income (credit); a loss is expense (debit).
       type: gainLossMinor > 0 ? 'credit' : 'debit',
       currency: functionalCurrency,
@@ -366,7 +377,8 @@ export function revaluationFor(
     if (differenceMinor === 0) continue;
 
     const accountName = balance.accountName ?? names?.[balance.accountCode] ?? balance.accountCode;
-    const unrealisedName = names?.[fxAccounts.unrealised] ?? 'Unrealised Foreign Exchange Gain/Loss';
+    const fxCode = fxAccountFor(differenceMinor);
+    const unrealisedName = names?.[fxCode] ?? (differenceMinor > 0 ? 'Foreign Exchange Gain' : 'Foreign Exchange Loss');
     const magnitude = Math.abs(differenceMinor);
     // A debit balance that grew is a gain: Dr account, Cr unrealised. A debit
     // balance that shrank, or a credit balance that grew, is a loss.
@@ -392,7 +404,7 @@ export function revaluationFor(
           amount: magnitude,
         },
         {
-          accountCode: fxAccounts.unrealised,
+          accountCode: fxCode,
           accountName: unrealisedName,
           type: accountDebit ? 'credit' : 'debit',
           currency: functionalCurrency,
