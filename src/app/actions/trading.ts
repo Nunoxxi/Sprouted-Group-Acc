@@ -22,6 +22,8 @@ import { balanceAt, moveBalance, StockRefusal } from '@/lib/data/stock';
 import { evidenceToPrisma, settlementToPrisma } from '@/lib/data/momo';
 import { agentRecord, commodityRecord, floatInclude, floatRecord, kindToPrisma, lotInclude, lotRecord, paymentToPrisma, purchaseInclude, purchaseRecord } from '@/lib/data/trading';
 import type { AgentPurchaseRecord, BuyingAgentRecord, CommodityRecord, EntityRecord, FloatAdvanceRecord, ItemRecord, LotRecord } from '@/lib/data/types';
+import { attachmentGate } from '@/lib/attachments';
+import { attachmentCount, rulesFor } from '@/lib/data/attachments';
 import { periodOf } from '@/lib/documents';
 import { accountForStock, formatKg, inventoryAccountCategory, type StockPosition } from '@/lib/inventory';
 import { momoAccounts, planRecovery, purchaseJournal } from '@/lib/momo';
@@ -467,12 +469,21 @@ export async function postAgentPurchases(entityId: string, purchaseIds: string[]
   return withEntityAccess(entityId, 'stock:post', (principal) =>
     refusable(async () => {
       await requireTrader(entityId);
+      const attachmentRules = await rulesFor(entityId);
       const posted: string[] = [];
       for (const id of purchaseIds.slice(0, 200)) {
         await prisma.$transaction(async (tx) => {
           const purchase = await tx.agentPurchase.findFirst({ where: { id, entityId, status: 'PENDING' }, include: { agent: true, item: { include: { account: true } }, location: { include: { account: true } } } });
           if (!purchase) return;
           if (purchase.settlement === 'FLOAT' && !purchase.floatId) throw new StockRefusal(`Purchase from ${purchase.farmerName} names no float; assign it to the agent's open float first.`);
+          // The entity's attachment rule: a field purchase over the threshold
+          // needs its weighbridge ticket or receipt before it can be posted.
+          const gate = attachmentGate(attachmentRules, {
+            target: 'agent-purchase',
+            amountMinor: toMinor(purchase.priceMinor),
+            attachmentCount: await attachmentCount(entityId, 'agent-purchase', purchase.id),
+          });
+          if (!gate.ok) throw new StockRefusal(`${purchase.farmerName}, ${purchase.clientRef}: ${gate.error}`);
           if (!purchase.item.commodityId) throw new StockRefusal('The grade has no commodity.');
           const date = purchase.date.toISOString().slice(0, 10);
           if (await tx.taxPeriodFiling.findUnique({ where: { entityId_period: { entityId, period: periodOf(date) } } })) throw new StockRefusal(`Period ${periodOf(date)} has been filed.`);

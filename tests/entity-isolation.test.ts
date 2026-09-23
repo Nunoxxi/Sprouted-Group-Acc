@@ -117,6 +117,7 @@ import * as grantActions from '@/app/actions/grants';
 import * as cashflowActions from '@/app/actions/cashflow';
 import * as assetActions from '@/app/actions/assets';
 import * as payrollActions from '@/app/actions/payroll';
+import * as attachmentActions from '@/app/actions/attachments';
 import * as userActions from '@/app/actions/users';
 import * as auditRoute from '@/app/api/audit/route';
 import * as backupsRoute from '@/app/api/backups/route';
@@ -329,6 +330,19 @@ const payrollCalls: Record<keyof typeof payrollActions, Call> = {
 /** The one payroll read a Viewer may make on their own entity. */
 const payrollReads = new Set(['payrollAllocationTotal']);
 
+/** Every attachment Server Function. */
+const attachmentCalls: Record<keyof typeof attachmentActions, Call> = {
+  uploadAttachment: () => attachmentActions.uploadAttachment(FORBIDDEN_ENTITY, { fileName: 'receipt.pdf', contentType: 'application/pdf', base64: 'JVBERi0=', target: 'inbox' }),
+  matchAttachment: () => attachmentActions.matchAttachment(FORBIDDEN_ENTITY, 'attachment', 'bill', 'doc-1'),
+  unmatchAttachment: () => attachmentActions.unmatchAttachment(FORBIDDEN_ENTITY, 'attachment'),
+  removeAttachment: () => attachmentActions.removeAttachment(FORBIDDEN_ENTITY, 'attachment'),
+  attachmentUrl: () => attachmentActions.attachmentUrl(FORBIDDEN_ENTITY, 'attachment'),
+  saveAttachmentRule: () => attachmentActions.saveAttachmentRule(FORBIDDEN_ENTITY, { target: 'bill', thresholdMinor: 500_000, isActive: true }),
+  inboxSuggestions: () => attachmentActions.inboxSuggestions(FORBIDDEN_ENTITY),
+};
+/** The two attachment reads a Viewer may make on their own entity. */
+const attachmentReads = new Set(['attachmentUrl', 'inboxSuggestions']);
+
 /** Every user-management Server Function. Owner-only, so any other role is refused. */
 const userCalls: Record<keyof typeof userActions, Call> = {
   listUsers: () => userActions.listUsers(),
@@ -405,6 +419,8 @@ describe('coverage', () => {
     expect(exportedAssets.sort()).toEqual(Object.keys(assetCalls).sort());
     const exportedPayroll = Object.keys(payrollActions).filter((k) => typeof (payrollActions as Record<string, unknown>)[k] === 'function');
     expect(exportedPayroll.sort()).toEqual(Object.keys(payrollCalls).sort());
+    const exportedAttachments = Object.keys(attachmentActions).filter((k) => typeof (attachmentActions as Record<string, unknown>)[k] === 'function');
+    expect(exportedAttachments.sort()).toEqual(Object.keys(attachmentCalls).sort());
   });
 
   it('every Route Handler method has a case', () => {
@@ -416,7 +432,7 @@ describe('coverage', () => {
 // --- signed out --------------------------------------------------------------------
 
 describe('signed out', () => {
-  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...userCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...attachmentCalls, ...userCalls })) {
     if (!call) continue;
     it(`${name} is refused without touching the database`, async () => {
       expect(isRefusal(await call())).toBe(true);
@@ -436,7 +452,7 @@ describe('signed out', () => {
 describe('an Accountant on Sprouted Roots asking for Oikazi', () => {
   beforeEach(() => signIn({ role: 'accountant' }, [GRANTED_ENTITY]));
 
-  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...attachmentCalls })) {
     if (!call) continue;
     it(`${name} is refused and reads nothing`, async () => {
       const result = await call();
@@ -492,8 +508,8 @@ describe('a Viewer with access to Oikazi', () => {
   }
 
   it('cannot touch rates, banks, the functional currency, revaluation or VAT registration, even on their own entity', async () => {
-    for (const [name, call] of Object.entries({ ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls })) {
-      if (name === 'listExchangeRates' || openingReads.has(name) || momoReads.has(name) || grantReads.has(name) || cashflowReads.has(name) || assetReads.has(name) || payrollReads.has(name)) continue; // reads are reports:view
+    for (const [name, call] of Object.entries({ ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...attachmentCalls })) {
+      if (name === 'listExchangeRates' || openingReads.has(name) || momoReads.has(name) || grantReads.has(name) || cashflowReads.has(name) || assetReads.has(name) || payrollReads.has(name) || attachmentReads.has(name)) continue; // reads are reports:view
       dbCalls.length = 0;
       const result = await call();
       expect(isRefusal(result), name).toBe(true);

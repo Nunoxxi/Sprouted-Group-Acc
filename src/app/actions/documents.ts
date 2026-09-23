@@ -22,6 +22,8 @@
 import { refresh } from 'next/cache';
 
 import { journalEntriesBalance } from '@/lib/accounting-integrity';
+import { attachmentGate } from '@/lib/attachments';
+import { attachmentCount, rulesFor } from '@/lib/data/attachments';
 import { recordAuditEvent } from '@/lib/audit';
 import type { Permission, Principal } from '@/lib/authz';
 import { authorizationFailure, requireEntityAccess, requirePermission } from '@/lib/dal';
@@ -470,6 +472,16 @@ async function post(entityId: string, documentId: string, principal: Principal):
 
   const kind = document.kind === 'BILL' ? 'bill' : 'invoice';
 
+  // The entity's own rule: at or above its threshold, this kind of document
+  // needs something attached before it can be posted.
+  const controlLine = lines.find((line) => line.accountCode === (isPurchase ? controlAccounts.payables : controlAccounts.receivables));
+  const gate = attachmentGate(await rulesFor(entityId), {
+    target: kind,
+    amountMinor: controlLine?.functionalAmount ?? 0,
+    attachmentCount: await attachmentCount(entityId, kind, documentId),
+  });
+  if (!gate.ok) return fail(gate.error);
+
   try {
     await prisma.$transaction(async (tx) => {
       const claimed = await tx.document.updateMany({
@@ -804,6 +816,17 @@ async function settle(entityId: string, input: PaymentInput, principal: Principa
   }
 
   const number = postedNumberOf(document);
+  // A payment rule applies to the money going out or in, not the document it
+  // settles, so it is checked against the payment's own amount. A payment has
+  // no id before it is made; a rule on payments therefore means the evidence
+  // goes in the inbox first and is matched afterwards, or onto the document.
+  const paymentGate = attachmentGate(await rulesFor(entityId), {
+    target: 'payment',
+    amountMinor: settlement.lines.find((line) => line.accountCode === bank.account.code)?.functionalAmount ?? 0,
+    attachmentCount: await attachmentCount(entityId, kind, document.id),
+  });
+  if (!paymentGate.ok) return fail(paymentGate.error);
+
   const row = await prisma.$transaction(async (tx) => {
     // Claim the outstanding amount atomically: two concurrent settlements of
     // the same balance cannot both succeed.

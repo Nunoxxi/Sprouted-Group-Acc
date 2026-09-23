@@ -78,7 +78,7 @@ Copy `.env.example` to `.env`. Relevant variables:
 
 ```text
 src/app/              App Router entry, layout, and API routes (audit, backups)
-src/components/app/   app-shell.tsx — the UI shell with sidebar nav; inventory-panel.tsx — Inventory; buying-panel.tsx — agents and floats; contracts-panel.tsx — sales contracts and LBC; opening-panel.tsx — go-live; payments-panel.tsx — wallets, statements, farmer payments; grants-panel.tsx — grants, budgets, donor reports; cashflow-panel.tsx — 13-week and 12-month forecasts; assets-panel.tsx — the register, depreciation and the tax computation; payroll-panel.tsx — the payroll import and its liabilities
+src/components/app/   app-shell.tsx — the UI shell with sidebar nav; inventory-panel.tsx — Inventory; buying-panel.tsx — agents and floats; contracts-panel.tsx — sales contracts and LBC; opening-panel.tsx — go-live; payments-panel.tsx — wallets, statements, farmer payments; grants-panel.tsx — grants, budgets, donor reports; cashflow-panel.tsx — 13-week and 12-month forecasts; assets-panel.tsx — the register, depreciation and the tax computation; payroll-panel.tsx — the payroll import and its liabilities; inbox-panel.tsx — the attachment inbox and its rules
 src/app/field/        The buying agent's phone form: mobile-first, works offline, syncs when it can
 src/components/ui/    Design system primitives (Button, Card, Input, Money, Badge)
 src/lib/              Shared logic (see below)
@@ -101,6 +101,7 @@ The files worth reading first in `src/lib/`:
 - **`export.ts`** — per-entity ledger export, checksum verification, retention.
 - **`inventory.ts`** — stock: grams as the unit of weight, weighted average cost as value ÷ quantity per grade per location, receipt allocation from bills, adjustment/transfer/write-down journals, count differences, NRV, and the stock-to-ledger reconciliation. Pure and fully tested.
 - **`momo.ts`** — mobile money and farmer payments: statement parsing against a column mapping with the fee and levy split off each line, the charges and settlement journals, advance recovery, batch matching, the disbursement export and the farmer's history. Pure and fully tested.
+- **`attachments.ts`** — attachments: what may be uploaded, how a photograph is reduced, the storage key, the posting gate, what may be removed, and matching an inbox file. Pure and fully tested. The storage client itself is `src/lib/storage.ts`.
 - **`payroll.ts`** — the payroll import: reading a summary against its mapping and checking it adds up, splitting a person's cost across grants, the month's journal, and the liabilities with their due dates. No payroll is computed anywhere. Pure and fully tested.
 - **`assets.ts`** — fixed assets and tax: straight-line and reducing-balance depreciation landing on the residual, the disposal gain or loss, capital allowance pools on classes that are settings, the tax computation, and the provisional instalments. Pure and fully tested.
 - **`cashflow.ts`** — cash flow forecasting: the week and month buckets, the buying-season curve, flows from documents, contracts, grants and recurring costs, balances per currency and combined, the minimum-cash flag, scenarios side by side and the group. Pure and fully tested.

@@ -40,6 +40,7 @@ import { landedCostKindOf, loadTradingData } from './trading';
 import { loadContractData, sellingCostKindOf } from './contracts';
 import { loadAssetData } from './assets';
 import { loadCashflowData } from './cashflow';
+import { loadAttachmentData } from './attachments';
 import { loadPayrollData } from './payroll';
 import { loadGrantData } from './grants';
 import { bankAccountKindOf, loadMomoData } from './momo';
@@ -304,5 +305,6 @@ export async function loadInitialData(principal: Principal): Promise<InitialData
     ...(await loadCashflowData(entityScope, entityIds, entities)),
     ...(await loadAssetData(entityScope, entityIds)),
     ...(await loadPayrollData(entityScope, entityIds)),
+    ...(await loadAttachmentData(entityScope, entityIds)),
   };
 }

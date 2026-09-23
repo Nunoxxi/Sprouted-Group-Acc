@@ -15,6 +15,7 @@ import type { GrantActual, InKindKind, IncomePolicy, ReportingFrequency } from '
 import type { Flow, RecurringFrequency } from '../cashflow';
 import type { AdjustmentKind, AllowanceMethod, DepreciationMethod, TaxStatus } from '../assets';
 import type { LiabilityKind } from '../payroll';
+import type { AttachmentTarget } from '../attachments';
 import type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus } from './enums';
 
 export type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus };
@@ -999,6 +1000,33 @@ export type PayrollAllocationRecord = {
   pct: string;
 };
 
+export type AttachmentRecord = {
+  id: string;
+  entityId: string;
+  target: AttachmentTarget;
+  /** Null while it is in the inbox, waiting to be matched. */
+  targetId: string | null;
+  fileName: string;
+  contentType: string;
+  byteSize: number;
+  /** sha256 of the bytes as uploaded. */
+  checksum: string;
+  note: string;
+  matchedAt: string | null;
+  uploadedAt: string;
+  uploadedById: string | null;
+  uploadedByName: string;
+};
+
+export type AttachmentRuleRecord = {
+  id: string;
+  entityId: string;
+  target: AttachmentTarget;
+  /** At or above this, that kind needs a document. Zero means always. */
+  thresholdMinor: number;
+  isActive: boolean;
+};
+
 export type InitialData = {
   currentUser: CurrentUser;
   /** Only the entities the signed-in user may see. */
@@ -1049,6 +1077,8 @@ export type InitialData = {
   payrollDepartmentsByEntity: Record<string, PayrollDepartmentRecord[]>;
   payrollRunsByEntity: Record<string, PayrollRunRecord[]>;
   payrollAllocationsByEntity: Record<string, PayrollAllocationRecord[]>;
+  attachmentsByEntity: Record<string, AttachmentRecord[]>;
+  attachmentRulesByEntity: Record<string, AttachmentRuleRecord[]>;
 };
 
 export type AuditEventRecord = {

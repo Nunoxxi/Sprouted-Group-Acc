@@ -41,6 +41,8 @@ import { ContractsPanel } from '@/components/app/contracts-panel';
 import { OpeningPanel } from '@/components/app/opening-panel';
 import { AssetsPanel } from '@/components/app/assets-panel';
 import { PayrollPanel } from '@/components/app/payroll-panel';
+import { Attachments } from '@/components/app/attachments';
+import { InboxPanel } from '@/components/app/inbox-panel';
 import { CashflowPanel } from '@/components/app/cashflow-panel';
 import { GrantsPanel } from '@/components/app/grants-panel';
 import { PaymentsPanel } from '@/components/app/payments-panel';
@@ -83,6 +85,7 @@ const navigationItems = [
   'Purchases',
   'Bank',
   'Payments',
+  'Inbox',
   'Cash flow',
   'Assets',
   'Payroll',
@@ -4696,6 +4699,16 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
               bankAccounts={entityBankAccounts}
               allowed={allowed}
             />
+          ) : activeNav === 'Inbox' ? (
+            <InboxPanel
+              key={selectedEntity.id}
+              entity={selectedEntity}
+              attachments={initialData.attachmentsByEntity[selectedEntity.id] ?? []}
+              rules={initialData.attachmentRulesByEntity[selectedEntity.id] ?? []}
+              documents={entityDocuments}
+              allowed={allowed}
+              currentUserId={initialData.currentUser.id}
+            />
           ) : activeNav === 'Payroll' ? (
             <PayrollPanel
               key={selectedEntity.id}
@@ -5193,6 +5206,17 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
 
               <div className="mt-6 grid gap-6 xl:grid-cols-[1fr_320px]">
                 <div className="space-y-3">
+                  <Attachments
+                    entityId={selectedEntity.id}
+                    target={isPurchaseView ? 'bill' : 'invoice'}
+                    targetId={activeDocument.id}
+                    attachments={initialData.attachmentsByEntity[selectedEntity.id] ?? []}
+                    rules={initialData.attachmentRulesByEntity[selectedEntity.id] ?? []}
+                    amountMinor={activeTotals.total}
+                    posted={documentReadOnly}
+                    currentUserId={initialData.currentUser.id}
+                    canEdit={allowed('document:draft')}
+                  />
                   {isPurchaseView && activeContact ? (
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                       <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Supplier details</div>

@@ -136,6 +136,8 @@ model Entity {
   payrollDepartments PayrollDepartment[]
   payrollLiabilities PayrollLiability[]
   payrollPayments    PayrollLiabilityPayment[]
+  attachments        Attachment[]
+  attachmentRules    AttachmentRule[]
 }
 
 // Append-only. Events form a hash chain per entity ordered by `sequence`, which
@@ -331,6 +333,7 @@ model User {
   payrollPosted          PayrollRun[]              @relation("PayrollPostedBy")
   payrollCreated         PayrollRun[]              @relation("PayrollCreatedBy")
   payrollPayments        PayrollLiabilityPayment[]
+  attachments            Attachment[]
 
   @@index([deactivatedAt])
 }
@@ -2650,4 +2653,68 @@ model PayrollLiabilityPayment {
   createdBy    User?            @relation(fields: [createdById], references: [id])
 
   @@index([entityId, liabilityId])
+}
+
+// --- attachments ---------------------------------------------------------------
+//
+// Files live in cloud storage, never in the database. What is here is where
+// the file is, what it is, how big it was and its checksum — enough to find
+// it, serve it and prove it has not changed.
+//
+// An attachment on a posted transaction cannot be removed. Evidence that can
+// be taken away after the fact is not evidence.
+
+enum AttachmentTargetKind {
+  INVOICE
+  BILL
+  PAYMENT
+  JOURNAL
+  AGENT_PURCHASE
+  STOCK_COUNT
+  FIXED_ASSET
+  /// Uploaded first, matched to a transaction later.
+  INBOX
+}
+
+model Attachment {
+  id           String               @id @default(cuid())
+  entityId     String
+  targetKind   AttachmentTargetKind @default(INBOX)
+  /// The id of the thing it belongs to; null while it is in the inbox.
+  targetId     String?
+  /// Where the bytes are, inside the private bucket.
+  storageKey   String               @unique
+  fileName     String
+  contentType  String
+  byteSize     Int
+  /// sha256 of the bytes as they were uploaded.
+  checksum     String
+  note         String?
+  /// Set when it is matched out of the inbox, so the move is on the record.
+  matchedAt    DateTime?
+  uploadedById String?
+  uploadedAt   DateTime             @default(now())
+
+  entity     Entity @relation(fields: [entityId], references: [id])
+  uploadedBy User?  @relation(fields: [uploadedById], references: [id])
+
+  @@index([entityId, targetKind, targetId])
+  @@index([entityId, uploadedAt])
+}
+
+/// At or above the threshold, that kind of transaction needs a document
+/// attached before it can be posted. Set per entity by a person.
+model AttachmentRule {
+  id             String               @id @default(cuid())
+  entityId       String
+  targetKind     AttachmentTargetKind
+  /// Zero means always.
+  thresholdMinor BigInt               @default(0)
+  isActive       Boolean              @default(true)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  entity Entity @relation(fields: [entityId], references: [id])
+
+  @@unique([entityId, targetKind])
 }
