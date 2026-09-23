@@ -40,6 +40,22 @@ services:
         sync: false
       - key: EMAIL_FROM
         sync: false
+      # Personal data encryption. Telephone numbers, mobile money numbers, email
+      # addresses, postal addresses and signatures are encrypted with this key
+      # before they are stored, so it is required, not optional: reading a value
+      # encrypted under a different key fails rather than showing nonsense.
+      # 32 random bytes, base64. Generate with:
+      #   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+      # Keep a copy somewhere safe — change it or lose it and every encrypted
+      # value becomes unreadable. The financial records are unaffected.
+      - key: PII_ENCRYPTION_KEY
+        sync: false
+      # File storage for attachments: a private Supabase bucket. Both come from
+      # Supabase -> Project Settings -> API.
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
       # Where ledger export files are written. On the free plan the disk is
       # ephemeral, so exports vanish on redeploy; attach a Render Disk and
       # point this at its mount path for exports that persist.
