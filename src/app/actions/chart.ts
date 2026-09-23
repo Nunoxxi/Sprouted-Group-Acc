@@ -18,7 +18,7 @@ import { refresh } from 'next/cache';
 import { Prisma } from '@prisma/client';
 
 import { recordAuditEvent } from '@/lib/audit';
-import type { Permission, Principal } from '@/lib/authz';
+import { can, type Permission, type Principal } from '@/lib/authz';
 import { authorizationFailure, requireEntityAccess } from '@/lib/dal';
 import { accountRecord } from '@/lib/data/mappers';
 import type { AccountRecord } from '@/lib/data/types';
@@ -89,17 +89,18 @@ export type AccountEditState = AccountFacts & { id: string; name: string; permis
 
 /** What the editor needs to know before offering to change an account. */
 export async function accountEditState(entityId: string, accountId: string): Promise<ActionResult<AccountEditState>> {
-  return withEntityAccess(entityId, 'settings:manage', async () => {
+  return withEntityAccess(entityId, 'chart:edit', async (principal) => {
     const row = await prisma.account.findFirst({ where: { id: accountId, entityId }, select: { id: true, code: true, name: true, type: true, isActive: true } });
     if (!row) return fail('That account is not on this entity.');
     const facts = await factsFor(prisma, row);
-    return { ok: true, value: { ...facts, id: row.id, name: row.name, permissions: permissionsFor(facts) } };
+    const powers = { ownerPowers: can(principal, 'settings:manage') };
+    return { ok: true, value: { ...facts, id: row.id, name: row.name, permissions: permissionsFor(facts, powers) } };
   });
 }
 
 /** The whole chart as CSV, in the order it is shown. */
 export async function exportChart(entityId: string): Promise<ActionResult<{ fileName: string; csv: string }>> {
-  return withEntityAccess(entityId, 'settings:manage', async (principal) => {
+  return withEntityAccess(entityId, 'chart:edit', async (principal) => {
     const rows = await prisma.account.findMany({
       where: { entityId },
       select: { code: true, name: true, type: true, category: true, isActive: true, sortOrder: true, parent: { select: { code: true } } },
@@ -130,7 +131,10 @@ export type AccountInput = AccountDraft & { id?: string };
  * nobody reclassifies a closed period by accident.
  */
 export async function saveAccount(entityId: string, input: AccountInput, acknowledged = false): Promise<ActionResult<{ account: AccountRecord; warning?: string }>> {
-  return withEntityAccess(entityId, 'settings:manage', async (principal) => {
+  return withEntityAccess(entityId, 'chart:edit', async (principal) => {
+    // Adding and correcting is an Accountant's; reaching an account that
+    // already carries history is the Owner's.
+    const powers = { ownerPowers: can(principal, 'settings:manage') };
     const chart = await prisma.account.findMany({ where: { entityId }, select: { id: true, code: true, type: true, parent: { select: { code: true } } } });
     const existing = chart.map((row) => ({ code: row.code, type: row.type as AccountType, parentCode: row.parent?.code ?? null }));
 
@@ -140,7 +144,7 @@ export async function saveAccount(entityId: string, input: AccountInput, acknowl
     if (input.id && !current) return fail('That account is not on this entity.');
 
     const before = current ? await factsFor(prisma, current) : undefined;
-    const problems = validateAccount(input, existing, before);
+    const problems = validateAccount(input, existing, before, powers);
     if (problems.length) return fail(problems.map((p) => p.message).join(' '));
 
     if (before) {
@@ -205,6 +209,7 @@ export async function setAccountActive(entityId: string, accountId: string, isAc
     if (!isActive && !permissionsFor(facts).deactivate) {
       return fail(permissionsFor(facts).reasons[0] ?? 'That account cannot be switched off.');
     }
+
 
     const saved = await prisma.$transaction(async (tx: Tx) => {
       const updated = await tx.account.update({ where: { id: row.id }, data: { isActive }, include: { parent: { select: { code: true } } } });

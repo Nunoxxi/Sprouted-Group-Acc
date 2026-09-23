@@ -98,10 +98,21 @@ export function isProtected(facts: Pick<AccountFacts, 'code' | 'type'>): boolean
   return protectedCodes.has(facts.code) || facts.type === 'EQUITY';
 }
 
-export function permissionsFor(facts: AccountFacts): EditPermissions {
+/**
+ * What the person doing the editing is allowed to reach.
+ *
+ * `ownerPowers` is the line between correcting the chart and changing what
+ * the accounts have already said. An Accountant adds an account and tidies
+ * one nothing has posted to; touching an account with history behind it, or
+ * taking one away, is the Owner's.
+ */
+export type Powers = { ownerPowers: boolean };
+
+export function permissionsFor(facts: AccountFacts, powers: Powers = { ownerPowers: true }): EditPermissions {
   const locked = isProtected(facts);
   const posted = facts.postings > 0;
   const referenced = facts.references > 0;
+  const owner = powers.ownerPowers;
   const reasons: string[] = [];
 
   if (locked) {
@@ -117,15 +128,20 @@ export function permissionsFor(facts: AccountFacts): EditPermissions {
   if (!posted && referenced) {
     reasons.push('Something else points at this account — a bank account, a stock item, a budget line or an account beneath it — so it cannot be deleted until that is changed.');
   }
+  if (!owner && !locked) {
+    reasons.push('Switching an account off, deleting one, merging two together, or renumbering one that already has transactions, is an Owner’s to do.');
+  }
 
   return {
     rename: true,
-    changeCode: !locked,
+    // Renumbering an account with history behind it changes what every closed
+    // period reports, so it needs an Owner. An empty one is just a correction.
+    changeCode: !locked && (owner || !posted),
     changeType: !posted,
-    changeParent: !locked,
-    deactivate: !locked,
-    remove: !locked && !posted && !referenced,
-    mergeAway: !locked && facts.isActive,
+    changeParent: !locked && (owner || !posted),
+    deactivate: !locked && owner,
+    remove: !locked && !posted && !referenced && owner,
+    mergeAway: !locked && facts.isActive && owner,
     reasons,
   };
 }
@@ -150,6 +166,7 @@ export function validateAccount(
   draft: AccountDraft,
   existing: readonly { code: string; type: AccountType; parentCode?: string | null }[],
   original?: AccountFacts,
+  powers: Powers = { ownerPowers: true },
 ): Invalid[] {
   const problems: Invalid[] = [];
   const code = draft.code.trim();
@@ -174,9 +191,14 @@ export function validateAccount(
   }
 
   if (original) {
-    const rules = permissionsFor(original);
+    const rules = permissionsFor(original, powers);
     if (code !== original.code && !rules.changeCode) {
-      problems.push({ field: 'code', message: 'This account cannot be renumbered.' });
+      problems.push({
+        field: 'code',
+        message: isProtected(original)
+          ? 'This account cannot be renumbered.'
+          : 'This account already has transactions on it, so only an Owner can renumber it.',
+      });
     }
     if (draft.type !== original.type && !rules.changeType) {
       problems.push({ field: 'type', message: 'This account already has transactions on it, so its kind cannot change — it would move history from one part of the accounts to another.' });

@@ -54,7 +54,10 @@ export function ChartPanel({ entity, accounts, allowed }: Props) {
   const [pendingCsv, setPendingCsv] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const may = allowed('settings:manage');
+  // An Accountant adds and corrects; an Owner may also switch off, delete,
+  // merge, import and reorder.
+  const may = allowed('chart:edit');
+  const ownerPowers = allowed('settings:manage');
 
   const rows = useMemo(() => {
     const term = filter.trim().toLowerCase();
@@ -165,8 +168,12 @@ export function ChartPanel({ entity, accounts, allowed }: Props) {
           <div className="flex flex-wrap gap-2">
             <Button size="sm" onClick={() => { setForm(blank); setState(null); setWarning(null); setMessage(null); }}>Add an account</Button>
             <Button size="sm" variant="secondary" disabled={pending} onClick={download}>Export</Button>
-            <input ref={fileInput} type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => { readFile(e.target.files); e.target.value = ''; }} />
-            <Button size="sm" variant="secondary" disabled={pending} onClick={() => fileInput.current?.click()}>Import</Button>
+            {ownerPowers ? (
+              <>
+                <input ref={fileInput} type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => { readFile(e.target.files); e.target.value = ''; }} />
+                <Button size="sm" variant="secondary" disabled={pending} onClick={() => fileInput.current?.click()}>Import</Button>
+              </>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -351,7 +358,7 @@ export function ChartPanel({ entity, accounts, allowed }: Props) {
           </table>
         </div>
 
-        {may && rows.length > 1 ? (
+        {ownerPowers && rows.length > 1 ? (
           <div className="mt-4 border-t border-slate-200 pt-3">
             <Button
               size="sm"

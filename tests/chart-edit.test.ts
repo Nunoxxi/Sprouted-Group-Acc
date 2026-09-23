@@ -85,6 +85,47 @@ describe('what may be changed', () => {
   });
 });
 
+describe('what an Accountant may do, as against an Owner', () => {
+  const asAccountant = { ownerPowers: false };
+
+  it('can add and rename freely', () => {
+    expect(validateAccount({ code: '7060', name: 'Cleaning', type: 'EXPENSE' }, [], undefined, asAccountant)).toEqual([]);
+    expect(permissionsFor(facts({ postings: 12 }), asAccountant).rename).toBe(true);
+  });
+
+  it('can correct an account nothing has posted to', () => {
+    const rules = permissionsFor(facts({ postings: 0 }), asAccountant);
+    expect(rules.changeCode).toBe(true);
+    expect(rules.changeType).toBe(true);
+    expect(rules.changeParent).toBe(true);
+  });
+
+  it('cannot switch one off, delete one or merge one away', () => {
+    const rules = permissionsFor(facts({ postings: 0 }), asAccountant);
+    expect(rules).toMatchObject({ deactivate: false, remove: false, mergeAway: false });
+    expect(rules.reasons.join(' ')).toContain('Owner');
+  });
+
+  it('cannot renumber an account that already carries history', () => {
+    const rules = permissionsFor(facts({ postings: 3 }), asAccountant);
+    expect(rules.changeCode).toBe(false);
+    const problems = validateAccount({ code: '7099', name: 'Cleaning', type: 'EXPENSE' }, [{ code: '7050', type: 'EXPENSE', parentCode: null }], facts({ code: '7050', postings: 3 }), asAccountant);
+    expect(problems.some((p) => p.field === 'code' && p.message.includes('Owner'))).toBe(true);
+  });
+
+  it('an Owner can do all of that', () => {
+    const rules = permissionsFor(facts({ postings: 3 }));
+    expect(rules).toMatchObject({ changeCode: true, deactivate: true, mergeAway: true });
+  });
+
+  it('neither of them can touch a control account beyond its name', () => {
+    for (const powers of [{ ownerPowers: true }, { ownerPowers: false }]) {
+      const rules = permissionsFor(facts({ code: controlAccounts.receivables, type: 'ASSET' }), powers);
+      expect(rules).toMatchObject({ rename: true, changeCode: false, deactivate: false, remove: false });
+    }
+  });
+});
+
 describe('validating an account', () => {
   const chart = [
     { code: '1001', type: 'ASSET' as const, parentCode: null },

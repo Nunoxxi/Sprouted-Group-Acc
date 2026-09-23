@@ -44,9 +44,12 @@ export const permissions = [
   'privacy:manage', // produce a subject access report, erase a person
   'audit:read',
   'export:run',
-  // The Settings area: the chart of accounts, projects, funds and the other
-  // lists the app runs on. Owner only, because a wrong move here reaches
-  // every report.
+  // Adding an account and correcting one that has nothing posted to it. An
+  // Accountant needs this mid-close; it cannot reach history.
+  'chart:edit',
+  // The Settings area, and everything in the chart that reaches history or
+  // takes something away: renumbering or retyping an account with postings,
+  // switching one off, deleting, merging, importing, reordering. Owner only.
   'settings:manage',
   'users:manage', // invite, change role and entity access, deactivate, unlock
   'sessions:manage', // see who is signed in, force sign-out
@@ -56,6 +59,7 @@ export type Permission = (typeof permissions)[number];
 const matrix: Record<Role, ReadonlySet<Permission>> = {
   owner: new Set(permissions),
   accountant: new Set<Permission>([
+    'chart:edit',
     'document:draft',
     'document:post',
     'document:mark-paid',

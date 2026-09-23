@@ -28,6 +28,7 @@ function principal(role: Role, entityIds: Principal['entityIds'] = ['sprouted-ro
 const expected: Record<Role, Permission[]> = {
   owner: [...permissions],
   accountant: [
+    'chart:edit',
     'document:draft',
     'document:post',
     'document:mark-paid',
