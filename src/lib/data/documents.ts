@@ -44,6 +44,7 @@ import { loadAttachmentData } from './attachments';
 import { redactInitialData } from './redact';
 import { loadPayrollData } from './payroll';
 import { loadPrivacyData } from './privacy';
+import { loadSettingsData } from './settings';
 import { loadGrantData } from './grants';
 import { bankAccountKindOf, loadMomoData } from './momo';
 import { loadOpeningData } from './opening';
@@ -318,5 +319,6 @@ async function loadEverything(principal: Principal): Promise<InitialData> {
     ...(await loadPayrollData(entityScope, entityIds)),
     ...(await loadAttachmentData(entityScope, entityIds)),
     ...(await loadPrivacyData(entityScope, entityIds)),
+    ...(await loadSettingsData(entityScope, entityIds)),
   };
 }

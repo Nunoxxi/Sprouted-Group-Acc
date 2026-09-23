@@ -44,6 +44,8 @@ import { PayrollPanel } from '@/components/app/payroll-panel';
 import { Attachments } from '@/components/app/attachments';
 import { InboxPanel } from '@/components/app/inbox-panel';
 import { ChartPanel } from '@/components/app/chart-panel';
+import { AssetClassSettings, CompanySettings, ContactsSettings, FundsSettings, ProjectsSettings, TaxRateSettings } from '@/components/app/settings-panels';
+import { statutoryTaxRates } from '@/lib/settings';
 import { PrivacyPanel } from '@/components/app/privacy-panel';
 import { MaskedDetail } from '@/components/app/reveal';
 import { CashflowPanel } from '@/components/app/cashflow-panel';
@@ -105,7 +107,7 @@ const navigationItems = [
 ] as const;
 
 /** The Settings area, grouped by topic. Owner only. */
-const settingsTopics = ['Company', 'Chart of accounts'] as const;
+const settingsTopics = ['Company', 'Chart of accounts', 'Projects', 'Funds', 'Contacts', 'Asset classes', 'Tax rates', 'Backups & audit'] as const;
 type SettingsTopic = (typeof settingsTopics)[number];
 
 type EntityMetrics = {
@@ -670,6 +672,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
   const activeContact =
     contacts.find((contact) => contact.id === activeDocument.contactId) ?? entityContacts[0] ?? contacts[0];
   const entityAccounts = useMemo(() => initialData.accountsByEntity[selectedEntity.id] ?? [], [initialData, selectedEntity.id]);
+  const settingsAccountCodes = useMemo(() => entityAccounts.filter((a) => a.isActive).map((a) => ({ code: a.code, name: a.name })), [entityAccounts]);
   const accountNames = useMemo(() => accountNameMap(entityAccounts), [entityAccounts]);
   const entityDocuments = useMemo(() => initialData.documentsByEntity[selectedEntity.id] ?? [], [initialData, selectedEntity.id]);
   const activeRecord = activeDocument.id ? entityDocuments.find((document) => document.id === activeDocument.id) : undefined;
@@ -4249,7 +4252,51 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
               {settingsTopic === 'Chart of accounts' ? (
                 <ChartPanel key={selectedEntity.id} entity={selectedEntity} accounts={entityAccounts} allowed={allowed} />
               ) : null}
+
+              {settingsTopic === 'Projects' ? (
+                <ProjectsSettings
+                  key={selectedEntity.id}
+                  entity={selectedEntity}
+                  projects={initialData.projectsByEntity[selectedEntity.id] ?? []}
+                  funds={initialData.fundsByEntity[selectedEntity.id] ?? []}
+                  contacts={contacts}
+                  budgetLines={initialData.budgetLinesByEntity[selectedEntity.id] ?? []}
+                  accountCodes={settingsAccountCodes}
+                  allowed={allowed}
+                />
+              ) : null}
+
+              {settingsTopic === 'Funds' ? (
+                <FundsSettings key={selectedEntity.id} entity={selectedEntity} funds={initialData.fundsByEntity[selectedEntity.id] ?? []} allowed={allowed} />
+              ) : null}
+
+              {settingsTopic === 'Contacts' ? (
+                <ContactsSettings key={selectedEntity.id} entity={selectedEntity} contacts={contacts} allowed={allowed} />
+              ) : null}
+
+              {settingsTopic === 'Asset classes' ? (
+                <AssetClassSettings
+                  key={selectedEntity.id}
+                  entity={selectedEntity}
+                  categories={initialData.assetCategoriesByEntity[selectedEntity.id] ?? []}
+                  accountCodes={settingsAccountCodes}
+                  allowed={allowed}
+                />
+              ) : null}
+
+              {settingsTopic === 'Tax rates' ? (
+                <TaxRateSettings
+                  key={selectedEntity.id}
+                  entity={selectedEntity}
+                  rates={initialData.taxRatesByEntity[selectedEntity.id] ?? statutoryTaxRates}
+                  allowed={allowed}
+                />
+              ) : null}
               {settingsTopic === 'Company' ? (
+                <CompanySettings key={selectedEntity.id} entity={selectedEntity} allowed={allowed} />
+              ) : null}
+
+              {settingsTopic === 'Backups & audit' ? (
                 <div className="space-y-6">
 
                 {settingsMessage ? (

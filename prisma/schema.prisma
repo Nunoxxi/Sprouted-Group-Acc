@@ -139,6 +139,9 @@ model Entity {
   attachments        Attachment[]
   attachmentRules    AttachmentRule[]
   dataRequests       DataSubjectRequest[]
+  projectBudgetLines ProjectBudgetLine[]
+  assetCategories    AssetCategory[]
+  taxRateSetting     TaxRateSetting?
 }
 
 // Append-only. Events form a hash chain per entity ordered by `sequence`, which
@@ -235,6 +238,7 @@ model Contact {
   grants              Grant[]
   inKindContributions InKindContribution[]
   fixedAssets         FixedAsset[]
+  projects            Project[]
 }
 
 model ContactEntityBalance {
@@ -461,6 +465,8 @@ model Account {
   recurringCosts       RecurringCost[]
   payrollMappings      PayrollMapping[]
   payrollDepartments   PayrollDepartment[]
+  projectBudgetLines   ProjectBudgetLine[]
+  assetCategories      AssetCategory[]
 
   @@unique([entityId, code])
   @@index([entityId, parentId])
@@ -595,20 +601,40 @@ model Fund {
   @@index([entityId, classification])
 }
 
-model Project {
-  id          String   @id @default(cuid())
-  entityId    String
-  fundId      String?
-  code        String
-  name        String
-  funder      String?
-  budgetMinor BigInt   @default(0)
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+/// Grant funded, or paid for under a contract for services.
+enum ProjectKind {
+  GRANT_FUNDED
+  SERVICE_CONTRACT
+}
 
-  entity        Entity         @relation(fields: [entityId], references: [id])
-  fund          Fund?          @relation(fields: [fundId], references: [id])
+model Project {
+  id              String      @id @default(cuid())
+  entityId        String
+  fundId          String?
+  code            String
+  name            String
+  /// Kept as free text as well as a contact, because older projects named a
+  /// funder before funders were contacts.
+  funder          String?
+  funderContactId String?
+  kind            ProjectKind @default(GRANT_FUNDED)
+  /// What was awarded, in the funder's own currency.
+  currency        Currency    @default(GHS)
+  fundingMinor    BigInt      @default(0)
+  startDate       DateTime?   @db.Date
+  endDate         DateTime?   @db.Date
+  /// Set when the project is closed. It then leaves the coding lists but stays
+  /// in every report, and an Owner can reopen it.
+  closedAt        DateTime?
+  budgetMinor     BigInt      @default(0)
+  isActive        Boolean     @default(true)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  entity        Entity              @relation(fields: [entityId], references: [id])
+  fund          Fund?               @relation(fields: [fundId], references: [id])
+  funderContact Contact?            @relation(fields: [funderContactId], references: [id])
+  budgetLines   ProjectBudgetLine[]
   journalLines  JournalLine[]
   documentLines DocumentLine[]
   grants        Grant[]
@@ -2757,4 +2783,75 @@ model DataSubjectRequest {
 
   @@index([entityId, createdAt])
   @@index([entityId, subjectKind, subjectId])
+}
+
+/// A line of a project's budget.
+///
+/// The original figure is written once and never changed. A revision goes in
+/// beside it, so a report can show the budget as it was agreed and the budget
+/// as it stands now, and the difference between them.
+model ProjectBudgetLine {
+  id            String    @id @default(cuid())
+  entityId      String
+  projectId     String
+  name          String
+  /// Optional: the account this part of the budget is spent through.
+  accountId     String?
+  /// As first agreed. Never edited - a revision is the field below.
+  originalMinor BigInt    @default(0)
+  /// Null until the budget is revised.
+  revisedMinor  BigInt?
+  revisedAt     DateTime?
+  note          String?
+  sortOrder     Int       @default(0)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  entity  Entity   @relation(fields: [entityId], references: [id])
+  project Project  @relation(fields: [projectId], references: [id])
+  account Account? @relation(fields: [accountId], references: [id])
+
+  @@index([entityId, projectId])
+}
+
+/// A class of fixed asset and how it is depreciated by default, so adding an
+/// asset does not mean remembering the rate. Editable; an asset keeps whatever
+/// terms it was given, so changing this never restates anything already
+/// depreciated.
+model AssetCategory {
+  id        String             @id @default(cuid())
+  entityId  String
+  name      String
+  /// Percent a year, straight line unless the method says otherwise.
+  ratePct   Decimal            @db.Decimal(6, 3)
+  method    DepreciationMethod @default(STRAIGHT_LINE)
+  /// The account the cost of this class sits in.
+  accountId String?
+  isActive  Boolean            @default(true)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  entity  Entity   @relation(fields: [entityId], references: [id])
+  account Account? @relation(fields: [accountId], references: [id])
+
+  @@unique([entityId, name])
+}
+
+/// The tax rates and the registration threshold, per entity.
+///
+/// Changing a rate does not restate anything already posted: a posted journal
+/// holds the figures it was posted with. It applies to what is calculated
+/// from here on.
+model TaxRateSetting {
+  id                         String   @id @default(cuid())
+  entityId                   String   @unique
+  vatPct                     Decimal  @default(15) @db.Decimal(6, 3)
+  nhilPct                    Decimal  @default(2.5) @db.Decimal(6, 3)
+  getFundPct                 Decimal  @default(2.5) @db.Decimal(6, 3)
+  /// Turnover in a rolling twelve months above which registration is required.
+  registrationThresholdMinor BigInt   @default(75000000)
+  updatedAt                  DateTime @updatedAt
+
+  entity Entity @relation(fields: [entityId], references: [id])
 }

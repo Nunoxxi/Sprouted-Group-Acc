@@ -277,3 +277,16 @@ export const seedProjects: SeedProject[] = [
   { id: 'strong-coops', entityId: 'sprouted-roots', code: 'PROJ-SC', name: 'Strong Coops', funder: '', fundCode: 'FUND-SC', budget: 0 },
   { id: 'bridge-fund', entityId: 'sprouted-roots', code: 'PROJ-BRIDGE', name: 'Bridge Fund', funder: '', fundCode: 'FUND-BRIDGE', budget: 0 },
 ];
+
+export type SeedAssetCategory = { entityId: string; name: string; ratePct: number; accountCode: string };
+
+/**
+ * The classes of fixed asset and the rates the audited accounts use. They are
+ * a starting point, editable in Settings: an asset keeps whatever terms it was
+ * given, so changing one of these never restates anything.
+ */
+export const seedAssetCategories: SeedAssetCategory[] = [
+  { entityId: 'sprouted-roots', name: 'Computers & Accessories', ratePct: 25, accountCode: '1210' },
+  { entityId: 'sprouted-roots', name: 'Furniture & Fittings', ratePct: 20, accountCode: '1215' },
+  { entityId: 'sprouted-roots', name: 'Office Equipment', ratePct: 20, accountCode: '1220' },
+];

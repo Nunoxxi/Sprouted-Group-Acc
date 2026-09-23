@@ -17,7 +17,7 @@ import {
   fundClassToPrisma,
   whtToPrisma,
 } from '../src/lib/data/enums.ts';
-import { seedContacts, seedEntities, seedFunds, seedProjects } from '../src/lib/seed-data.ts';
+import { seedAssetCategories, seedContacts, seedEntities, seedFunds, seedProjects } from '../src/lib/seed-data.ts';
 
 const prisma = new PrismaClient();
 
@@ -139,7 +139,15 @@ async function main() {
         },
       });
     }
-    console.log(`${seedFunds.length} funds, ${seedProjects.length} projects`);
+    for (const category of seedAssetCategories) {
+      const account = await tx.account.findUnique({ where: { entityId_code: { entityId: category.entityId, code: category.accountCode } }, select: { id: true } });
+      await tx.assetCategory.upsert({
+        where: { entityId_name: { entityId: category.entityId, name: category.name } },
+        update: { accountId: account?.id ?? null },
+        create: { entityId: category.entityId, name: category.name, ratePct: category.ratePct, accountId: account?.id ?? null },
+      });
+    }
+    console.log(`${seedFunds.length} funds, ${seedProjects.length} projects, ${seedAssetCategories.length} asset classes`);
   }, {
     // Dozens of sequential round trips to a remote database; the default 5s
     // interactive-transaction timeout is for request handlers, not seeds.

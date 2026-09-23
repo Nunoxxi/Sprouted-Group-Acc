@@ -17,6 +17,7 @@ import type { AdjustmentKind, AllowanceMethod, DepreciationMethod, TaxStatus } f
 import type { LiabilityKind } from '../payroll';
 import type { AttachmentTarget } from '../attachments';
 import type { SubjectKind } from '../privacy';
+import type { DepreciationMethod as SettingsDepreciationMethod, ProjectKind, TaxRates } from '../settings';
 import type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus } from './enums';
 
 export type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus };
@@ -106,6 +107,13 @@ export type ProjectRecord = {
   fundClassification: FundClassification | null;
   budget: number;
   isActive: boolean;
+  funderContactId: string | null;
+  kind: ProjectKind;
+  currency: Currency;
+  fundingMinor: number;
+  startDate: string | null;
+  endDate: string | null;
+  closedAt: string | null;
 };
 
 export type DocumentKind = 'invoice' | 'bill';
@@ -1083,6 +1091,9 @@ export type InitialData = {
   /** Every time somebody looked at or erased personal data, newest first. */
   piiAccessByEntity: Record<string, AuditEventRecord[]>;
   personalDataCountsByEntity: Record<string, PersonalDataCount[]>;
+  budgetLinesByEntity: Record<string, ProjectBudgetLineRecord[]>;
+  assetCategoriesByEntity: Record<string, AssetCategoryRecord[]>;
+  taxRatesByEntity: Record<string, TaxRates>;
 };
 
 export type AuditEventRecord = {
@@ -1125,4 +1136,29 @@ export type PersonalDataCount = {
   pendingValues: number;
   /** What is held about them, in plain words. */
   holds: string;
+};
+
+/** One line of a project's budget, as agreed and as it stands. */
+export type ProjectBudgetLineRecord = {
+  id: string;
+  entityId: string;
+  projectId: string;
+  name: string;
+  accountCode: string | null;
+  originalMinor: number;
+  revisedMinor: number | null;
+  revisedAt: string | null;
+  note: string;
+  isActive: boolean;
+};
+
+/** A class of fixed asset and how it depreciates by default. */
+export type AssetCategoryRecord = {
+  id: string;
+  entityId: string;
+  name: string;
+  ratePct: number;
+  method: SettingsDepreciationMethod;
+  accountCode: string | null;
+  isActive: boolean;
 };

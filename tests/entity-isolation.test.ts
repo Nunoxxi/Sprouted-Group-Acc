@@ -120,6 +120,7 @@ import * as payrollActions from '@/app/actions/payroll';
 import * as attachmentActions from '@/app/actions/attachments';
 import * as privacyActions from '@/app/actions/privacy';
 import * as chartActions from '@/app/actions/chart';
+import * as settingsActions from '@/app/actions/settings';
 import * as userActions from '@/app/actions/users';
 import * as auditRoute from '@/app/api/audit/route';
 import * as backupsRoute from '@/app/api/backups/route';
@@ -357,6 +358,25 @@ const chartCalls: Record<keyof typeof chartActions, Call> = {
   importChart: () => chartActions.importChart(FORBIDDEN_ENTITY, 'Code,Name,Type\n7099,Sundry,Expense\n'),
 };
 
+/** Every Settings Server Function. All but updateContact are Owner only. */
+const settingsCalls: Record<keyof typeof settingsActions, Call> = {
+  saveProject: () => settingsActions.saveProject(FORBIDDEN_ENTITY, { code: 'P1', name: 'Project', kind: 'grant-funded', currency: 'GHS', fundingMinor: 0 }),
+  setProjectClosed: () => settingsActions.setProjectClosed(FORBIDDEN_ENTITY, 'project-1', true),
+  deleteProject: () => settingsActions.deleteProject(FORBIDDEN_ENTITY, 'project-1'),
+  saveProjectBudgetLine: () => settingsActions.saveProjectBudgetLine(FORBIDDEN_ENTITY, { projectId: 'project-1', name: 'Training', amountMinor: 1000 }),
+  reviseProjectBudgetLine: () => settingsActions.reviseProjectBudgetLine(FORBIDDEN_ENTITY, 'line-1', 2000),
+  removeProjectBudgetLine: () => settingsActions.removeProjectBudgetLine(FORBIDDEN_ENTITY, 'line-1'),
+  saveFund: () => settingsActions.saveFund(FORBIDDEN_ENTITY, { code: 'F1', name: 'Fund', classification: 'restricted' }),
+  setFundActive: () => settingsActions.setFundActive(FORBIDDEN_ENTITY, 'fund-1', false),
+  updateContact: () => settingsActions.updateContact(FORBIDDEN_ENTITY, { id: 'contact-1', name: 'X', type: 'supplier', category: 'supplier', tin: '', phone: '', email: '', address: '', withholdingTaxStatus: 'none' }),
+  setContactActive: () => settingsActions.setContactActive(FORBIDDEN_ENTITY, 'contact-1', false),
+  updateEntity: () => settingsActions.updateEntity(FORBIDDEN_ENTITY, { name: 'X', tin: '', financialYearEnd: '30 Sep' }),
+  saveAssetCategory: () => settingsActions.saveAssetCategory(FORBIDDEN_ENTITY, { name: 'Computers', ratePct: 25, method: 'straight-line' }),
+  removeAssetCategory: () => settingsActions.removeAssetCategory(FORBIDDEN_ENTITY, 'category-1'),
+  saveTaxRates: () => settingsActions.saveTaxRates(FORBIDDEN_ENTITY, { vatPct: 15, nhilPct: 2.5, getFundPct: 2.5, registrationThresholdMinor: 75000000 }),
+  resetTaxRates: () => settingsActions.resetTaxRates(FORBIDDEN_ENTITY),
+};
+
 /** Every data protection Server Function. None of them is a Viewer's to make. */
 const privacyCalls: Record<keyof typeof privacyActions, Call> = {
   findSubjects: () => privacyActions.findSubjects(FORBIDDEN_ENTITY, 'Akosua'),
@@ -448,6 +468,8 @@ describe('coverage', () => {
     expect(exportedPrivacy.sort()).toEqual(Object.keys(privacyCalls).sort());
     const exportedChart = Object.keys(chartActions).filter((k) => typeof (chartActions as Record<string, unknown>)[k] === 'function');
     expect(exportedChart.sort()).toEqual(Object.keys(chartCalls).sort());
+    const exportedSettings = Object.keys(settingsActions).filter((k) => typeof (settingsActions as Record<string, unknown>)[k] === 'function');
+    expect(exportedSettings.sort()).toEqual(Object.keys(settingsCalls).sort());
   });
 
   it('every Route Handler method has a case', () => {
@@ -459,7 +481,7 @@ describe('coverage', () => {
 // --- signed out --------------------------------------------------------------------
 
 describe('signed out', () => {
-  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...attachmentCalls, ...privacyCalls, ...chartCalls, ...userCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...attachmentCalls, ...privacyCalls, ...chartCalls, ...settingsCalls, ...userCalls })) {
     if (!call) continue;
     it(`${name} is refused without touching the database`, async () => {
       expect(isRefusal(await call())).toBe(true);
@@ -479,7 +501,7 @@ describe('signed out', () => {
 describe('an Accountant on Sprouted Roots asking for Oikazi', () => {
   beforeEach(() => signIn({ role: 'accountant' }, [GRANTED_ENTITY]));
 
-  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...attachmentCalls, ...privacyCalls, ...chartCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...attachmentCalls, ...privacyCalls, ...chartCalls, ...settingsCalls })) {
     if (!call) continue;
     it(`${name} is refused and reads nothing`, async () => {
       const result = await call();
@@ -535,7 +557,7 @@ describe('a Viewer with access to Oikazi', () => {
   }
 
   it('cannot touch rates, banks, the functional currency, revaluation or VAT registration, even on their own entity', async () => {
-    for (const [name, call] of Object.entries({ ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...attachmentCalls, ...privacyCalls, ...chartCalls })) {
+    for (const [name, call] of Object.entries({ ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...attachmentCalls, ...privacyCalls, ...chartCalls, ...settingsCalls })) {
       if (name === 'listExchangeRates' || openingReads.has(name) || momoReads.has(name) || grantReads.has(name) || cashflowReads.has(name) || assetReads.has(name) || payrollReads.has(name) || attachmentReads.has(name)) continue; // reads are reports:view
       dbCalls.length = 0;
       const result = await call();

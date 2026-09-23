@@ -141,6 +141,60 @@ that moved seven accounts aside and deactivated ten; on Crafts and Oikazi only
 the two old FX accounts. All 110 of Roots' journal lines still read as they
 were written.
 
+## Settings: everything the app runs on, editable (2026-09-23)
+
+**Settings** is a topic-tabbed area on the sidebar — Company, Chart of
+accounts, Projects, Funds, Contacts, Asset classes, Tax rates, Backups &
+audit. Every change writes an audit event carrying the old value and the new
+one, nothing in it alters a posted transaction, and anything that would reach
+something already reported says what it will do and waits to be acknowledged.
+
+**Chart of accounts**: add, rename, renumber, re-group, re-parent, switch off,
+delete, merge, reorder, import and export. A name can always be changed; a
+type cannot once anything has posted; an account with postings is switched off
+rather than deleted; an account the software posts to by number, and every
+fund account, can be renamed and nothing else. The protected list is read from
+the posting logic's own constants, so it cannot fall out of step. A merge moves
+postings and switches the source off, refused between different kinds. An
+import only ever adds and renames, and runs as a dry run first. **Accountants**
+hold `chart:edit` — add, rename, and correct an account nothing has posted to;
+**Owners** hold `settings:manage` for the rest.
+
+**Projects**: add, edit, close, reopen, delete while nothing is coded to one.
+Each carries funder (a contact), how it is paid for (grant or contract for
+services), currency, amount funded, start and end, and its fund. **Budget
+lines keep the figure first agreed**: a revision is written beside the
+original, never over it, so a report shows the budget as agreed, as it stands,
+and the movement. Closed projects leave the coding lists and stay in reports.
+
+**Funds**: add, edit, close, reopen. Moving one between restricted and
+unrestricted once money has gone through it warns that it moves everything
+between the two columns of every fund report.
+
+**Contacts**: correctable at last — name, TIN, type, category, telephone,
+email, address and withholding status, by an Accountant. Switching one off is
+an Owner's, and another company in the group cannot be switched off at all.
+The audit record names which fields changed, not what the telephone number
+changed to.
+
+**This company**: name, TIN and financial year end. The entity *type* is
+deliberately not editable: it decides the chart and the screens, and changing
+it once the books run would leave the two out of step.
+
+**Fixed asset classes**: name, rate a year, straight line or reducing balance,
+and the account the cost sits in. Seeded from the audited accounts — Computers
+& Accessories 25%, Furniture & Fittings 20%, Office Equipment 20%, straight
+line — and editable. An asset keeps whatever terms it was given, so changing a
+class never restates anything already depreciated.
+
+**Tax rates**: VAT, NHIL, GETFund and the registration threshold, per entity,
+with a button to put them back to the Ghanaian ones. Changing a rate warns
+that a posted journal is never recalculated.
+
+Verified end to end against Supabase on 2026-09-23: 49 checks on the chart
+(including that the ledger's total is unchanged to the pesewa after a merge)
+and 51 on the rest of Settings.
+
 ## Known gaps / next steps
 
 1. **Reports, tax, intercompany, bank and the dashboard still read demo arrays** — `ledgerLines` and `reportAccounts` in `report-data.ts`, and `taxTransactions`, `intercompanyTransactions`, `bankDocuments`, `initialBankLines`, `metricsByEntity`, `summaryRows` in the shell. Documents you post are in the ledger but do not yet appear in any report. Next-pass path: a query over `JournalLine` ⋈ `Account`/`Contact`/`Project` producing the existing `LedgerLine` DTO shape, so the report memos in the shell need no change; then `report-data.ts` is deleted.
