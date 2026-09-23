@@ -119,6 +119,7 @@ import * as assetActions from '@/app/actions/assets';
 import * as payrollActions from '@/app/actions/payroll';
 import * as attachmentActions from '@/app/actions/attachments';
 import * as privacyActions from '@/app/actions/privacy';
+import * as chartActions from '@/app/actions/chart';
 import * as userActions from '@/app/actions/users';
 import * as auditRoute from '@/app/api/audit/route';
 import * as backupsRoute from '@/app/api/backups/route';
@@ -344,6 +345,18 @@ const attachmentCalls: Record<keyof typeof attachmentActions, Call> = {
 /** The two attachment reads a Viewer may make on their own entity. */
 const attachmentReads = new Set(['attachmentUrl', 'inboxSuggestions']);
 
+/** Every chart-of-accounts Server Function. Owner only, so any other role is refused. */
+const chartCalls: Record<keyof typeof chartActions, Call> = {
+  accountEditState: () => chartActions.accountEditState(FORBIDDEN_ENTITY, 'account-1'),
+  exportChart: () => chartActions.exportChart(FORBIDDEN_ENTITY),
+  saveAccount: () => chartActions.saveAccount(FORBIDDEN_ENTITY, { code: '7099', name: 'Sundry', type: 'EXPENSE' }),
+  setAccountActive: () => chartActions.setAccountActive(FORBIDDEN_ENTITY, 'account-1', false),
+  deleteAccount: () => chartActions.deleteAccount(FORBIDDEN_ENTITY, 'account-1'),
+  mergeAccounts: () => chartActions.mergeAccounts(FORBIDDEN_ENTITY, 'account-1', 'account-2'),
+  reorderAccounts: () => chartActions.reorderAccounts(FORBIDDEN_ENTITY, ['7099']),
+  importChart: () => chartActions.importChart(FORBIDDEN_ENTITY, 'Code,Name,Type\n7099,Sundry,Expense\n'),
+};
+
 /** Every data protection Server Function. None of them is a Viewer's to make. */
 const privacyCalls: Record<keyof typeof privacyActions, Call> = {
   findSubjects: () => privacyActions.findSubjects(FORBIDDEN_ENTITY, 'Akosua'),
@@ -433,6 +446,8 @@ describe('coverage', () => {
     expect(exportedAttachments.sort()).toEqual(Object.keys(attachmentCalls).sort());
     const exportedPrivacy = Object.keys(privacyActions).filter((k) => typeof (privacyActions as Record<string, unknown>)[k] === 'function');
     expect(exportedPrivacy.sort()).toEqual(Object.keys(privacyCalls).sort());
+    const exportedChart = Object.keys(chartActions).filter((k) => typeof (chartActions as Record<string, unknown>)[k] === 'function');
+    expect(exportedChart.sort()).toEqual(Object.keys(chartCalls).sort());
   });
 
   it('every Route Handler method has a case', () => {
@@ -444,7 +459,7 @@ describe('coverage', () => {
 // --- signed out --------------------------------------------------------------------
 
 describe('signed out', () => {
-  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...attachmentCalls, ...privacyCalls, ...userCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...attachmentCalls, ...privacyCalls, ...chartCalls, ...userCalls })) {
     if (!call) continue;
     it(`${name} is refused without touching the database`, async () => {
       expect(isRefusal(await call())).toBe(true);
@@ -464,7 +479,7 @@ describe('signed out', () => {
 describe('an Accountant on Sprouted Roots asking for Oikazi', () => {
   beforeEach(() => signIn({ role: 'accountant' }, [GRANTED_ENTITY]));
 
-  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...attachmentCalls, ...privacyCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...attachmentCalls, ...privacyCalls, ...chartCalls })) {
     if (!call) continue;
     it(`${name} is refused and reads nothing`, async () => {
       const result = await call();
@@ -520,7 +535,7 @@ describe('a Viewer with access to Oikazi', () => {
   }
 
   it('cannot touch rates, banks, the functional currency, revaluation or VAT registration, even on their own entity', async () => {
-    for (const [name, call] of Object.entries({ ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...attachmentCalls, ...privacyCalls })) {
+    for (const [name, call] of Object.entries({ ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...attachmentCalls, ...privacyCalls, ...chartCalls })) {
       if (name === 'listExchangeRates' || openingReads.has(name) || momoReads.has(name) || grantReads.has(name) || cashflowReads.has(name) || assetReads.has(name) || payrollReads.has(name) || attachmentReads.has(name)) continue; // reads are reports:view
       dbCalls.length = 0;
       const result = await call();

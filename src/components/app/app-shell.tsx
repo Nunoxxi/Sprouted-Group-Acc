@@ -43,6 +43,7 @@ import { AssetsPanel } from '@/components/app/assets-panel';
 import { PayrollPanel } from '@/components/app/payroll-panel';
 import { Attachments } from '@/components/app/attachments';
 import { InboxPanel } from '@/components/app/inbox-panel';
+import { ChartPanel } from '@/components/app/chart-panel';
 import { PrivacyPanel } from '@/components/app/privacy-panel';
 import { MaskedDetail } from '@/components/app/reveal';
 import { CashflowPanel } from '@/components/app/cashflow-panel';
@@ -102,6 +103,10 @@ const navigationItems = [
   'Go-live',
   'Settings',
 ] as const;
+
+/** The Settings area, grouped by topic. Owner only. */
+const settingsTopics = ['Company', 'Chart of accounts'] as const;
+type SettingsTopic = (typeof settingsTopics)[number];
 
 type EntityMetrics = {
   cashPosition: number;
@@ -464,6 +469,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
   const [entityMenuOpen, setEntityMenuOpen] = useState(false);
   const [showAddEntityForm, setShowAddEntityForm] = useState(false);
   const [showAddContactForm, setShowAddContactForm] = useState(false);
+  const [settingsTopic, setSettingsTopic] = useState<SettingsTopic>('Company');
   // Where the contact dialog was opened from. Opened from a document, the new
   // contact is selected on it, so nobody has to go and find it again.
   const [contactFormTarget, setContactFormTarget] = useState<'list' | 'document'>('list');
@@ -4222,420 +4228,446 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                 </div>
               </div>
 
-              {settingsMessage ? (
-                <p className={['rounded-lg border px-3 py-2 text-sm', settingsMessage.tone === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-red-200 bg-red-50 text-red-800'].join(' ')}>
-                  {settingsMessage.text}
-                </p>
+              {/* Grouped by topic. Everything the app runs on that a person
+                  should be able to change lives here rather than in code. */}
+              <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
+                {settingsTopics.map((topic) => (
+                  <button
+                    key={topic}
+                    type="button"
+                    onClick={() => setSettingsTopic(topic)}
+                    className={[
+                      'rounded-lg px-3 py-1.5 text-sm font-medium',
+                      settingsTopic === topic ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200',
+                    ].join(' ')}
+                  >
+                    {topic}
+                  </button>
+                ))}
+              </div>
+
+              {settingsTopic === 'Chart of accounts' ? (
+                <ChartPanel key={selectedEntity.id} entity={selectedEntity} accounts={entityAccounts} allowed={allowed} />
               ) : null}
+              {settingsTopic === 'Company' ? (
+                <div className="space-y-6">
 
-              <Card className="rounded-2xl">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Currency</p>
-                <h3 className="mt-1 text-xl font-semibold text-slate-900">Functional currency: {functionalCurrency} · {currencyNames[functionalCurrency]}</h3>
-                <p className="mt-1 text-sm text-slate-600">
-                  The currency {selectedEntity.name}&rsquo;s books are kept and reported in. Every journal line stores its transaction currency, the amount in it, the rate used and the {functionalCurrency} result — fixed at posting, never recalculated.
-                </p>
-                {allowed('entity:configure') ? (
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    {currencies.filter((currency) => currency !== functionalCurrency).map((currency) => (
-                      <Button key={currency} size="sm" variant="secondary" disabled={settingsPending} onClick={() => runSetting(`Functional currency set to ${currency}.`, () => setFunctionalCurrency(selectedEntity.id, currency))}>
-                        Switch to {currency}
-                      </Button>
-                    ))}
-                    <span className="text-xs text-slate-500">Only possible while nothing has been posted.</span>
-                  </div>
-                ) : null}
-              </Card>
-
-              <Card className="rounded-2xl">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">VAT</p>
-                <h3 className="mt-1 text-xl font-semibold text-slate-900">{vatRegistrationLabel}</h3>
-                <p className="mt-1 text-sm text-slate-600">
-                  {selectedEntity.vatRegistered
-                    ? `VAT is calculated on ${selectedEntity.name}'s invoices and bills dated on or after ${selectedEntity.vatRegisteredFrom}: 15% VAT, 2.5% NHIL and 2.5% GETFund on the same base. Documents dated earlier, and anything already posted, are not touched. Input tax on purchases and import VAT are recoverable from that date. The VAT return is under Tax.`
-                    : `No VAT is calculated for ${selectedEntity.name}. Invoices and bills are gross, VAT a supplier charges is part of the cost of the item, import VAT paid at the port is part of the cost of the goods, and there is no VAT return. Switching registration on applies VAT to documents dated on or after the date you enter — never to earlier ones.`}
-                </p>
-                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                  <span className="font-semibold">Check the category.</span> Suppliers of goods must register once taxable supplies pass GH₵750,000 in any twelve months (tracked on the dashboard). <span className="font-semibold">Suppliers of services are required to register regardless of turnover.</span> If {selectedEntity.name} supplies services — programmes delivered for a fee, processing for others — the threshold does not apply and it should be registered now.
-                </div>
-                {allowed('entity:configure') ? (
-                  selectedEntity.vatRegistered ? (
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <Button size="sm" variant="secondary" disabled={settingsPending} onClick={() => runSetting(`VAT registration switched off for ${selectedEntity.name}.`, () => setVatRegistration(selectedEntity.id, { registered: false }))}>
-                        Switch VAT off
-                      </Button>
-                      <span className="text-xs text-slate-500">Posted documents keep the VAT they were posted with.</span>
-                    </div>
-                  ) : (
-                    <div className="mt-3 flex flex-wrap items-end gap-3">
-                      <div>
-                        <label className="mb-1.5 block text-sm font-medium text-slate-700">Registration effective from</label>
-                        <Input type="date" value={vatForm.registeredFrom} onChange={(event) => setVatForm({ registeredFrom: event.target.value })} />
-                      </div>
-                      <Button
-                        size="sm"
-                        disabled={settingsPending || !vatForm.registeredFrom}
-                        onClick={() => runSetting(`VAT registration switched on for ${selectedEntity.name} from ${vatForm.registeredFrom}.`, () => setVatRegistration(selectedEntity.id, { registered: true, registeredFrom: vatForm.registeredFrom }))}
-                      >
-                        Switch VAT on
-                      </Button>
-                      <span className="text-xs text-slate-500">Applies to documents dated on or after this date only.</span>
-                    </div>
-                  )
-                ) : null}
-              </Card>
-
-              <Card className="rounded-2xl">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Email</p>
-                <h3 className="mt-1 text-xl font-semibold text-slate-900">
-                  {selectedEntity.emailFrom ? `Sender: ${selectedEntity.emailFrom}` : 'Sender: the group default'}
-                </h3>
-                <p className="mt-1 text-sm text-slate-600">
-                  Invitations and password resets for people whose first entity is {selectedEntity.name} are sent from this address. It must be on the domain verified with the email provider — the same domain as the group default. Leave it empty to use the group default.
-                </p>
-                {allowed('entity:configure') ? (
-                  <div className="mt-3 flex flex-wrap items-end gap-3">
-                    <div className="min-w-[320px] flex-1">
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700">Sender</label>
-                      <Input
-                        value={senderValue}
-                        placeholder={`${selectedEntity.name} <${selectedEntity.id.replace(/^sprouted-/, '')}@yourdomain.com>`}
-                        onChange={(event) => setSenderForm({ entityId: selectedEntity.id, value: event.target.value })}
-                      />
-                    </div>
-                    <Button
-                      size="sm"
-                      disabled={settingsPending || senderValue.trim() === selectedEntity.emailFrom}
-                      onClick={() => runSetting(senderValue.trim() ? `Sender for ${selectedEntity.name} set to ${senderValue.trim()}.` : `Sender for ${selectedEntity.name} cleared; the group default applies.`, () => setEntitySender(selectedEntity.id, senderValue))}
-                    >
-                      Save sender
-                    </Button>
-                  </div>
-                ) : null}
-              </Card>
-
-              <Card className="rounded-2xl">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Exchange rates</p>
-                    <h3 className="mt-1 text-xl font-semibold text-slate-900">Rate table</h3>
-                    <p className="mt-1 text-sm text-slate-600">
-                      One rate per currency pair per date, entered by hand. A document dated on a day with no rate takes the most recent earlier one and says so; you can always type over it.
-                    </p>
-                  </div>
-                </div>
-                {allowed('rates:manage') ? (
-                  <form
-                    className="mt-4 grid gap-3 md:grid-cols-6"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      runSetting(`Rate ${rateForm.base}→${rateForm.quote} for ${rateForm.date} saved.`, () => upsertExchangeRate(selectedEntity.id, rateForm));
-                    }}
-                  >
-                    <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-600">1 unit of</label>
-                      <select value={rateForm.base} onChange={(event) => setRateForm((c) => ({ ...c, base: event.target.value as Currency }))} className="min-h-[44px] w-full rounded-lg border border-slate-200 bg-white px-3 text-sm">
-                        {currencies.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-600">equals (in)</label>
-                      <select value={rateForm.quote} onChange={(event) => setRateForm((c) => ({ ...c, quote: event.target.value as Currency }))} className="min-h-[44px] w-full rounded-lg border border-slate-200 bg-white px-3 text-sm">
-                        {currencies.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-600">Rate</label>
-                      <Input inputMode="decimal" required value={rateForm.rate} placeholder="12.5" onChange={(event) => setRateForm((c) => ({ ...c, rate: event.target.value }))} />
-                    </div>
-                    <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-600">Date</label>
-                      <Input type="date" required value={rateForm.date} onChange={(event) => setRateForm((c) => ({ ...c, date: event.target.value }))} />
-                    </div>
-                    <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-600">Source</label>
-                      <Input value={rateForm.source} placeholder="BoG, bank advice…" onChange={(event) => setRateForm((c) => ({ ...c, source: event.target.value }))} />
-                    </div>
-                    <div className="flex items-end">
-                      <Button type="submit" size="sm" disabled={settingsPending || rateForm.base === rateForm.quote}>Save rate</Button>
-                    </div>
-                  </form>
-                ) : null}
-                <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
-                  <div className="grid grid-cols-[1fr_1fr_1fr_1.5fr] gap-3 bg-slate-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                    <span>Date</span><span>Pair</span><span className="text-right">Rate</span><span>Source</span>
-                  </div>
-                  {entityRates.slice(0, 20).map((rate) => (
-                    <div key={rate.id} className="grid grid-cols-[1fr_1fr_1fr_1.5fr] gap-3 border-t border-slate-200 px-4 py-2 text-sm text-slate-700">
-                      <span>{rate.date}</span><span>1 {rate.base} = {rate.quote}</span><span className="text-right font-mono">{rate.rate}</span><span className="truncate text-slate-500">{rate.source || '—'}</span>
-                    </div>
-                  ))}
-                  {entityRates.length === 0 ? <div className="border-t border-slate-200 px-4 py-4 text-sm text-slate-500">No rates yet. Foreign-currency documents cannot be posted until one exists.</div> : null}
-                </div>
-              </Card>
-
-              <Card className="rounded-2xl">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Bank accounts</p>
-                <h3 className="mt-1 text-xl font-semibold text-slate-900">One currency each</h3>
-                <p className="mt-1 text-sm text-slate-600">A USD account holds USD. Its balance is translated for reports and revalued at period end, but never stored converted.</p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {entityBankAccounts.map((bank) => (
-                    <span key={bank.id} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-                      <span className="font-medium text-slate-900">{bank.name}</span> <span className="text-slate-500">· {bank.currency} · {bank.accountCode}</span>
-                    </span>
-                  ))}
-                </div>
-                {allowed('rates:manage') ? (
-                  <form
-                    className="mt-4 flex flex-wrap items-end gap-3"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      runSetting(`Bank account "${bankForm.name}" added.`, () => createBankAccount(selectedEntity.id, bankForm));
-                      setBankForm({ name: '', currency: 'USD' });
-                    }}
-                  >
-                    <div className="min-w-[220px]">
-                      <label className="mb-1.5 block text-xs font-medium text-slate-600">Name</label>
-                      <Input required value={bankForm.name} placeholder="Stanbic USD account" onChange={(event) => setBankForm((c) => ({ ...c, name: event.target.value }))} />
-                    </div>
-                    <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-600">Currency</label>
-                      <select value={bankForm.currency} onChange={(event) => setBankForm((c) => ({ ...c, currency: event.target.value as Currency }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-white px-3 text-sm">
-                        {currencies.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
-                      </select>
-                    </div>
-                    <Button type="submit" size="sm" disabled={settingsPending}>Add bank account</Button>
-                  </form>
-                ) : null}
-              </Card>
-
-              {allowed('revaluation:run') ? (
-                <Card className="rounded-2xl">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Period end</p>
-                  <h3 className="mt-1 text-xl font-semibold text-slate-900">Unrealised FX revaluation</h3>
-                  <p className="mt-1 text-sm text-slate-600">
-                    Revalues every foreign-currency monetary balance — bank accounts, receivables, payables — at the closing rate and posts the difference to 7020. Inventory and fixed assets are never touched. Reverse it on the first day of the next period.
+                {settingsMessage ? (
+                  <p className={['rounded-lg border px-3 py-2 text-sm', settingsMessage.tone === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-red-200 bg-red-50 text-red-800'].join(' ')}>
+                    {settingsMessage.text}
                   </p>
-                  <div className="mt-4 flex flex-wrap items-end gap-3">
-                    <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-600">Period</label>
-                      <Input type="month" value={revalForm.period} onChange={(event) => { setRevalForm((c) => ({ ...c, period: event.target.value })); setRevalPreview(null); }} />
-                    </div>
-                    {currencies.filter((currency) => currency !== functionalCurrency).map((currency) => {
-                      const closing = selectRate(entityRates, currency, functionalCurrency, `${revalForm.period}-${new Date(Date.UTC(Number(revalForm.period.slice(0, 4)), Number(revalForm.period.slice(5, 7)), 0)).getUTCDate()}`);
-                      return (
-                        <div key={currency}>
-                          <label className="mb-1.5 block text-xs font-medium text-slate-600">{currency} closing rate</label>
-                          <Input inputMode="decimal" className="w-36" value={revalForm.rates[currency] ?? closing?.rate ?? ''} placeholder="none on file" onChange={(event) => { setRevalForm((c) => ({ ...c, rates: { ...c.rates, [currency]: event.target.value } })); setRevalPreview(null); }} />
-                          {closing && !revalForm.rates[currency] ? <p className="mt-1 text-[11px] text-slate-500">{closing.exact ? 'On file for period end' : `From ${closing.rateDate}`}</p> : null}
-                        </div>
-                      );
-                    })}
-                    <Button size="sm" variant="secondary" disabled={settingsPending} onClick={() => startSettingsTransition(async () => {
-                      const result = await previewRevaluation(selectedEntity.id, revalForm.period, revalClosingRates());
-                      if (result.ok) { setRevalPreview(result.value); setSettingsMessage(null); } else { setSettingsMessage({ tone: 'error', text: result.error }); }
-                    })}>Preview</Button>
-                    <Button size="sm" disabled={settingsPending || !revalPreview || revalPreview.adjustments.length === 0} onClick={() => runSetting(`Revaluation ${revalForm.period} posted.`, async () => { const r = await runRevaluation(selectedEntity.id, revalForm.period, revalClosingRates()); if (r.ok) setRevalPreview(null); return r; })}>Post revaluation</Button>
-                  </div>
-                  {revalPreview ? (
-                    <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
-                      <div className="grid grid-cols-[1.4fr_0.6fr_1fr_1fr_0.7fr_1fr_1fr] gap-3 bg-slate-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                        <span>Account</span><span>Ccy</span><span className="text-right">Foreign balance</span><span className="text-right">Book ({revalPreview.functionalCurrency})</span><span className="text-right">Closing</span><span className="text-right">Revalued</span><span className="text-right">Gain / (loss)</span>
-                      </div>
-                      {revalPreview.adjustments.map((a) => (
-                        <div key={a.accountCode + a.currency} className="grid grid-cols-[1.4fr_0.6fr_1fr_1fr_0.7fr_1fr_1fr] gap-3 border-t border-slate-200 px-4 py-2 text-sm text-slate-700">
-                          <span>{a.accountCode} · {a.accountName}</span><span>{a.currency}</span>
-                          <span className="text-right font-mono"><Money value={a.foreignMinor} currency={a.currency} /></span>
-                          <span className="text-right font-mono"><Money value={a.bookMinor} /></span>
-                          <span className="text-right font-mono text-xs">{a.closingRate}</span>
-                          <span className="text-right font-mono"><Money value={a.revaluedMinor} /></span>
-                          <span className={['text-right font-mono', a.differenceMinor >= 0 ? 'text-emerald-700' : 'text-red-700'].join(' ')}><Money value={a.differenceMinor} /></span>
-                        </div>
+                ) : null}
+
+                <Card className="rounded-2xl">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Currency</p>
+                  <h3 className="mt-1 text-xl font-semibold text-slate-900">Functional currency: {functionalCurrency} · {currencyNames[functionalCurrency]}</h3>
+                  <p className="mt-1 text-sm text-slate-600">
+                    The currency {selectedEntity.name}&rsquo;s books are kept and reported in. Every journal line stores its transaction currency, the amount in it, the rate used and the {functionalCurrency} result — fixed at posting, never recalculated.
+                  </p>
+                  {allowed('entity:configure') ? (
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      {currencies.filter((currency) => currency !== functionalCurrency).map((currency) => (
+                        <Button key={currency} size="sm" variant="secondary" disabled={settingsPending} onClick={() => runSetting(`Functional currency set to ${currency}.`, () => setFunctionalCurrency(selectedEntity.id, currency))}>
+                          Switch to {currency}
+                        </Button>
                       ))}
-                      {revalPreview.adjustments.length === 0 ? <div className="border-t border-slate-200 px-4 py-3 text-sm text-slate-500">Nothing to revalue for {revalPreview.period}.</div> : null}
-                      <div className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-right text-sm font-semibold">Net unrealised {revalPreview.totalMinor >= 0 ? 'gain' : 'loss'}: <Money value={Math.abs(revalPreview.totalMinor)} /> · dated {revalPreview.closingDate}</div>
-                    </div>
-                  ) : null}
-                  {entityRevaluations.length > 0 ? (
-                    <div className="mt-4 space-y-2">
-                      {entityRevaluations.map((revaluation) => (
-                        <div key={revaluation.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 px-4 py-2 text-sm">
-                          <span>
-                            <span className="font-medium text-slate-900">{revaluation.period}</span> · posted {revaluation.journal.postedAt} at {Object.entries(revaluation.closingRates).map(([c, r]) => `${c} ${r}`).join(', ')}
-                            {revaluation.reversalJournal ? <span className="text-slate-500"> · reversed {revaluation.reversalJournal.postedAt}</span> : null}
-                          </span>
-                          {!revaluation.reversalJournal ? (
-                            <Button size="sm" variant="secondary" disabled={settingsPending} onClick={() => runSetting(`Revaluation ${revaluation.period} reversed.`, () => reverseRevaluation(selectedEntity.id, revaluation.period))}>Reverse into next period</Button>
-                          ) : null}
-                        </div>
-                      ))}
+                      <span className="text-xs text-slate-500">Only possible while nothing has been posted.</span>
                     </div>
                   ) : null}
                 </Card>
-              ) : null}
 
-              <Card className="rounded-2xl">
-                <div className="flex items-start justify-between gap-4 pb-4">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Data protection</p>
-                    <h3 className="mt-1 text-xl font-semibold text-slate-900">Ledger exports</h3>
+                <Card className="rounded-2xl">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">VAT</p>
+                  <h3 className="mt-1 text-xl font-semibold text-slate-900">{vatRegistrationLabel}</h3>
+                  <p className="mt-1 text-sm text-slate-600">
+                    {selectedEntity.vatRegistered
+                      ? `VAT is calculated on ${selectedEntity.name}'s invoices and bills dated on or after ${selectedEntity.vatRegisteredFrom}: 15% VAT, 2.5% NHIL and 2.5% GETFund on the same base. Documents dated earlier, and anything already posted, are not touched. Input tax on purchases and import VAT are recoverable from that date. The VAT return is under Tax.`
+                      : `No VAT is calculated for ${selectedEntity.name}. Invoices and bills are gross, VAT a supplier charges is part of the cost of the item, import VAT paid at the port is part of the cost of the goods, and there is no VAT return. Switching registration on applies VAT to documents dated on or after the date you enter — never to earlier ones.`}
+                  </p>
+                  <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    <span className="font-semibold">Check the category.</span> Suppliers of goods must register once taxable supplies pass GH₵750,000 in any twelve months (tracked on the dashboard). <span className="font-semibold">Suppliers of services are required to register regardless of turnover.</span> If {selectedEntity.name} supplies services — programmes delivered for a fee, processing for others — the threshold does not apply and it should be registered now.
+                  </div>
+                  {allowed('entity:configure') ? (
+                    selectedEntity.vatRegistered ? (
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <Button size="sm" variant="secondary" disabled={settingsPending} onClick={() => runSetting(`VAT registration switched off for ${selectedEntity.name}.`, () => setVatRegistration(selectedEntity.id, { registered: false }))}>
+                          Switch VAT off
+                        </Button>
+                        <span className="text-xs text-slate-500">Posted documents keep the VAT they were posted with.</span>
+                      </div>
+                    ) : (
+                      <div className="mt-3 flex flex-wrap items-end gap-3">
+                        <div>
+                          <label className="mb-1.5 block text-sm font-medium text-slate-700">Registration effective from</label>
+                          <Input type="date" value={vatForm.registeredFrom} onChange={(event) => setVatForm({ registeredFrom: event.target.value })} />
+                        </div>
+                        <Button
+                          size="sm"
+                          disabled={settingsPending || !vatForm.registeredFrom}
+                          onClick={() => runSetting(`VAT registration switched on for ${selectedEntity.name} from ${vatForm.registeredFrom}.`, () => setVatRegistration(selectedEntity.id, { registered: true, registeredFrom: vatForm.registeredFrom }))}
+                        >
+                          Switch VAT on
+                        </Button>
+                        <span className="text-xs text-slate-500">Applies to documents dated on or after this date only.</span>
+                      </div>
+                    )
+                  ) : null}
+                </Card>
+
+                <Card className="rounded-2xl">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Email</p>
+                  <h3 className="mt-1 text-xl font-semibold text-slate-900">
+                    {selectedEntity.emailFrom ? `Sender: ${selectedEntity.emailFrom}` : 'Sender: the group default'}
+                  </h3>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Invitations and password resets for people whose first entity is {selectedEntity.name} are sent from this address. It must be on the domain verified with the email provider — the same domain as the group default. Leave it empty to use the group default.
+                  </p>
+                  {allowed('entity:configure') ? (
+                    <div className="mt-3 flex flex-wrap items-end gap-3">
+                      <div className="min-w-[320px] flex-1">
+                        <label className="mb-1.5 block text-sm font-medium text-slate-700">Sender</label>
+                        <Input
+                          value={senderValue}
+                          placeholder={`${selectedEntity.name} <${selectedEntity.id.replace(/^sprouted-/, '')}@yourdomain.com>`}
+                          onChange={(event) => setSenderForm({ entityId: selectedEntity.id, value: event.target.value })}
+                        />
+                      </div>
+                      <Button
+                        size="sm"
+                        disabled={settingsPending || senderValue.trim() === selectedEntity.emailFrom}
+                        onClick={() => runSetting(senderValue.trim() ? `Sender for ${selectedEntity.name} set to ${senderValue.trim()}.` : `Sender for ${selectedEntity.name} cleared; the group default applies.`, () => setEntitySender(selectedEntity.id, senderValue))}
+                      >
+                        Save sender
+                      </Button>
+                    </div>
+                  ) : null}
+                </Card>
+
+                <Card className="rounded-2xl">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Exchange rates</p>
+                      <h3 className="mt-1 text-xl font-semibold text-slate-900">Rate table</h3>
+                      <p className="mt-1 text-sm text-slate-600">
+                        One rate per currency pair per date, entered by hand. A document dated on a day with no rate takes the most recent earlier one and says so; you can always type over it.
+                      </p>
+                    </div>
+                  </div>
+                  {allowed('rates:manage') ? (
+                    <form
+                      className="mt-4 grid gap-3 md:grid-cols-6"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        runSetting(`Rate ${rateForm.base}→${rateForm.quote} for ${rateForm.date} saved.`, () => upsertExchangeRate(selectedEntity.id, rateForm));
+                      }}
+                    >
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium text-slate-600">1 unit of</label>
+                        <select value={rateForm.base} onChange={(event) => setRateForm((c) => ({ ...c, base: event.target.value as Currency }))} className="min-h-[44px] w-full rounded-lg border border-slate-200 bg-white px-3 text-sm">
+                          {currencies.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium text-slate-600">equals (in)</label>
+                        <select value={rateForm.quote} onChange={(event) => setRateForm((c) => ({ ...c, quote: event.target.value as Currency }))} className="min-h-[44px] w-full rounded-lg border border-slate-200 bg-white px-3 text-sm">
+                          {currencies.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium text-slate-600">Rate</label>
+                        <Input inputMode="decimal" required value={rateForm.rate} placeholder="12.5" onChange={(event) => setRateForm((c) => ({ ...c, rate: event.target.value }))} />
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium text-slate-600">Date</label>
+                        <Input type="date" required value={rateForm.date} onChange={(event) => setRateForm((c) => ({ ...c, date: event.target.value }))} />
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium text-slate-600">Source</label>
+                        <Input value={rateForm.source} placeholder="BoG, bank advice…" onChange={(event) => setRateForm((c) => ({ ...c, source: event.target.value }))} />
+                      </div>
+                      <div className="flex items-end">
+                        <Button type="submit" size="sm" disabled={settingsPending || rateForm.base === rateForm.quote}>Save rate</Button>
+                      </div>
+                    </form>
+                  ) : null}
+                  <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
+                    <div className="grid grid-cols-[1fr_1fr_1fr_1.5fr] gap-3 bg-slate-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                      <span>Date</span><span>Pair</span><span className="text-right">Rate</span><span>Source</span>
+                    </div>
+                    {entityRates.slice(0, 20).map((rate) => (
+                      <div key={rate.id} className="grid grid-cols-[1fr_1fr_1fr_1.5fr] gap-3 border-t border-slate-200 px-4 py-2 text-sm text-slate-700">
+                        <span>{rate.date}</span><span>1 {rate.base} = {rate.quote}</span><span className="text-right font-mono">{rate.rate}</span><span className="truncate text-slate-500">{rate.source || '—'}</span>
+                      </div>
+                    ))}
+                    {entityRates.length === 0 ? <div className="border-t border-slate-200 px-4 py-4 text-sm text-slate-500">No rates yet. Foreign-currency documents cannot be posted until one exists.</div> : null}
+                  </div>
+                </Card>
+
+                <Card className="rounded-2xl">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Bank accounts</p>
+                  <h3 className="mt-1 text-xl font-semibold text-slate-900">One currency each</h3>
+                  <p className="mt-1 text-sm text-slate-600">A USD account holds USD. Its balance is translated for reports and revalued at period end, but never stored converted.</p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {entityBankAccounts.map((bank) => (
+                      <span key={bank.id} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <span className="font-medium text-slate-900">{bank.name}</span> <span className="text-slate-500">· {bank.currency} · {bank.accountCode}</span>
+                      </span>
+                    ))}
+                  </div>
+                  {allowed('rates:manage') ? (
+                    <form
+                      className="mt-4 flex flex-wrap items-end gap-3"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        runSetting(`Bank account "${bankForm.name}" added.`, () => createBankAccount(selectedEntity.id, bankForm));
+                        setBankForm({ name: '', currency: 'USD' });
+                      }}
+                    >
+                      <div className="min-w-[220px]">
+                        <label className="mb-1.5 block text-xs font-medium text-slate-600">Name</label>
+                        <Input required value={bankForm.name} placeholder="Stanbic USD account" onChange={(event) => setBankForm((c) => ({ ...c, name: event.target.value }))} />
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium text-slate-600">Currency</label>
+                        <select value={bankForm.currency} onChange={(event) => setBankForm((c) => ({ ...c, currency: event.target.value as Currency }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-white px-3 text-sm">
+                          {currencies.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
+                        </select>
+                      </div>
+                      <Button type="submit" size="sm" disabled={settingsPending}>Add bank account</Button>
+                    </form>
+                  ) : null}
+                </Card>
+
+                {allowed('revaluation:run') ? (
+                  <Card className="rounded-2xl">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Period end</p>
+                    <h3 className="mt-1 text-xl font-semibold text-slate-900">Unrealised FX revaluation</h3>
                     <p className="mt-1 text-sm text-slate-600">
-                      A JSON export of {selectedEntity.name}&rsquo;s books &mdash; accounts, contacts, funds, projects and the audit
-                      trail &mdash; runs automatically every night, is checked against its SHA-256 before you download it, and the
-                      most recent 14 are kept. Database backups themselves are handled by the database platform.
+                      Revalues every foreign-currency monetary balance — bank accounts, receivables, payables — at the closing rate and posts the difference to 7020. Inventory and fixed assets are never touched. Reverse it on the first day of the next period.
                     </p>
-                  </div>
-                  <Button size="sm" onClick={triggerManualBackup} disabled={backupBusy}>
-                    {backupBusy ? 'Exporting…' : 'Export now'}
-                  </Button>
-                </div>
-
-                {(backupError || lastBackupFailed) ? (
-                  <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-red-700">Last export failed</p>
-                    <p className="mt-1 text-sm font-semibold text-red-900">
-                      {backupError ?? backupRuns[0]?.error ?? 'The most recent export did not complete.'}
-                    </p>
-                    <p className="mt-0.5 text-xs text-red-700">
-                      No file was written. Run an export now, and check that the export location is writable.
-                    </p>
-                  </div>
+                    <div className="mt-4 flex flex-wrap items-end gap-3">
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium text-slate-600">Period</label>
+                        <Input type="month" value={revalForm.period} onChange={(event) => { setRevalForm((c) => ({ ...c, period: event.target.value })); setRevalPreview(null); }} />
+                      </div>
+                      {currencies.filter((currency) => currency !== functionalCurrency).map((currency) => {
+                        const closing = selectRate(entityRates, currency, functionalCurrency, `${revalForm.period}-${new Date(Date.UTC(Number(revalForm.period.slice(0, 4)), Number(revalForm.period.slice(5, 7)), 0)).getUTCDate()}`);
+                        return (
+                          <div key={currency}>
+                            <label className="mb-1.5 block text-xs font-medium text-slate-600">{currency} closing rate</label>
+                            <Input inputMode="decimal" className="w-36" value={revalForm.rates[currency] ?? closing?.rate ?? ''} placeholder="none on file" onChange={(event) => { setRevalForm((c) => ({ ...c, rates: { ...c.rates, [currency]: event.target.value } })); setRevalPreview(null); }} />
+                            {closing && !revalForm.rates[currency] ? <p className="mt-1 text-[11px] text-slate-500">{closing.exact ? 'On file for period end' : `From ${closing.rateDate}`}</p> : null}
+                          </div>
+                        );
+                      })}
+                      <Button size="sm" variant="secondary" disabled={settingsPending} onClick={() => startSettingsTransition(async () => {
+                        const result = await previewRevaluation(selectedEntity.id, revalForm.period, revalClosingRates());
+                        if (result.ok) { setRevalPreview(result.value); setSettingsMessage(null); } else { setSettingsMessage({ tone: 'error', text: result.error }); }
+                      })}>Preview</Button>
+                      <Button size="sm" disabled={settingsPending || !revalPreview || revalPreview.adjustments.length === 0} onClick={() => runSetting(`Revaluation ${revalForm.period} posted.`, async () => { const r = await runRevaluation(selectedEntity.id, revalForm.period, revalClosingRates()); if (r.ok) setRevalPreview(null); return r; })}>Post revaluation</Button>
+                    </div>
+                    {revalPreview ? (
+                      <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
+                        <div className="grid grid-cols-[1.4fr_0.6fr_1fr_1fr_0.7fr_1fr_1fr] gap-3 bg-slate-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                          <span>Account</span><span>Ccy</span><span className="text-right">Foreign balance</span><span className="text-right">Book ({revalPreview.functionalCurrency})</span><span className="text-right">Closing</span><span className="text-right">Revalued</span><span className="text-right">Gain / (loss)</span>
+                        </div>
+                        {revalPreview.adjustments.map((a) => (
+                          <div key={a.accountCode + a.currency} className="grid grid-cols-[1.4fr_0.6fr_1fr_1fr_0.7fr_1fr_1fr] gap-3 border-t border-slate-200 px-4 py-2 text-sm text-slate-700">
+                            <span>{a.accountCode} · {a.accountName}</span><span>{a.currency}</span>
+                            <span className="text-right font-mono"><Money value={a.foreignMinor} currency={a.currency} /></span>
+                            <span className="text-right font-mono"><Money value={a.bookMinor} /></span>
+                            <span className="text-right font-mono text-xs">{a.closingRate}</span>
+                            <span className="text-right font-mono"><Money value={a.revaluedMinor} /></span>
+                            <span className={['text-right font-mono', a.differenceMinor >= 0 ? 'text-emerald-700' : 'text-red-700'].join(' ')}><Money value={a.differenceMinor} /></span>
+                          </div>
+                        ))}
+                        {revalPreview.adjustments.length === 0 ? <div className="border-t border-slate-200 px-4 py-3 text-sm text-slate-500">Nothing to revalue for {revalPreview.period}.</div> : null}
+                        <div className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-right text-sm font-semibold">Net unrealised {revalPreview.totalMinor >= 0 ? 'gain' : 'loss'}: <Money value={Math.abs(revalPreview.totalMinor)} /> · dated {revalPreview.closingDate}</div>
+                      </div>
+                    ) : null}
+                    {entityRevaluations.length > 0 ? (
+                      <div className="mt-4 space-y-2">
+                        {entityRevaluations.map((revaluation) => (
+                          <div key={revaluation.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 px-4 py-2 text-sm">
+                            <span>
+                              <span className="font-medium text-slate-900">{revaluation.period}</span> · posted {revaluation.journal.postedAt} at {Object.entries(revaluation.closingRates).map(([c, r]) => `${c} ${r}`).join(', ')}
+                              {revaluation.reversalJournal ? <span className="text-slate-500"> · reversed {revaluation.reversalJournal.postedAt}</span> : null}
+                            </span>
+                            {!revaluation.reversalJournal ? (
+                              <Button size="sm" variant="secondary" disabled={settingsPending} onClick={() => runSetting(`Revaluation ${revaluation.period} reversed.`, () => reverseRevaluation(selectedEntity.id, revaluation.period))}>Reverse into next period</Button>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </Card>
                 ) : null}
 
-                {lastSuccessfulBackup ? (
-                  <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-700">Last successful export</p>
-                        <p className="mt-1 text-sm font-semibold text-emerald-900">
-                          {new Date(lastSuccessfulBackup.createdAt).toLocaleString('en-GH')}
-                        </p>
-                        <p className="mt-0.5 text-xs text-emerald-700">
-                          {(lastSuccessfulBackup.sizeBytes / 1024).toFixed(1)} KB · SHA-256 {lastSuccessfulBackup.checksum.slice(0, 16)}…
-                        </p>
-                      </div>
-                      {lastSuccessfulBackup.available ? (
-                        <a
-                          href={`/api/backups?entityId=${encodeURIComponent(selectedEntity.id)}&download=${encodeURIComponent(lastSuccessfulBackup.fileName)}`}
-                          className="inline-flex min-h-[36px] items-center justify-center rounded-lg border border-brand-200 bg-white px-3 py-2 text-sm font-medium text-brand-800 transition-colors duration-150 ease-out hover:bg-brand-50"
-                        >
-                          Download latest
-                        </a>
-                      ) : (
-                        <span className="text-xs text-emerald-700">File no longer kept on disk</span>
-                      )}
+                <Card className="rounded-2xl">
+                  <div className="flex items-start justify-between gap-4 pb-4">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Data protection</p>
+                      <h3 className="mt-1 text-xl font-semibold text-slate-900">Ledger exports</h3>
+                      <p className="mt-1 text-sm text-slate-600">
+                        A JSON export of {selectedEntity.name}&rsquo;s books &mdash; accounts, contacts, funds, projects and the audit
+                        trail &mdash; runs automatically every night, is checked against its SHA-256 before you download it, and the
+                        most recent 14 are kept. Database backups themselves are handled by the database platform.
+                      </p>
                     </div>
+                    <Button size="sm" onClick={triggerManualBackup} disabled={backupBusy}>
+                      {backupBusy ? 'Exporting…' : 'Export now'}
+                    </Button>
                   </div>
-                ) : (
-                  <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                    No export has completed successfully yet for {selectedEntity.name}. The nightly export runs automatically,
-                    or use &ldquo;Export now&rdquo;.
-                  </div>
-                )}
 
-                <div className="overflow-hidden rounded-xl border border-slate-200">
-                  <div className="grid grid-cols-[1.4fr_1fr_0.7fr_0.8fr_0.8fr] gap-3 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                    <span>File</span>
-                    <span>When</span>
-                    <span>Size</span>
-                    <span>Status</span>
-                    <span className="text-right">Download</span>
-                  </div>
-                  {backupRuns.map((run) => (
-                    <div key={run.id} className="grid grid-cols-[1.4fr_1fr_0.7fr_0.8fr_0.8fr] gap-3 border-t border-slate-200 px-4 py-3 text-sm text-slate-700">
-                      <span className="truncate font-mono text-xs">{run.fileName}</span>
-                      <span>{new Date(run.createdAt).toLocaleString('en-GH')}</span>
-                      <span>{(run.sizeBytes / 1024).toFixed(1)} KB</span>
-                      <span>
-                        <span
-                          className={[
-                            'rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]',
-                            run.status === 'SUCCESS' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700',
-                          ].join(' ')}
-                        >
-                          {run.status}
-                        </span>
-                      </span>
-                      <span className="text-right">
-                        {run.status !== 'SUCCESS' ? (
-                          <span className="text-xs text-red-600">{run.error ?? 'Failed'}</span>
-                        ) : run.available ? (
+                  {(backupError || lastBackupFailed) ? (
+                    <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-red-700">Last export failed</p>
+                      <p className="mt-1 text-sm font-semibold text-red-900">
+                        {backupError ?? backupRuns[0]?.error ?? 'The most recent export did not complete.'}
+                      </p>
+                      <p className="mt-0.5 text-xs text-red-700">
+                        No file was written. Run an export now, and check that the export location is writable.
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {lastSuccessfulBackup ? (
+                    <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-700">Last successful export</p>
+                          <p className="mt-1 text-sm font-semibold text-emerald-900">
+                            {new Date(lastSuccessfulBackup.createdAt).toLocaleString('en-GH')}
+                          </p>
+                          <p className="mt-0.5 text-xs text-emerald-700">
+                            {(lastSuccessfulBackup.sizeBytes / 1024).toFixed(1)} KB · SHA-256 {lastSuccessfulBackup.checksum.slice(0, 16)}…
+                          </p>
+                        </div>
+                        {lastSuccessfulBackup.available ? (
                           <a
-                            href={`/api/backups?entityId=${encodeURIComponent(selectedEntity.id)}&download=${encodeURIComponent(run.fileName)}`}
-                            className="text-sm font-medium text-brand-700 hover:underline"
+                            href={`/api/backups?entityId=${encodeURIComponent(selectedEntity.id)}&download=${encodeURIComponent(lastSuccessfulBackup.fileName)}`}
+                            className="inline-flex min-h-[36px] items-center justify-center rounded-lg border border-brand-200 bg-white px-3 py-2 text-sm font-medium text-brand-800 transition-colors duration-150 ease-out hover:bg-brand-50"
                           >
-                            Download
+                            Download latest
                           </a>
                         ) : (
-                          <span className="text-xs text-slate-400">Not kept</span>
+                          <span className="text-xs text-emerald-700">File no longer kept on disk</span>
                         )}
-                      </span>
+                      </div>
                     </div>
-                  ))}
-                  {backupRuns.length === 0 ? (
-                    <div className="border-t border-slate-200 px-4 py-6 text-sm text-slate-500">No backups recorded yet.</div>
-                  ) : null}
-                </div>
-              </Card>
-
-              <Card className="rounded-2xl">
-                <div className="flex items-start justify-between gap-4 pb-4">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Audit log</p>
-                    <h3 className="mt-1 text-xl font-semibold text-slate-900">{selectedEntity.name}</h3>
-                    <p className="mt-1 text-sm text-slate-600">
-                      Every posting, edit and void with user and timestamp. This log is append-only — it cannot be edited or deleted from the interface.
-                    </p>
-                  </div>
-                  {auditChainIntact === null ? null : auditChainIntact ? (
-                    <span className="rounded-full bg-emerald-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700">
-                      Chain verified
-                    </span>
                   ) : (
-                    <span className="rounded-full bg-red-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-red-700">
-                      Tampering detected
-                    </span>
+                    <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                      No export has completed successfully yet for {selectedEntity.name}. The nightly export runs automatically,
+                      or use &ldquo;Export now&rdquo;.
+                    </div>
                   )}
-                </div>
 
-                <div className="overflow-hidden rounded-xl border border-slate-200">
-                  <div className="grid grid-cols-[1fr_0.7fr_0.7fr_0.8fr_1.8fr] gap-3 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                    <span>When</span>
-                    <span>User</span>
-                    <span>Action</span>
-                    <span>Reference</span>
-                    <span>Summary</span>
-                  </div>
-                  {auditEvents.map((event) => (
-                    <div key={event.id} className="grid grid-cols-[1fr_0.7fr_0.7fr_0.8fr_1.8fr] gap-3 border-t border-slate-200 px-4 py-3 text-sm text-slate-700">
-                      <span>{new Date(event.createdAt).toLocaleString('en-GH')}</span>
-                      <span>{event.userName}</span>
-                      <span>
-                        <span
-                          className={[
-                            'rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]',
-                            event.action === 'VOID'
-                              ? 'bg-red-100 text-red-700'
-                              : event.action === 'POST'
-                                ? 'bg-emerald-100 text-emerald-700'
-                                : event.action === 'EDIT'
-                                  ? 'bg-amber-100 text-amber-700'
-                                  : 'bg-slate-100 text-slate-700',
-                          ].join(' ')}
-                        >
-                          {event.action}
+                  <div className="overflow-hidden rounded-xl border border-slate-200">
+                    <div className="grid grid-cols-[1.4fr_1fr_0.7fr_0.8fr_0.8fr] gap-3 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                      <span>File</span>
+                      <span>When</span>
+                      <span>Size</span>
+                      <span>Status</span>
+                      <span className="text-right">Download</span>
+                    </div>
+                    {backupRuns.map((run) => (
+                      <div key={run.id} className="grid grid-cols-[1.4fr_1fr_0.7fr_0.8fr_0.8fr] gap-3 border-t border-slate-200 px-4 py-3 text-sm text-slate-700">
+                        <span className="truncate font-mono text-xs">{run.fileName}</span>
+                        <span>{new Date(run.createdAt).toLocaleString('en-GH')}</span>
+                        <span>{(run.sizeBytes / 1024).toFixed(1)} KB</span>
+                        <span>
+                          <span
+                            className={[
+                              'rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]',
+                              run.status === 'SUCCESS' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700',
+                            ].join(' ')}
+                          >
+                            {run.status}
+                          </span>
                         </span>
+                        <span className="text-right">
+                          {run.status !== 'SUCCESS' ? (
+                            <span className="text-xs text-red-600">{run.error ?? 'Failed'}</span>
+                          ) : run.available ? (
+                            <a
+                              href={`/api/backups?entityId=${encodeURIComponent(selectedEntity.id)}&download=${encodeURIComponent(run.fileName)}`}
+                              className="text-sm font-medium text-brand-700 hover:underline"
+                            >
+                              Download
+                            </a>
+                          ) : (
+                            <span className="text-xs text-slate-400">Not kept</span>
+                          )}
+                        </span>
+                      </div>
+                    ))}
+                    {backupRuns.length === 0 ? (
+                      <div className="border-t border-slate-200 px-4 py-6 text-sm text-slate-500">No backups recorded yet.</div>
+                    ) : null}
+                  </div>
+                </Card>
+
+                <Card className="rounded-2xl">
+                  <div className="flex items-start justify-between gap-4 pb-4">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Audit log</p>
+                      <h3 className="mt-1 text-xl font-semibold text-slate-900">{selectedEntity.name}</h3>
+                      <p className="mt-1 text-sm text-slate-600">
+                        Every posting, edit and void with user and timestamp. This log is append-only — it cannot be edited or deleted from the interface.
+                      </p>
+                    </div>
+                    {auditChainIntact === null ? null : auditChainIntact ? (
+                      <span className="rounded-full bg-emerald-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700">
+                        Chain verified
                       </span>
-                      <span className="font-mono text-xs">{event.resourceRef}</span>
-                      <span>{event.summary}</span>
+                    ) : (
+                      <span className="rounded-full bg-red-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-red-700">
+                        Tampering detected
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="overflow-hidden rounded-xl border border-slate-200">
+                    <div className="grid grid-cols-[1fr_0.7fr_0.7fr_0.8fr_1.8fr] gap-3 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                      <span>When</span>
+                      <span>User</span>
+                      <span>Action</span>
+                      <span>Reference</span>
+                      <span>Summary</span>
                     </div>
-                  ))}
-                  {auditEvents.length === 0 ? (
-                    <div className="border-t border-slate-200 px-4 py-6 text-sm text-slate-500">
-                      No audit events recorded for {selectedEntity.name} yet. Postings, edits and voids will appear here automatically.
-                    </div>
-                  ) : null}
+                    {auditEvents.map((event) => (
+                      <div key={event.id} className="grid grid-cols-[1fr_0.7fr_0.7fr_0.8fr_1.8fr] gap-3 border-t border-slate-200 px-4 py-3 text-sm text-slate-700">
+                        <span>{new Date(event.createdAt).toLocaleString('en-GH')}</span>
+                        <span>{event.userName}</span>
+                        <span>
+                          <span
+                            className={[
+                              'rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]',
+                              event.action === 'VOID'
+                                ? 'bg-red-100 text-red-700'
+                                : event.action === 'POST'
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : event.action === 'EDIT'
+                                    ? 'bg-amber-100 text-amber-700'
+                                    : 'bg-slate-100 text-slate-700',
+                            ].join(' ')}
+                          >
+                            {event.action}
+                          </span>
+                        </span>
+                        <span className="font-mono text-xs">{event.resourceRef}</span>
+                        <span>{event.summary}</span>
+                      </div>
+                    ))}
+                    {auditEvents.length === 0 ? (
+                      <div className="border-t border-slate-200 px-4 py-6 text-sm text-slate-500">
+                        No audit events recorded for {selectedEntity.name} yet. Postings, edits and voids will appear here automatically.
+                      </div>
+                    ) : null}
+                  </div>
+                </Card>
                 </div>
-              </Card>
+              ) : null}
             </div>
           ) : activeNav === 'Inventory' ? (
             <InventoryPanel

@@ -442,6 +442,9 @@ model Account {
   type      AccountType
   category  String?
   isActive  Boolean     @default(true)
+  /// Where it sits in the chart. Equal values fall back to the code, so an
+  /// unordered chart still reads in account-number order.
+  sortOrder Int         @default(0)
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 

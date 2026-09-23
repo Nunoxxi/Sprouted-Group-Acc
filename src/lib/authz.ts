@@ -44,6 +44,10 @@ export const permissions = [
   'privacy:manage', // produce a subject access report, erase a person
   'audit:read',
   'export:run',
+  // The Settings area: the chart of accounts, projects, funds and the other
+  // lists the app runs on. Owner only, because a wrong move here reaches
+  // every report.
+  'settings:manage',
   'users:manage', // invite, change role and entity access, deactivate, unlock
   'sessions:manage', // see who is signed in, force sign-out
 ] as const;

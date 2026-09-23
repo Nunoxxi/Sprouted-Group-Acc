@@ -75,7 +75,7 @@ describe('role matrix', () => {
   });
 
   it('only Owners manage users, sessions and entities', () => {
-    for (const permission of ['users:manage', 'sessions:manage', 'entity:create', 'entity:configure', 'period:unlock'] as const) {
+    for (const permission of ['users:manage', 'sessions:manage', 'entity:create', 'entity:configure', 'period:unlock', 'settings:manage'] as const) {
       expect(roles.filter((role) => roleHas(role, permission))).toEqual(['owner']);
     }
   });
