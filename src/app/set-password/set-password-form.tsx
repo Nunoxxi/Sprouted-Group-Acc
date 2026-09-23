@@ -24,8 +24,10 @@ export function SetPasswordForm() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
+  // A link that turns out to be spent or expired only when the form is sent.
+  const [linkDead, setLinkDead] = useState(false);
 
-  if (linkError || !token) {
+  if (linkError || !token || linkDead) {
     return (
       <AuthFrame title="This link is no longer valid">
         <p className="text-sm text-slate-600">
@@ -59,6 +61,12 @@ export function SetPasswordForm() {
     const { error: resetError } = await authClient.resetPassword({ newPassword: password, token: token as string });
     setBusy(false);
     if (resetError) {
+      // Not a dead end in the middle of a form: say the link has gone and
+      // offer a new one.
+      if (resetError.code === 'INVALID_TOKEN') {
+        setLinkDead(true);
+        return;
+      }
       setError(resetError.message ?? 'Could not set the password.');
       return;
     }

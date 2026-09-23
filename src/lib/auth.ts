@@ -13,7 +13,7 @@ import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { nextCookies } from 'better-auth/next-js';
-import { admin, haveIBeenPwned, twoFactor } from 'better-auth/plugins';
+import { admin, haveIBeenPwned, isPasswordCompromised, twoFactor } from 'better-auth/plugins';
 import { createAccessControl } from 'better-auth/plugins/access';
 import { defaultStatements } from 'better-auth/plugins/admin/access';
 
@@ -39,6 +39,13 @@ const adminRoles = Object.fromEntries(roles.map((role) => [role, role === 'owner
 
 const LOCKED_MESSAGE = 'This account is locked after too many failed sign-ins. Ask an Owner to unlock it.';
 const DEACTIVATED_MESSAGE = 'This account has been deactivated.';
+const COMPROMISED_MESSAGE = 'That password appears in a list of known breached passwords. Choose a different one.';
+
+/**
+ * Where the breached-password check runs. Everywhere the library offers it
+ * except /reset-password, which this file checks itself — see the before hook.
+ */
+const pwnedCheckPaths = ['/sign-up/email', '/change-password', '/email-otp/reset-password', '/phone-number/reset-password', '/admin/create-user', '/admin/set-user-password'];
 
 export const auth = betterAuth({
   appName: 'Sprouted Accounting',
@@ -139,6 +146,38 @@ export const auth = betterAuth({
     // with the same message for a right or wrong password, so a locked account
     // cannot be used as a password oracle.
     before: createAuthMiddleware(async (ctx) => {
+      // Setting a password from an invite or reset link: check it against Have
+      // I Been Pwned *here*, before the handler runs.
+      //
+      // The library's own check lives inside password hashing, which happens
+      // after /reset-password has already consumed the one-time token. A
+      // refused password therefore used the link up, and the next attempt was
+      // told the token was invalid — so an invitation looked as though it had
+      // expired on the first click. Checking first leaves the link usable.
+      //
+      // Length is not checked here: the handler does that before it consumes
+      // the token, so a short password never cost anybody their link.
+      if (ctx.path === '/reset-password') {
+        const newPassword = String((ctx.body as { newPassword?: string })?.newPassword ?? '');
+        if (newPassword.length < passwordPolicy.minLength || newPassword.length > passwordPolicy.maxLength) return;
+        let compromised: boolean;
+        try {
+          compromised = await isPasswordCompromised(newPassword);
+        } catch {
+          // Have I Been Pwned could not be reached. Refuse rather than let a
+          // breached password through — the link is still good, so trying
+          // again in a moment costs nothing.
+          throw new APIError('SERVICE_UNAVAILABLE', {
+            message: 'We could not check that password against the list of known breached passwords just now. Your link still works — please try again in a moment.',
+            code: 'PASSWORD_CHECK_UNAVAILABLE',
+          });
+        }
+        if (compromised) {
+          throw new APIError('BAD_REQUEST', { message: COMPROMISED_MESSAGE, code: 'PASSWORD_COMPROMISED' });
+        }
+        return;
+      }
+
       if (ctx.path !== '/sign-in/email') return;
       const email = String((ctx.body as { email?: string })?.email ?? '').toLowerCase();
       if (!email) return;
@@ -196,7 +235,8 @@ export const auth = betterAuth({
       accountLockout: { enabled: true, maxFailedAttempts: 10, durationSeconds: 15 * 60 },
     }),
     haveIBeenPwned({
-      customPasswordCompromisedMessage: 'That password appears in a list of known breached passwords. Choose a different one.',
+      paths: pwnedCheckPaths,
+      customPasswordCompromisedMessage: COMPROMISED_MESSAGE,
     }),
     nextCookies(), // must be last
   ],
