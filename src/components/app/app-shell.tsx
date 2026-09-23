@@ -464,6 +464,9 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
   const [entityMenuOpen, setEntityMenuOpen] = useState(false);
   const [showAddEntityForm, setShowAddEntityForm] = useState(false);
   const [showAddContactForm, setShowAddContactForm] = useState(false);
+  // Where the contact dialog was opened from. Opened from a document, the new
+  // contact is selected on it, so nobody has to go and find it again.
+  const [contactFormTarget, setContactFormTarget] = useState<'list' | 'document'>('list');
   const [formValues, setFormValues] = useState(defaultFormValues);
   const [contacts, setContacts] = useState<ContactRecord[]>(initialData.contacts);
   const [contactFormValues, setContactFormValues] = useState({
@@ -1492,6 +1495,9 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
       return;
     }
 
+    // Read before the form is reset below, which happens straight away.
+    const target = contactFormTarget;
+
     startDocumentTransition(async () => {
       const result = await createContact({ ...contactFormValues, name: trimmedName });
       if (!result.ok) {
@@ -1499,6 +1505,9 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
         return;
       }
       setContacts((previous) => [...previous, result.value]);
+      if (target === 'document') {
+        updateCurrentDocument({ contactId: result.value.id });
+      }
     });
     setShowAddContactForm(false);
     setContactFormValues({
@@ -1511,6 +1520,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
       address: '',
       withholdingTaxStatus: 'none',
     });
+    setContactFormTarget('list');
   }
 
   // Status changes go through the server functions below, never through a patch.
@@ -2716,7 +2726,9 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Shared contacts</p>
                     <h2 className="mt-1 text-xl font-semibold text-slate-900">Contacts</h2>
                   </div>
-                  {allowed('contact:create') ? <Button size="sm" onClick={() => setShowAddContactForm(true)}>Add contact</Button> : null}
+                  {allowed('contact:create') ? (
+                    <Button size="sm" onClick={() => { setContactFormTarget('list'); setShowAddContactForm(true); }}>Add contact</Button>
+                  ) : null}
                 </div>
 
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -4844,7 +4856,28 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                 </div>
 
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">Contact</label>
+                  <div className="mb-1.5 flex items-baseline justify-between gap-2">
+                    <label className="block text-sm font-medium text-slate-700">Contact</label>
+                    {allowed('contact:create') && !documentReadOnly ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          // A customer on an invoice, a supplier on a bill —
+                          // the usual case, and still editable in the form.
+                          setContactFormValues((current) => ({
+                            ...current,
+                            type: isPurchaseView ? 'supplier' : 'customer',
+                            category: isPurchaseView ? 'supplier' : 'customer',
+                          }));
+                          setContactFormTarget('document');
+                          setShowAddContactForm(true);
+                        }}
+                        className="text-xs font-medium text-brand-700 underline-offset-2 hover:underline"
+                      >
+                        ＋ New contact
+                      </button>
+                    ) : null}
+                  </div>
                   <select
                     value={activeDocument.contactId}
                     disabled={documentReadOnly}
@@ -5588,6 +5621,11 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Shared contact</p>
                 <h2 className="mt-1 text-2xl font-semibold text-slate-900">Add contact</h2>
+                {contactFormTarget === 'document' ? (
+                  <p className="mt-1 text-sm text-slate-600">
+                    It will be selected on the {activeKind === 'bill' ? 'bill' : 'invoice'} you are editing, and available to every company in the group.
+                  </p>
+                ) : null}
               </div>
               <button
                 type="button"
