@@ -28,6 +28,8 @@ import {
   repaymentRunway,
   settleAdvance,
   settleQuality,
+  defaultQualityTerms,
+  validateQualityTerms,
   totalDrawn,
   valueOf,
   type Cycle,
@@ -122,7 +124,7 @@ describe('the facility and its tranches', () => {
 });
 
 describe('quality: what was agreed against what turned up', () => {
-  const agreed = { outturn: 48, moisturePct: 8 };
+  const agreed = defaultQualityTerms(48, 8);
   const price = 1500; // GHS 15.00 a kilogram
 
   it('a load exactly on basis settles at the agreed value, with no variance', () => {
@@ -175,6 +177,67 @@ describe('quality: what was agreed against what turned up', () => {
     const s = settleQuality(agreed, price, { grams: 1_000_000, outturn: 45.5, moisturePct: 11.2 });
     expect(s.outturnDifference).toBe(-2.5);
     expect(s.moistureDifference).toBe(3.2);
+  });
+});
+
+describe('choosing how quality is settled, per agreement', () => {
+  const wet = { grams: 10_000_000, outturn: 45, moisturePct: 12 };
+  const good = { grams: 10_000_000, outturn: 50, moisturePct: 7 };
+  const price = 1500;
+
+  it('taking moisture off the price pays for every kilogram, at less', () => {
+    const terms = { ...defaultQualityTerms(48, 8), moistureMethod: 'price-deduction' as const, moisturePctPerPoint: 2 };
+    const s = settleQuality(terms, price, wet);
+    expect(s.adjustedGrams).toBe(10_000_000); // every kilogram is paid for
+    expect(s.moistureVarianceMinor).toBeLessThan(0);
+    // 4 points over at 2% each is 8% off the price before outturn is touched.
+    const priceOnly = settleQuality({ ...terms, outturnMethod: 'per-point', outturnMinorPerPoint: 0 }, price, { ...wet, outturn: 48 });
+    expect(priceOnly.adjustedPricePerKgMinor).toBe(1380);
+  });
+
+  it('the two moisture methods give different answers, which is why the choice exists', () => {
+    const byWeight = settleQuality(defaultQualityTerms(48, 8), price, wet);
+    const byPrice = settleQuality({ ...defaultQualityTerms(48, 8), moistureMethod: 'price-deduction', moisturePctPerPoint: 2 }, price, wet);
+    expect(byWeight.settledValueMinor).not.toBe(byPrice.settledValueMinor);
+  });
+
+  it('a set amount per point takes the same off whatever the price', () => {
+    const terms = { ...defaultQualityTerms(48, 8), outturnMethod: 'per-point' as const, outturnMinorPerPoint: 30 };
+    const s = settleQuality(terms, price, { ...wet, moisturePct: 8 });
+    expect(s.adjustedPricePerKgMinor).toBe(1410); // 3 points below at 30 pesewas
+  });
+
+  it('and pays no bonus for a better load unless one is agreed', () => {
+    const terms = { ...defaultQualityTerms(48, 8), outturnMethod: 'per-point' as const, outturnMinorPerPoint: 30 };
+    expect(settleQuality(terms, price, good).adjustedPricePerKgMinor).toBe(price);
+    expect(settleQuality({ ...terms, outturnBonus: true }, price, good).adjustedPricePerKgMinor).toBe(1560);
+  });
+
+  it('proportional pricing can have its bonus switched off too', () => {
+    const terms = { ...defaultQualityTerms(48, 8), outturnBonus: false };
+    expect(settleQuality(terms, price, good).adjustedPricePerKgMinor).toBe(price);
+  });
+
+  it('the two effects still add back exactly, whichever pair of methods is chosen', () => {
+    const combinations = [
+      defaultQualityTerms(48, 8),
+      { ...defaultQualityTerms(48, 8), moistureMethod: 'price-deduction' as const, moisturePctPerPoint: 2 },
+      { ...defaultQualityTerms(48, 8), outturnMethod: 'per-point' as const, outturnMinorPerPoint: 30 },
+      { ...defaultQualityTerms(48, 8), moistureMethod: 'price-deduction' as const, moisturePctPerPoint: 1.5, outturnMethod: 'per-point' as const, outturnMinorPerPoint: 25 },
+    ];
+    for (const terms of combinations) {
+      for (const delivered of [wet, good, { grams: 847_312, outturn: 43.7, moisturePct: 10.3 }]) {
+        const s = settleQuality(terms, price, delivered);
+        expect(s.moistureVarianceMinor + s.outturnVarianceMinor).toBe(s.varianceMinor);
+      }
+    }
+  });
+
+  it('refuses terms it cannot settle, rather than treating a missing rate as nil', () => {
+    expect(validateQualityTerms(defaultQualityTerms(48, 8))).toEqual([]);
+    expect(validateQualityTerms({ ...defaultQualityTerms(48, 8), moistureMethod: 'price-deduction' })[0]).toContain('needs a rate');
+    expect(validateQualityTerms({ ...defaultQualityTerms(48, 8), outturnMethod: 'per-point' })[0]).toContain('needs a rate');
+    expect(validateQualityTerms({ ...defaultQualityTerms(0, 8) })[0]).toContain('more than nil');
   });
 });
 

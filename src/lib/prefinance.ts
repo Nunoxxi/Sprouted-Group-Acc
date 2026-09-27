@@ -136,16 +136,79 @@ export function accrueInterest(
 // --- quality: what was agreed, and what turned up ------------------------------------------------
 
 /**
- * The quality the agreed price assumes. Outturn is KOR — pounds of kernel from
- * an 80kg bag — and is what the price is really paid for. Moisture is water:
- * above the basis you would be paying cashew prices for it.
+ * How a wet load is handled.
+ *
+ *  - `weight-deduction`: the extra water comes off the weight, so you pay for
+ *    the dry-equivalent kilograms at the agreed price. Physically honest — you
+ *    are buying less nut — and the commoner convention.
+ *  - `price-deduction`: you pay for every kilogram delivered, at a price cut
+ *    by an agreed percentage for each point of moisture above the basis.
  */
-export type QualityBasis = {
+export type MoistureMethod = 'weight-deduction' | 'price-deduction';
+
+/**
+ * How an outturn difference is handled.
+ *
+ *  - `proportional`: the price scales with outturn against the basis, so a
+ *    load at 45 against 48 pays 93.75% of the price. Needs no rate agreeing.
+ *  - `per-point`: an agreed amount off the price for each point below the
+ *    basis.
+ */
+export type OutturnMethod = 'proportional' | 'per-point';
+
+export const moistureMethods: MoistureMethod[] = ['weight-deduction', 'price-deduction'];
+export const outturnMethods: OutturnMethod[] = ['proportional', 'per-point'];
+
+export const moistureMethodLabels: Record<MoistureMethod, string> = {
+  'weight-deduction': 'Pay for less weight',
+  'price-deduction': 'Pay full weight at a lower price',
+};
+
+export const outturnMethodLabels: Record<OutturnMethod, string> = {
+  proportional: 'Price moves in proportion',
+  'per-point': 'A set amount for each point',
+};
+
+/**
+ * What the agreed price assumes, and how a difference is settled.
+ *
+ * These travel with the advance rather than being one setting for the whole
+ * company, because they are terms agreed with an aggregator and different
+ * aggregators agree different ones.
+ *
+ * Outturn is KOR — pounds of kernel from an 80kg bag — and is what the price
+ * is really paid for. Moisture is water: above the basis you would be paying
+ * cashew prices for it.
+ */
+export type QualityTerms = {
   /** Kernel outturn ratio the price assumes. */
   outturn: number;
   /** Moisture percent the price assumes. */
   moisturePct: number;
+  moistureMethod: MoistureMethod;
+  /** `price-deduction` only: percent off the price per point of moisture above the basis. */
+  moisturePctPerPoint?: number;
+  outturnMethod: OutturnMethod;
+  /** `per-point` only: pesewas off the price per point of outturn below the basis. */
+  outturnMinorPerPoint?: number;
+  /**
+   * Whether a load better than the basis earns more. Proportional pricing
+   * normally does; a per-point deduction normally does not.
+   */
+  outturnBonus?: boolean;
 };
+
+/**
+ * The conventions this app assumes when nobody has said otherwise.
+ *
+ * `outturnBonus` is deliberately left unset rather than written in, so that it
+ * follows the method: proportional pricing pays for a better load, a per-point
+ * deduction does not. Storing `true` here would mean switching the method
+ * quietly kept a bonus nobody had agreed to.
+ */
+export function defaultQualityTerms(outturn: number, moisturePct: number): QualityTerms {
+  return { outturn, moisturePct, moistureMethod: 'weight-deduction', outturnMethod: 'proportional' };
+}
 
 export type DeliveredQuality = {
   grams: number;
@@ -154,9 +217,9 @@ export type DeliveredQuality = {
 };
 
 export type QualitySettlement = {
-  /** Weight after water above the basis is taken off. */
+  /** Weight actually paid for. Differs from delivered only under weight-deduction. */
   adjustedGrams: number;
-  /** Price per kg after the outturn adjustment. */
+  /** Price actually paid, after both adjustments. */
   adjustedPricePerKgMinor: number;
   /** What the load would have been worth had it met the basis exactly. */
   valueAtBasisMinor: number;
@@ -166,60 +229,82 @@ export type QualitySettlement = {
   varianceMinor: number;
   /** The part of the variance caused by water. Never positive. */
   moistureVarianceMinor: number;
-  /** The part caused by outturn. Positive when the load beat the basis. */
+  /** The part caused by outturn. Positive when the load beat the basis and a bonus is allowed. */
   outturnVarianceMinor: number;
   outturnDifference: number;
   moistureDifference: number;
 };
 
+/** Terms that cannot be settled, said plainly rather than treated as nil. */
+export function validateQualityTerms(terms: QualityTerms): string[] {
+  const problems: string[] = [];
+  if (!(terms.outturn > 0)) problems.push('The outturn the price assumes has to be more than nil.');
+  if (terms.moisturePct < 0 || terms.moisturePct >= 100) problems.push('The moisture the price assumes has to be between nil and 100%.');
+  if (terms.moistureMethod === 'price-deduction' && !(Number(terms.moisturePctPerPoint) > 0)) {
+    problems.push('Taking the deduction off the price needs a rate: how much of the price comes off for each point of moisture.');
+  }
+  if (terms.outturnMethod === 'per-point' && !(Number(terms.outturnMinorPerPoint) > 0)) {
+    problems.push('A per-point outturn deduction needs a rate: how much comes off the price for each point.');
+  }
+  return problems;
+}
+
 /**
  * Settle a delivery against the quality the price assumed.
  *
- * Two adjustments, each doing one job:
- *
- *  - **Moisture takes weight off.** Wet nuts weigh more without being worth
- *    more, so weight is scaled down to what it would have been at the basis
- *    moisture. Only ever downward: a load drier than agreed does not earn a
- *    bonus, which is the trade's convention and the prudent way round.
- *  - **Outturn moves the price.** Outturn is what a processor actually buys,
- *    so the price moves in proportion, up as well as down.
- *
- * The two effects are reported apart, and they add back exactly to the total
- * variance, so a conversation with an aggregator can be about the right one.
+ * Two adjustments in order — water first, then outturn — and the two money
+ * effects are reported apart. They add back exactly to the total variance
+ * whichever pair of methods is chosen, because each is measured as the step it
+ * caused: moisture from the value at basis, outturn from there to the end. So
+ * a conversation with an aggregator can be about the right one.
  */
 export function settleQuality(
-  agreed: QualityBasis,
+  terms: QualityTerms,
   agreedPricePerKgMinor: number,
   delivered: DeliveredQuality,
 ): QualitySettlement {
-  const moistureDifference = Math.round((delivered.moisturePct - agreed.moisturePct) * 100) / 100;
-  const outturnDifference = Math.round((delivered.outturn - agreed.outturn) * 100) / 100;
+  const moistureDifference = Math.round((delivered.moisturePct - terms.moisturePct) * 100) / 100;
+  const outturnDifference = Math.round((delivered.outturn - terms.outturn) * 100) / 100;
+  const wetterBy = Math.max(moistureDifference, 0);
 
-  // Water above the basis comes off the weight; below it, the weight stands.
-  const wetter = delivered.moisturePct > agreed.moisturePct;
-  const adjustedGrams = wetter
-    ? Math.round((delivered.grams * (100 - delivered.moisturePct)) / (100 - agreed.moisturePct))
-    : delivered.grams;
+  // --- water -------------------------------------------------------------
+  let adjustedGrams = delivered.grams;
+  let priceAfterMoisture = agreedPricePerKgMinor;
 
-  // Outturn moves the price both ways.
-  const adjustedPricePerKgMinor = agreed.outturn > 0
-    ? roundPesewas((agreedPricePerKgMinor * delivered.outturn) / agreed.outturn)
-    : agreedPricePerKgMinor;
+  if (wetterBy > 0) {
+    if (terms.moistureMethod === 'weight-deduction') {
+      adjustedGrams = Math.round((delivered.grams * (100 - delivered.moisturePct)) / (100 - terms.moisturePct));
+    } else {
+      const cut = (Number(terms.moisturePctPerPoint) || 0) * wetterBy;
+      priceAfterMoisture = roundPesewas(agreedPricePerKgMinor * Math.max(1 - cut / 100, 0));
+    }
+  }
+
+  // --- outturn -----------------------------------------------------------
+  const bonusAllowed = terms.outturnBonus ?? (terms.outturnMethod === 'proportional');
+  let finalPrice = priceAfterMoisture;
+
+  if (terms.outturnMethod === 'proportional') {
+    const scaled = roundPesewas((priceAfterMoisture * delivered.outturn) / terms.outturn);
+    finalPrice = !bonusAllowed && scaled > priceAfterMoisture ? priceAfterMoisture : scaled;
+  } else {
+    const rate = Number(terms.outturnMinorPerPoint) || 0;
+    if (outturnDifference < 0) finalPrice = Math.max(priceAfterMoisture - roundPesewas(rate * -outturnDifference), 0);
+    else if (outturnDifference > 0 && bonusAllowed) finalPrice = priceAfterMoisture + roundPesewas(rate * outturnDifference);
+  }
 
   const valueAtBasisMinor = valueOf(delivered.grams, agreedPricePerKgMinor);
-  const settledValueMinor = valueOf(adjustedGrams, adjustedPricePerKgMinor);
-
-  const moistureVarianceMinor = valueOf(adjustedGrams, agreedPricePerKgMinor) - valueAtBasisMinor;
-  const outturnVarianceMinor = settledValueMinor - valueOf(adjustedGrams, agreedPricePerKgMinor);
+  const afterMoistureMinor = valueOf(adjustedGrams, priceAfterMoisture);
+  const settledValueMinor = valueOf(adjustedGrams, finalPrice);
 
   return {
     adjustedGrams,
-    adjustedPricePerKgMinor,
+    adjustedPricePerKgMinor: finalPrice,
     valueAtBasisMinor,
     settledValueMinor,
     varianceMinor: settledValueMinor - valueAtBasisMinor,
-    moistureVarianceMinor,
-    outturnVarianceMinor,
+    moistureVarianceMinor: afterMoistureMinor - valueAtBasisMinor,
+    outturnVarianceMinor: settledValueMinor - afterMoistureMinor,
     outturnDifference,
     moistureDifference,
   };
