@@ -23,7 +23,12 @@
  * to spend ten seconds running `npm run db:mark` than to find out later.
  */
 
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { PrismaClient } from '@prisma/client';
+
+import { classifyMigrations } from '../src/lib/migration-safety.ts';
 
 type Marker = { environment: string; label: string; markedAt: Date };
 
@@ -48,6 +53,19 @@ async function readMarker(): Promise<Marker | null> {
     // first migration is what creates it.
     return null;
   }
+}
+
+/** Migrations on disk that this database has not run yet. */
+async function pendingMigrations(): Promise<{ name: string; sql: string }[]> {
+  const dir = join(process.cwd(), 'prisma', 'migrations');
+  const onDisk = readdirSync(dir).filter((name) => !name.endsWith('.toml')).sort();
+  const applied = await prisma
+    .$queryRawUnsafe<{ migration_name: string }[]>('select "migration_name" from "_prisma_migrations" where "finished_at" is not null')
+    .catch(() => []);
+  const done = new Set(applied.map((row) => row.migration_name));
+  return onDisk
+    .filter((name) => !done.has(name))
+    .map((name) => ({ name, sql: readFileSync(join(dir, name, 'migration.sql'), 'utf8') }));
 }
 
 async function main() {
@@ -96,21 +114,41 @@ async function main() {
     return;
   }
 
+  // Adding is invisible to code already running; removing and changing is not.
+  // That distinction is the whole of what went wrong, so it is what decides
+  // this rather than a blanket refusal.
+  const pending = await pendingMigrations();
+  if (pending.length === 0) {
+    console.log(`db-guard: nothing pending against ${marker.label}. Carrying on.`);
+    return;
+  }
+
+  const { additive, byMigration } = classifyMigrations(pending);
+  if (additive) {
+    console.log(`db-guard: ${pending.length} pending migration${pending.length === 1 ? '' : 's'} against ${marker.label}, and every statement only adds:`);
+    for (const row of byMigration) console.log(`  ${row.name} — ${row.verdict.statements.length} statements, all additive`);
+    console.log('Nothing already there is dropped, renamed or retyped, so code running now is unaffected. Carrying on.');
+    return;
+  }
+
   console.error(
     [
       '',
-      `db-guard: refused. ${target} is marked PRODUCTION (${marker.label}).`,
+      `db-guard: refused. ${target} is marked PRODUCTION (${marker.label}), and a pending migration would change`,
+      'something the running site can see.',
       '',
-      'Migrating it from here would change the schema under the running site, which is',
-      'how the live app once started returning a server error on every page.',
+      ...byMigration
+        .filter((row) => !row.verdict.additive)
+        .flatMap((row) => [
+          `  ${row.name}`,
+          ...row.verdict.blocking.map((verdict) => `    ${verdict.statement.slice(0, 96)}${verdict.statement.length > 96 ? '…' : ''}`),
+          ...row.verdict.blocking.map((verdict) => `      ${verdict.reason}`),
+        ]),
       '',
-      'What you almost certainly want:',
-      '  point DATABASE_URL and DIRECT_URL at your own development database',
+      'A change like this belongs in a deploy, where the new code arrives with it:',
+      'render.yaml runs `prisma migrate deploy` at startup, after the build succeeds.',
       '',
-      'Production is migrated by the deploy itself — render.yaml runs',
-      '`prisma migrate deploy` at startup, after the new code is built.',
-      '',
-      'If you really do mean to migrate production by hand, say so:',
+      'If you mean to run it by hand anyway:',
       '  ALLOW_PRODUCTION_MIGRATION=1 npm run prisma:deploy',
       '',
     ].join('\n'),
