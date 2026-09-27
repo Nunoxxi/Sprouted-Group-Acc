@@ -89,11 +89,23 @@ npm run db:mark -- development "my laptop"
 npm run db:mark -- production  "Supabase sprouted-prod"
 ```
 
-`npm run prisma:migrate` and `npm run prisma:deploy` both run `db:guard` first,
-which refuses to touch a database marked production unless it is the deployed
-service itself (`NODE_ENV=production`, which Render sets) or you say
-`ALLOW_PRODUCTION_MIGRATION=1` out loud. Production is migrated by the deploy:
-`render.yaml` runs `prisma migrate deploy` at startup, after the build succeeds.
+`npm run prisma:migrate` and `npm run prisma:deploy` both run `db:guard` first.
+Against a database marked production it reads the migrations not yet applied and
+decides by what they do, because that is what actually mattered: **adding** a
+table, an index, a type, a constraint or a nullable or defaulted column is
+invisible to code already running, while dropping, renaming, retyping, making a
+column NOT NULL, or touching data is not.
+
+Additive migrations go through, and it says what it is applying. Anything else
+is refused, naming the statement and the reason — that change belongs in a
+deploy, where the new code arrives with it. Anything the guard cannot
+confidently recognise counts as unsafe.
+
+The deployed service itself (`NODE_ENV=production`, which Render sets) skips the
+check, as does an explicit `ALLOW_PRODUCTION_MIGRATION=1` for a destructive
+change somebody really does mean to run by hand. Production is normally migrated
+by the deploy: `render.yaml` runs `prisma migrate deploy` at startup, after the
+build succeeds.
 
 To set up a development database: create a second Supabase project, point
 `DATABASE_URL` and `DIRECT_URL` at it, then:
