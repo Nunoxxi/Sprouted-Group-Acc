@@ -22,6 +22,7 @@ import {
   closeFacility,
   drawTranche,
   repayTranche,
+  recordDelivery,
   runAdvanceProvision,
   saveAdvance,
   saveCycle,
@@ -55,12 +56,16 @@ import {
   moistureMethods,
   outturnMethodLabels,
   outturnMethods,
+  netWeight,
   provisionTotal,
   recycleMeasures,
+  settleQuality,
+  validateTicket,
   type Cycle,
   type DayCountBasis,
   type MoistureMethod,
   type OutturnMethod,
+  type SettlementOutcome,
 } from '@/lib/prefinance';
 
 type Props = {
@@ -76,7 +81,7 @@ type Props = {
   allowed: (permission: Permission) => boolean;
 };
 
-type Tab = 'Overview' | 'Borrowing' | 'Advances' | 'Aggregators' | 'Cycles' | 'Terms';
+type Tab = 'Overview' | 'Borrowing' | 'Advances' | 'Deliveries' | 'Aggregators' | 'Cycles' | 'Terms';
 
 const selectClass =
   'min-h-[44px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50';
@@ -237,12 +242,69 @@ export function PreFinancePanel({
     provisionPct: String(settings.provisionPct),
   });
 
+  const [deliveryForm, setDeliveryForm] = useState({
+    advanceId: '',
+    deliveredOn: today,
+    vehicle: '',
+    waybill: '',
+    grossKg: '',
+    tareKg: '',
+    netKg: '',
+    bags: '',
+    outturn: '',
+    moisturePct: '',
+    assayedBy: '',
+    outcome: 'carry-forward' as SettlementOutcome,
+  });
+
+  const chosenAdvance = openAdvances.find((advance) => advance.id === deliveryForm.advanceId) ?? null;
+  const ticket = useMemo(
+    () => ({
+      grossGrams: deliveryForm.grossKg ? Math.round(Number(deliveryForm.grossKg) * 1000) : null,
+      tareGrams: deliveryForm.tareKg ? Math.round(Number(deliveryForm.tareKg) * 1000) : null,
+      netGrams: deliveryForm.netKg ? Math.round(Number(deliveryForm.netKg) * 1000) : null,
+      bags: deliveryForm.bags ? Number(deliveryForm.bags) : null,
+    }),
+    [deliveryForm.grossKg, deliveryForm.tareKg, deliveryForm.netKg, deliveryForm.bags],
+  );
+  const ticketGrams = useMemo(() => netWeight(ticket), [ticket]);
+  // Only complain once there is something to complain about; an empty form is
+  // not a mistake, it is somebody who has not started.
+  const ticketProblems = deliveryForm.grossKg || deliveryForm.tareKg || deliveryForm.netKg ? validateTicket(ticket) : [];
+
+  /**
+   * What the load settles at, worked out as the fields are filled in.
+   *
+   * The same function the server will use, so what is shown before saving and
+   * what is posted after cannot differ.
+   */
+  const preview = useMemo(() => {
+    if (!chosenAdvance || ticketGrams === null || ticketGrams <= 0) return null;
+    const outturn = Number(deliveryForm.outturn);
+    const moisturePct = Number(deliveryForm.moisturePct);
+    if (!Number.isFinite(outturn) || outturn <= 0) return null;
+    if (!Number.isFinite(moisturePct) || moisturePct < 0 || moisturePct >= 100) return null;
+    return settleQuality(
+      {
+        outturn: chosenAdvance.terms.outturn,
+        moisturePct: chosenAdvance.terms.moisturePct,
+        moistureMethod: chosenAdvance.terms.moistureMethod,
+        moisturePctPerPoint: chosenAdvance.terms.moisturePctPerPoint ?? undefined,
+        outturnMethod: chosenAdvance.terms.outturnMethod,
+        outturnMinorPerPoint: chosenAdvance.terms.outturnMinorPerPoint ?? undefined,
+        outturnBonus: chosenAdvance.terms.outturnBonus ?? undefined,
+      },
+      chosenAdvance.pricePerKgMinor,
+      { grams: ticketGrams, outturn, moisturePct },
+    );
+  }, [chosenAdvance, ticketGrams, deliveryForm.outturn, deliveryForm.moisturePct]);
+
   const aggregators = useMemo(() => contacts.filter((contact) => contact.category !== 'group-entity' && contact.isActive), [contacts]);
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap gap-2">
-        {(['Overview', 'Borrowing', 'Advances', 'Aggregators', 'Cycles', 'Terms'] as Tab[]).map((name) => (
+        {(['Overview', 'Borrowing', 'Advances', 'Deliveries', 'Aggregators', 'Cycles', 'Terms'] as Tab[]).map((name) => (
           <button
             key={name}
             type="button"
@@ -868,6 +930,270 @@ export function PreFinancePanel({
               )}
             </Card>
           )}
+        </div>
+      )}
+
+      {/* --- Deliveries ---------------------------------------------------- */}
+      {tab === 'Deliveries' && (
+        <div className="space-y-5">
+          {allowed('prefinance:deliver') && openAdvances.length > 0 && (
+            <Card>
+              <h3 className="text-base font-semibold text-slate-900">A load has arrived</h3>
+              <p className="mt-1 text-sm text-slate-600">
+                Fill this in the order the ticket reads: which advance it is against, then the weighbridge, then the lab. The
+                settlement works itself out at the bottom before anything is saved.
+              </p>
+
+              {/* 1 — which advance */}
+              <fieldset className="mt-5 border-t border-slate-200 pt-4">
+                <legend className="text-xs font-semibold uppercase tracking-wide text-slate-500">1 · Against which advance</legend>
+                <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="sm:col-span-2">
+                    <label className={label} htmlFor="pf-del-advance">
+                      Advance
+                    </label>
+                    <select id="pf-del-advance" className={selectClass} value={deliveryForm.advanceId} onChange={(event) => setDeliveryForm({ ...deliveryForm, advanceId: event.target.value })}>
+                      <option value="">Choose…</option>
+                      {openAdvances.map((advance) => (
+                        <option key={advance.id} value={advance.id}>
+                          {advance.aggregatorName} — {advance.reference} (owes {(advance.outstandingMinor / 100).toLocaleString()})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={label} htmlFor="pf-del-date">
+                      Date in
+                    </label>
+                    <Input id="pf-del-date" type="date" value={deliveryForm.deliveredOn} onChange={(event) => setDeliveryForm({ ...deliveryForm, deliveredOn: event.target.value })} />
+                  </div>
+                  <div>
+                    <label className={label} htmlFor="pf-del-waybill">
+                      Waybill number
+                    </label>
+                    <Input id="pf-del-waybill" value={deliveryForm.waybill} onChange={(event) => setDeliveryForm({ ...deliveryForm, waybill: event.target.value })} />
+                  </div>
+                </div>
+                {chosenAdvance && (
+                  <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                    Agreed {(chosenAdvance.pricePerKgMinor / 100).toFixed(2)} a kilo, assuming {chosenAdvance.terms.outturn} outturn and{' '}
+                    {chosenAdvance.terms.moisturePct}% moisture. If it is wet: {moistureMethodLabels[chosenAdvance.terms.moistureMethod].toLowerCase()}.
+                  </p>
+                )}
+              </fieldset>
+
+              {/* 2 — the weighbridge */}
+              <fieldset className="mt-5 border-t border-slate-200 pt-4">
+                <legend className="text-xs font-semibold uppercase tracking-wide text-slate-500">2 · On the weighbridge</legend>
+                <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <div>
+                    <label className={label} htmlFor="pf-del-vehicle">
+                      Vehicle
+                    </label>
+                    <Input id="pf-del-vehicle" placeholder="GT 1234-24" value={deliveryForm.vehicle} onChange={(event) => setDeliveryForm({ ...deliveryForm, vehicle: event.target.value })} />
+                  </div>
+                  <div>
+                    <label className={label} htmlFor="pf-del-gross">
+                      Loaded (kg)
+                    </label>
+                    <Input id="pf-del-gross" inputMode="decimal" value={deliveryForm.grossKg} onChange={(event) => setDeliveryForm({ ...deliveryForm, grossKg: event.target.value })} />
+                  </div>
+                  <div>
+                    <label className={label} htmlFor="pf-del-tare">
+                      Empty (kg)
+                    </label>
+                    <Input id="pf-del-tare" inputMode="decimal" value={deliveryForm.tareKg} onChange={(event) => setDeliveryForm({ ...deliveryForm, tareKg: event.target.value })} />
+                  </div>
+                  <div>
+                    <label className={label} htmlFor="pf-del-bags">
+                      Bags
+                    </label>
+                    <Input id="pf-del-bags" inputMode="numeric" value={deliveryForm.bags} onChange={(event) => setDeliveryForm({ ...deliveryForm, bags: event.target.value })} />
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm">
+                  <span className="text-slate-600">
+                    Net weight:{' '}
+                    <span className="font-semibold text-slate-900">{ticketGrams === null ? '—' : `${(ticketGrams / 1000).toLocaleString()} kg`}</span>
+                  </span>
+                  {!deliveryForm.grossKg && !deliveryForm.tareKg && (
+                    <label className="flex items-center gap-2 text-slate-600">
+                      no weighbridge — weighed directly (kg)
+                      <Input className="w-32" inputMode="decimal" value={deliveryForm.netKg} onChange={(event) => setDeliveryForm({ ...deliveryForm, netKg: event.target.value })} />
+                    </label>
+                  )}
+                </div>
+                {ticketProblems.length > 0 && (
+                  <ul className="mt-2 space-y-1 text-sm text-amber-800">
+                    {ticketProblems.map((problem) => (
+                      <li key={problem}>{problem}</li>
+                    ))}
+                  </ul>
+                )}
+              </fieldset>
+
+              {/* 3 — the lab */}
+              <fieldset className="mt-5 border-t border-slate-200 pt-4">
+                <legend className="text-xs font-semibold uppercase tracking-wide text-slate-500">3 · What the sample said</legend>
+                <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <div>
+                    <label className={label} htmlFor="pf-del-outturn">
+                      Outturn
+                    </label>
+                    <Input id="pf-del-outturn" inputMode="decimal" value={deliveryForm.outturn} onChange={(event) => setDeliveryForm({ ...deliveryForm, outturn: event.target.value })} />
+                  </div>
+                  <div>
+                    <label className={label} htmlFor="pf-del-moisture">
+                      Moisture (%)
+                    </label>
+                    <Input id="pf-del-moisture" inputMode="decimal" value={deliveryForm.moisturePct} onChange={(event) => setDeliveryForm({ ...deliveryForm, moisturePct: event.target.value })} />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className={label} htmlFor="pf-del-assayed">
+                      Checked by
+                    </label>
+                    <Input id="pf-del-assayed" value={deliveryForm.assayedBy} onChange={(event) => setDeliveryForm({ ...deliveryForm, assayedBy: event.target.value })} />
+                  </div>
+                </div>
+              </fieldset>
+
+              {/* 4 — what it settles at */}
+              {preview && chosenAdvance && (
+                <fieldset className="mt-5 border-t border-slate-200 pt-4">
+                  <legend className="text-xs font-semibold uppercase tracking-wide text-slate-500">4 · What this load is worth</legend>
+                  <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <div>
+                      <p className="text-xs text-slate-500">At the quality agreed</p>
+                      <p className="mt-1 text-lg font-semibold text-slate-900">
+                        <Money value={preview.valueAtBasisMinor} currency={entity.functionalCurrency} />
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500">Because it was wet</p>
+                      <p className="mt-1 text-lg font-semibold text-slate-700">
+                        <Money value={preview.moistureVarianceMinor} currency={entity.functionalCurrency} />
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500">Because of outturn</p>
+                      <p className={`mt-1 text-lg font-semibold ${preview.outturnVarianceMinor < 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
+                        <Money value={preview.outturnVarianceMinor} currency={entity.functionalCurrency} />
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500">We pay</p>
+                      <p className="mt-1 text-lg font-semibold text-slate-900">
+                        <Money value={preview.settledValueMinor} currency={entity.functionalCurrency} />
+                      </p>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-sm text-slate-600">
+                    Paid for {(preview.adjustedGrams / 1000).toLocaleString()}kg at {(preview.adjustedPricePerKgMinor / 100).toFixed(2)} a kilo.{' '}
+                    {preview.settledValueMinor >= chosenAdvance.outstandingMinor ? (
+                      <>
+                        That clears the advance
+                        {preview.settledValueMinor > chosenAdvance.outstandingMinor && (
+                          <>
+                            {' '}
+                            and leaves <Money value={preview.settledValueMinor - chosenAdvance.outstandingMinor} currency={entity.functionalCurrency} /> owed to{' '}
+                            {chosenAdvance.aggregatorName}
+                          </>
+                        )}
+                        .
+                      </>
+                    ) : (
+                      <>
+                        {chosenAdvance.aggregatorName} would still owe{' '}
+                        <Money value={chosenAdvance.outstandingMinor - preview.settledValueMinor} currency={entity.functionalCurrency} /> after this load.
+                      </>
+                    )}
+                  </p>
+
+                  {preview.settledValueMinor < chosenAdvance.outstandingMinor && (
+                    <div className="mt-4">
+                      <label className={label} htmlFor="pf-del-outcome">
+                        What happens to the rest
+                      </label>
+                      <select id="pf-del-outcome" className={`${selectClass} max-w-md`} value={deliveryForm.outcome} onChange={(event) => setDeliveryForm({ ...deliveryForm, outcome: event.target.value as SettlementOutcome })}>
+                        <option value="carry-forward">They still owe it — against the next load</option>
+                        <option value="collect-shortfall">They will pay it back in cash</option>
+                        <option value="square">Let it go — charge it to the season and close the advance</option>
+                      </select>
+                    </div>
+                  )}
+                </fieldset>
+              )}
+
+              <Button
+                className="mt-5"
+                disabled={pending || !deliveryForm.advanceId || ticketGrams === null || ticketProblems.length > 0 || !preview}
+                onClick={() =>
+                  run(
+                    () =>
+                      recordDelivery(entity.id, {
+                        advanceId: deliveryForm.advanceId,
+                        deliveredOn: deliveryForm.deliveredOn,
+                        vehicle: deliveryForm.vehicle,
+                        waybill: deliveryForm.waybill,
+                        assayedBy: deliveryForm.assayedBy,
+                        grossGrams: deliveryForm.grossKg ? Math.round(Number(deliveryForm.grossKg) * 1000) : null,
+                        tareGrams: deliveryForm.tareKg ? Math.round(Number(deliveryForm.tareKg) * 1000) : null,
+                        netGrams: deliveryForm.netKg ? Math.round(Number(deliveryForm.netKg) * 1000) : null,
+                        bags: deliveryForm.bags ? Number(deliveryForm.bags) : null,
+                        outturn: Number(deliveryForm.outturn),
+                        moisturePct: Number(deliveryForm.moisturePct),
+                        outcome: deliveryForm.outcome,
+                      }),
+                    'Load recorded and settled.',
+                  )
+                }
+              >
+                Record this load
+              </Button>
+            </Card>
+          )}
+
+          <Card>
+            <h3 className="text-base font-semibold text-slate-900">Loads received</h3>
+            {deliveries.length === 0 ? (
+              <p className="mt-2 text-sm text-slate-500">Nothing received yet.</p>
+            ) : (
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                      <th className="pb-2 pr-3">In</th>
+                      <th className="pb-2 pr-3">From</th>
+                      <th className="pb-2 pr-3">Vehicle</th>
+                      <th className="pb-2 pr-3 text-right">Weight</th>
+                      <th className="pb-2 pr-3 text-right">Outturn</th>
+                      <th className="pb-2 pr-3 text-right">Moisture</th>
+                      <th className="pb-2 pr-3 text-right">We paid</th>
+                      <th className="pb-2 pr-3 text-right">Against agreed</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {deliveries.map((delivery) => (
+                      <tr key={delivery.id} className="border-b border-slate-100">
+                        <td className="py-2 pr-3 text-slate-600">{delivery.deliveredOn}</td>
+                        <td className="py-2 pr-3 font-medium text-slate-900">{delivery.aggregatorName}</td>
+                        <td className="py-2 pr-3 text-slate-500">{delivery.vehicle || '—'}</td>
+                        <td className="py-2 pr-3 text-right">{(delivery.grams / 1000).toLocaleString()} kg</td>
+                        <td className="py-2 pr-3 text-right">{delivery.outturn}</td>
+                        <td className="py-2 pr-3 text-right">{delivery.moisturePct}%</td>
+                        <td className="py-2 pr-3 text-right">
+                          <Money value={delivery.settledValueMinor} currency={entity.functionalCurrency} />
+                        </td>
+                        <td className={`py-2 pr-3 text-right ${delivery.varianceMinor < 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
+                          <Money value={delivery.varianceMinor} currency={entity.functionalCurrency} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
         </div>
       )}
 

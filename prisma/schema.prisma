@@ -3109,6 +3109,21 @@ model AdvanceDelivery {
   entityId    String
   advanceId   String
   deliveredOn DateTime
+
+  /// What the ticket said, so a dispute can be settled against the paper
+  /// rather than against a number somebody re-typed. All optional: a load
+  /// weighed on a platform scale has no gross and tare at all.
+  vehicle       String?
+  waybill       String?
+  /// Truck and load together.
+  grossGrams    BigInt?
+  /// Truck alone.
+  tareGrams     BigInt?
+  bags          Int?
+  /// Who released the sample result, when the lab slip is signed.
+  assayedBy     String?
+
+  /// Gross less tare where both were given, otherwise weighed directly.
   grams       BigInt
   outturn     Decimal  @db.Decimal(6, 2)
   moisturePct Decimal  @db.Decimal(6, 2)

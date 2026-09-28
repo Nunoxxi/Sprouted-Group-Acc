@@ -418,7 +418,7 @@ const preFinanceCalls: Record<keyof typeof preFinanceActions, Call> = {
       terms: { outturn: 48, moisturePct: 8, moistureMethod: 'weight-deduction', outturnMethod: 'proportional' },
     }),
   recordDelivery: () =>
-    preFinanceActions.recordDelivery(FORBIDDEN_ENTITY, { advanceId: 'advance-1', deliveredOn: '2026-09-25', grams: 4_180_000, outturn: 45, moisturePct: 11, outcome: 'carry-forward' }),
+    preFinanceActions.recordDelivery(FORBIDDEN_ENTITY, { advanceId: 'advance-1', deliveredOn: '2026-09-25', grossGrams: 13_180_000, tareGrams: 9_000_000, outturn: 45, moisturePct: 11, outcome: 'carry-forward' }),
   runAdvanceProvision: () => preFinanceActions.runAdvanceProvision(FORBIDDEN_ENTITY, '2026-09-30'),
   writeOffAdvance: () => preFinanceActions.writeOffAdvance(FORBIDDEN_ENTITY, 'advance-1', { onDate: '2026-12-31', reason: 'Gone' }),
   setExposureLimit: () => preFinanceActions.setExposureLimit(FORBIDDEN_ENTITY, 'contact-1', 100_000_00),

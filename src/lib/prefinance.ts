@@ -133,6 +133,74 @@ export function accrueInterest(
     .filter((row) => row.amountMinor > 0);
 }
 
+// --- what the weighbridge said -------------------------------------------------------------------
+
+/** What a ticket carries, before anything is worked out from it. */
+export type WeighbridgeTicket = {
+  /** Truck and load together, in grams. */
+  grossGrams?: number | null;
+  /** Truck alone. */
+  tareGrams?: number | null;
+  /** Used when there is no weighbridge and the load went on a platform scale. */
+  netGrams?: number | null;
+  bags?: number | null;
+};
+
+/**
+ * The weight to settle on.
+ *
+ * A weighbridge gives gross and tare and the net is arithmetic; a platform
+ * scale gives the net directly. Both are ordinary, so both are allowed, and
+ * where gross and tare are present they win — they are what the ticket says,
+ * and a typed net that disagrees with them is a typo rather than a second
+ * opinion.
+ */
+export function netWeight(ticket: WeighbridgeTicket): number | null {
+  const gross = ticket.grossGrams ?? null;
+  const tare = ticket.tareGrams ?? null;
+  if (gross !== null && tare !== null) return gross - tare;
+  return ticket.netGrams ?? null;
+}
+
+/**
+ * What is wrong with a ticket, in words somebody at the gate can act on.
+ *
+ * Every one of these is a real thing that happens: the two weights entered the
+ * wrong way round, a tare left at nil, a bag count that cannot be true for the
+ * weight. Catching them here is cheaper than settling against them and finding
+ * out at the end of the season.
+ */
+export function validateTicket(ticket: WeighbridgeTicket, gramsPerBag = 80_000): string[] {
+  const problems: string[] = [];
+  const gross = ticket.grossGrams ?? null;
+  const tare = ticket.tareGrams ?? null;
+
+  if (gross !== null && tare !== null) {
+    if (tare >= gross) {
+      problems.push('The empty truck weighs the same as or more than the loaded truck. The two weights look to be the wrong way round.');
+    }
+  } else if (gross !== null || tare !== null) {
+    problems.push('A weighbridge ticket needs both weights: loaded and empty.');
+  }
+
+  const net = netWeight(ticket);
+  if (net === null) problems.push('Give either both weighbridge weights, or the net weight on its own.');
+  else if (net <= 0) problems.push('That works out at no weight at all.');
+
+  if (net !== null && net > 0 && ticket.bags) {
+    // A bag of raw cashew is nominally 80kg. Twice or half that is not a
+    // variation, it is a different number typed in.
+    const perBag = net / ticket.bags;
+    if (perBag > gramsPerBag * 2 || perBag < gramsPerBag / 2) {
+      problems.push(
+        `${ticket.bags} bags for ${Math.round(net / 1000)}kg works out at ${Math.round(perBag / 1000)}kg a bag. Check the bag count or the weight.`,
+      );
+    }
+  }
+
+  return problems;
+}
+
 // --- quality: what was agreed, and what turned up ------------------------------------------------
 
 /**

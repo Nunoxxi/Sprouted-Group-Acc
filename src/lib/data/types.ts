@@ -1281,6 +1281,12 @@ export type AdvanceDeliveryRecord = {
   advanceReference: string;
   aggregatorName: string;
   deliveredOn: string;
+  vehicle: string;
+  waybill: string;
+  grossGrams: number | null;
+  tareGrams: number | null;
+  bags: number | null;
+  assayedBy: string;
   grams: number;
   outturn: number;
   moisturePct: number;

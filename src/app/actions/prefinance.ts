@@ -38,9 +38,11 @@ import {
   ageAdvances,
   checkExposure,
   interestOn,
+  netWeight,
   provisionTotal,
   settleQuality,
   validateQualityTerms,
+  validateTicket,
   type DayCountBasis,
   type MoistureMethod,
   type OutturnMethod,
@@ -617,7 +619,15 @@ export async function saveAdvance(entityId: string, input: AdvanceInput): Promis
 export type DeliveryInput = {
   advanceId: string;
   deliveredOn: string;
-  grams: number;
+  /** What the ticket said. Kept so a dispute is settled against the paper. */
+  vehicle?: string;
+  waybill?: string;
+  grossGrams?: number | null;
+  tareGrams?: number | null;
+  bags?: number | null;
+  assayedBy?: string;
+  /** Used when there was no weighbridge. Ignored when gross and tare are given. */
+  netGrams?: number | null;
   outturn: number;
   moisturePct: number;
   outcome: SettlementOutcome;
@@ -635,7 +645,12 @@ export type DeliveryInput = {
 export async function recordDelivery(entityId: string, input: DeliveryInput): Promise<ActionResult<{ id: string; settledValueMinor: number; varianceMinor: number }>> {
   return withEntityAccess(entityId, 'prefinance:deliver', async (principal) =>
     guarded(async () => {
-      if (input.grams <= 0) return fail('A delivery needs a weight of more than nil.');
+      // The ticket is read here rather than trusting a weight the screen sent,
+      // so a load settles on what was actually weighed.
+      const ticketProblems = validateTicket(input);
+      if (ticketProblems.length) return fail(ticketProblems.join(' '));
+      const grams = netWeight(input);
+      if (grams === null || grams <= 0) return fail('A delivery needs a weight of more than nil.');
       if (input.outturn <= 0) return fail('A delivery needs an outturn of more than nil.');
       if (input.moisturePct < 0 || input.moisturePct >= 100) return fail('Moisture has to be between nil and 100%.');
 
@@ -659,7 +674,7 @@ export async function recordDelivery(entityId: string, input: DeliveryInput): Pr
         };
 
         const settlement = settleQuality(terms, toMinor(advance.pricePerKgMinor), {
-          grams: input.grams,
+          grams,
           outturn: input.outturn,
           moisturePct: input.moisturePct,
         });
@@ -693,7 +708,13 @@ export async function recordDelivery(entityId: string, input: DeliveryInput): Pr
             entityId,
             advanceId: input.advanceId,
             deliveredOn: dateOf(input.deliveredOn),
-            grams: fromMinor(input.grams),
+            vehicle: input.vehicle?.trim() || null,
+            waybill: input.waybill?.trim() || null,
+            grossGrams: input.grossGrams ? fromMinor(input.grossGrams) : null,
+            tareGrams: input.tareGrams ? fromMinor(input.tareGrams) : null,
+            bags: input.bags ?? null,
+            assayedBy: input.assayedBy?.trim() || null,
+            grams: fromMinor(grams),
             outturn: new Prisma.Decimal(input.outturn),
             moisturePct: new Prisma.Decimal(input.moisturePct),
             adjustedGrams: fromMinor(settlement.adjustedGrams),
@@ -723,7 +744,7 @@ export async function recordDelivery(entityId: string, input: DeliveryInput): Pr
           resourceType: 'advance-delivery',
           resourceRef: reference,
           summary:
-            `${(input.grams / 1000).toLocaleString()}kg from ${advance.aggregator.name} at ${input.outturn} outturn, ${input.moisturePct}% moisture — ` +
+            `${(grams / 1000).toLocaleString()}kg from ${advance.aggregator.name} at ${input.outturn} outturn, ${input.moisturePct}% moisture — ` +
             `settled GHS ${(settlement.settledValueMinor / 100).toLocaleString()}` +
             (settlement.varianceMinor === 0 ? '' : ` (${settlement.varianceMinor < 0 ? 'under' : 'over'} by GHS ${(Math.abs(settlement.varianceMinor) / 100).toLocaleString()})`),
           metadata: { after: input, settlement, closed: cleared },
