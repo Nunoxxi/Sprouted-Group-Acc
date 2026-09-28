@@ -142,6 +142,12 @@ model Entity {
   projectBudgetLines ProjectBudgetLine[]
   assetCategories    AssetCategory[]
   taxRateSetting     TaxRateSetting?
+  preFinanceSetting  PreFinanceSetting?
+  loanFacilities     LoanFacility[]
+  loanTranches       LoanTranche[]
+  aggregatorAdvances AggregatorAdvance[]
+  advanceDeliveries  AdvanceDelivery[]
+  preFinanceCycles   PreFinanceCycle[]
 }
 
 // Append-only. Events form a hash chain per entity ordered by `sequence`, which
@@ -228,6 +234,9 @@ model Contact {
   email                String?
   address              String?
   withholdingTaxStatus WithholdingTaxStatus @default(NONE)
+  /// Most this contact may owe at once as un-delivered pre-finance advances.
+  /// Null means no limit has been set; nil means no further advances.
+  exposureLimitMinor   BigInt?
   isActive             Boolean              @default(true)
   createdAt            DateTime             @default(now())
   updatedAt            DateTime             @updatedAt
@@ -239,6 +248,8 @@ model Contact {
   inKindContributions InKindContribution[]
   fixedAssets         FixedAsset[]
   projects            Project[]
+  facilitiesLent      LoanFacility[]       @relation("FacilityLender")
+  advancesReceived    AggregatorAdvance[]  @relation("AdvanceAggregator")
 }
 
 model ContactEntityBalance {
@@ -339,6 +350,12 @@ model User {
   payrollPayments        PayrollLiabilityPayment[]
   attachments            Attachment[]
   dataSubjectRequests    DataSubjectRequest[]
+  preFinanceSettings     PreFinanceSetting[]       @relation("PreFinanceSettingUpdatedBy")
+  loanFacilities         LoanFacility[]            @relation("FacilityCreatedBy")
+  loanTranches           LoanTranche[]             @relation("TrancheCreatedBy")
+  aggregatorAdvances     AggregatorAdvance[]       @relation("AdvanceCreatedBy")
+  advanceDeliveries      AdvanceDelivery[]         @relation("DeliveryCreatedBy")
+  preFinanceCycles       PreFinanceCycle[]         @relation("CycleCreatedBy")
 
   @@index([deactivatedAt])
 }
@@ -532,6 +549,9 @@ model JournalEntry {
   provisionalTaxPayment ProvisionalTaxPayment?
   payrollRun            PayrollRun?
   payrollPayment        PayrollLiabilityPayment?
+  loanTranche           LoanTranche?
+  aggregatorAdvance     AggregatorAdvance?
+  advanceDelivery       AdvanceDelivery?
 
   @@index([entityId, postedAt])
   @@index([entityId, kind])
@@ -868,6 +888,8 @@ model BankAccount {
   assetDisposals         AssetDisposal[]
   provisionalTaxPayments ProvisionalTaxPayment[]
   payrollPayments        PayrollLiabilityPayment[]
+  loanTranches           LoanTranche[]
+  aggregatorAdvances     AggregatorAdvance[]
 
   @@index([entityId])
 }
@@ -1093,7 +1115,8 @@ model StockMovement {
   journalEntry JournalEntry?     @relation(fields: [journalEntryId], references: [id])
   reverses     StockMovement?    @relation("MovementReversal", fields: [reversesId], references: [id])
   reversedBy   StockMovement?    @relation("MovementReversal")
-  createdBy    User?             @relation(fields: [createdById], references: [id])
+  createdBy       User?             @relation(fields: [createdById], references: [id])
+  advanceDelivery AdvanceDelivery?
 
   @@index([entityId, date])
   @@index([entityId, itemId])
@@ -2872,4 +2895,289 @@ model DatabaseMarker {
   label       String
   markedAt    DateTime @default(now())
   markedBy    String?
+}
+
+// ---------------------------------------------------------------------------
+// Pre-finance. Sprouted Crafts borrows to buy raw cashew months before the
+// kernel is sold, so the money is out of the door long before it comes back.
+// What this section records is that gap: what was borrowed, what was handed to
+// aggregators, what came back as nuts, and how long the whole loop took.
+//
+// Two things are deliberately stored per record rather than as one company
+// setting. Quality terms travel with the advance, because they are terms
+// agreed with one aggregator on one day, and changing a setting later must not
+// re-settle a deal that is already done. Interest terms travel with the
+// facility, for the same reason.
+//
+// The arithmetic — settlement, ageing, interest, cycle margin, recycle, idle
+// cost, runway — lives in src/lib/prefinance.ts and is unit-tested without a
+// database. Nothing here duplicates it.
+// ---------------------------------------------------------------------------
+
+enum LoanFacilityStatus {
+  ACTIVE
+  CLOSED
+}
+
+/// How the year is counted when interest is worked out. Whoever lends says
+/// which, and it changes the number, so it is recorded rather than assumed.
+enum InterestBasis {
+  ACTUAL_365
+  ACTUAL_360
+  THIRTY_360
+}
+
+/// How a wet load is handled. WEIGHT_DEDUCTION pays for the dry-equivalent
+/// kilograms at the agreed price; PRICE_DEDUCTION pays for every kilogram
+/// delivered, at a price cut per point of moisture above the basis.
+enum MoistureMethod {
+  WEIGHT_DEDUCTION
+  PRICE_DEDUCTION
+}
+
+/// How an outturn difference is handled. PROPORTIONAL scales the price with
+/// outturn against the basis; PER_POINT takes an agreed amount off the price
+/// for each point below it.
+enum OutturnMethod {
+  PROPORTIONAL
+  PER_POINT
+}
+
+enum AdvanceStatus {
+  OPEN
+  SETTLED
+  WRITTEN_OFF
+}
+
+/// What a new advance is pre-filled with, and when an old one is flagged.
+///
+/// Defaults only. Every advance keeps its own copy of the quality terms it was
+/// agreed on, so changing anything here affects the next advance and never a
+/// past one.
+model PreFinanceSetting {
+  id       String @id @default(cuid())
+  entityId String @unique
+
+  /// Kernel outturn the price assumes — pounds of kernel from an 80kg bag.
+  defaultOutturn              Decimal        @default(48) @db.Decimal(6, 2)
+  /// Moisture percent the price assumes.
+  defaultMoisturePct          Decimal        @default(8) @db.Decimal(6, 2)
+  defaultMoistureMethod       MoistureMethod @default(WEIGHT_DEDUCTION)
+  /// PRICE_DEDUCTION only: percent off the price per point of moisture above basis.
+  defaultMoisturePctPerPoint  Decimal?       @db.Decimal(6, 3)
+  defaultOutturnMethod        OutturnMethod  @default(PROPORTIONAL)
+  /// PER_POINT only: pesewas off the price per point of outturn below basis.
+  defaultOutturnMinorPerPoint BigInt?
+  /// Whether a load better than the basis earns more. Null follows the method.
+  defaultOutturnBonus         Boolean?
+
+  /// Days past the expected delivery date at which an advance is flagged.
+  flagAfterDays      Int     @default(14)
+  /// Days past expected delivery at which a provision is made against it.
+  provisionAfterDays Int     @default(60)
+  /// Percent of the advance provided for once it is that old, 0-100.
+  provisionPct       Decimal @default(50) @db.Decimal(5, 2)
+
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+
+  entity    Entity @relation(fields: [entityId], references: [id])
+  updatedBy User?  @relation("PreFinanceSettingUpdatedBy", fields: [updatedById], references: [id])
+}
+
+/// A borrowing arrangement: an agreed ceiling drawn down in tranches.
+model LoanFacility {
+  id         String             @id @default(cuid())
+  entityId   String
+  /// Whoever is lending, as a contact, so payments hang off the same record.
+  lenderId   String?
+  reference  String
+  limitMinor BigInt
+  /// Annual interest rate, e.g. 28.500 for 28.5%.
+  ratePct    Decimal            @db.Decimal(6, 3)
+  basis      InterestBasis      @default(ACTUAL_365)
+  startsOn   DateTime
+  /// When the whole facility must be repaid, if it is dated.
+  endsOn     DateTime?
+  status     LoanFacilityStatus @default(ACTIVE)
+
+  notes       String?
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  entity    Entity              @relation(fields: [entityId], references: [id])
+  lender    Contact?            @relation("FacilityLender", fields: [lenderId], references: [id])
+  createdBy User?               @relation("FacilityCreatedBy", fields: [createdById], references: [id])
+  tranches  LoanTranche[]
+  advances  AggregatorAdvance[]
+  cycles    PreFinanceCycle[]
+
+  @@unique([entityId, reference])
+  @@index([entityId, status])
+}
+
+/// One drawdown against a facility, and its repayment.
+model LoanTranche {
+  id            String    @id @default(cuid())
+  entityId      String
+  facilityId    String
+  drawnOn       DateTime
+  amountMinor   BigInt
+  /// Where the money landed. Null for a drawdown from before the cut-over.
+  bankAccountId String?
+  /// When the principal was repaid in full. Null while still outstanding.
+  repaidOn      DateTime?
+  /// How far interest has been posted, so an accrual run knows where it stopped.
+  interestToDate DateTime?
+  interestMinor  BigInt   @default(0)
+
+  journalEntryId String?  @unique
+  createdById    String?
+  createdAt      DateTime @default(now())
+
+  entity       Entity        @relation(fields: [entityId], references: [id])
+  facility     LoanFacility  @relation(fields: [facilityId], references: [id])
+  bankAccount  BankAccount?  @relation(fields: [bankAccountId], references: [id])
+  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id])
+  createdBy    User?         @relation("TrancheCreatedBy", fields: [createdById], references: [id])
+
+  @@index([entityId, facilityId])
+  @@index([entityId, repaidOn])
+}
+
+/// Money handed to an aggregator before any nuts arrive: a receivable with
+/// nothing held against it, which is why ageing and exposure limits matter.
+///
+/// The quality block is a snapshot of what was agreed, copied from
+/// PreFinanceSetting when the advance is created and never rewritten.
+model AggregatorAdvance {
+  id            String   @id @default(cuid())
+  entityId      String
+  aggregatorId  String
+  reference     String
+  advancedOn    DateTime
+  /// When the nuts were promised. Ageing runs from here, not from the advance.
+  expectedOn    DateTime
+  amountMinor   BigInt
+  /// Where the money went out from.
+  bankAccountId String?
+  /// Which facility funded it, when it was funded by borrowing.
+  facilityId    String?
+  /// The agreed price per kilogram, at the quality basis below.
+  pricePerKgMinor BigInt
+
+  outturn              Decimal        @db.Decimal(6, 2)
+  moisturePct          Decimal        @db.Decimal(6, 2)
+  moistureMethod       MoistureMethod
+  moisturePctPerPoint  Decimal?       @db.Decimal(6, 3)
+  outturnMethod        OutturnMethod
+  outturnMinorPerPoint BigInt?
+  outturnBonus         Boolean?
+
+  status    AdvanceStatus @default(OPEN)
+  /// Set when the advance closes, whether by delivery, repayment or write-off.
+  settledOn DateTime?
+
+  journalEntryId String?  @unique
+  notes          String?
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  entity       Entity            @relation(fields: [entityId], references: [id])
+  aggregator   Contact           @relation("AdvanceAggregator", fields: [aggregatorId], references: [id])
+  bankAccount  BankAccount?      @relation(fields: [bankAccountId], references: [id])
+  facility     LoanFacility?     @relation(fields: [facilityId], references: [id])
+  journalEntry JournalEntry?     @relation(fields: [journalEntryId], references: [id])
+  createdBy    User?             @relation("AdvanceCreatedBy", fields: [createdById], references: [id])
+  deliveries   AdvanceDelivery[]
+
+  @@unique([entityId, reference])
+  @@index([entityId, status, expectedOn])
+  @@index([entityId, aggregatorId])
+}
+
+/// A load delivered against an advance. An advance stays open until enough has
+/// been delivered to clear it, so several of these can hang off one advance.
+///
+/// The settled figures are stored rather than recomputed on the fly: they are
+/// what was agreed and posted at the time, and re-deriving them later from
+/// terms that may since be read differently would quietly change the books.
+model AdvanceDelivery {
+  id          String   @id @default(cuid())
+  entityId    String
+  advanceId   String
+  deliveredOn DateTime
+  grams       BigInt
+  outturn     Decimal  @db.Decimal(6, 2)
+  moisturePct Decimal  @db.Decimal(6, 2)
+
+  /// Weight actually paid for; differs from grams only under WEIGHT_DEDUCTION.
+  adjustedGrams           BigInt
+  adjustedPricePerKgMinor BigInt
+  /// What the load would have been worth had it met the basis exactly.
+  valueAtBasisMinor       BigInt
+  settledValueMinor       BigInt
+  /// settled minus at-basis. Negative means the load came in under what was agreed.
+  varianceMinor           BigInt
+  /// The part of the variance caused by water. Never positive.
+  moistureVarianceMinor   BigInt
+  /// The part caused by outturn. Positive when the load beat the basis.
+  outturnVarianceMinor    BigInt
+
+  /// The stock movement this created, so the nuts trace back to the load.
+  stockMovementId String?  @unique
+  journalEntryId  String?  @unique
+  notes           String?
+  createdById     String?
+  createdAt       DateTime @default(now())
+
+  entity        Entity            @relation(fields: [entityId], references: [id])
+  advance       AggregatorAdvance @relation(fields: [advanceId], references: [id])
+  stockMovement StockMovement?    @relation(fields: [stockMovementId], references: [id])
+  journalEntry  JournalEntry?     @relation(fields: [journalEntryId], references: [id])
+  createdBy     User?             @relation("DeliveryCreatedBy", fields: [createdById], references: [id])
+
+  @@index([entityId, advanceId])
+  @@index([entityId, deliveredOn])
+}
+
+/// One loop of the money: drawn, advanced, delivered, processed, sold, paid.
+///
+/// Held as dates rather than derived, because the question being answered —
+/// how many times this money can go round in a season — depends on when cash
+/// actually came back, not on when a document happened to be entered.
+model PreFinanceCycle {
+  id         String  @id @default(cuid())
+  entityId   String
+  reference  String
+  facilityId String?
+
+  drawnOn     DateTime
+  advancedOn  DateTime?
+  deliveredOn DateTime?
+  processedOn DateTime?
+  soldOn      DateTime?
+  /// When the proceeds actually landed. A cycle is complete only here.
+  cashBackOn  DateTime?
+
+  drawnMinor    BigInt
+  advancedMinor BigInt @default(0)
+  /// Proceeds of the sale this money paid for.
+  proceedsMinor BigInt @default(0)
+  /// Processing and selling costs attributed to this loop.
+  costsMinor    BigInt @default(0)
+
+  notes       String?
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  entity    Entity        @relation(fields: [entityId], references: [id])
+  facility  LoanFacility? @relation(fields: [facilityId], references: [id])
+  createdBy User?         @relation("CycleCreatedBy", fields: [createdById], references: [id])
+
+  @@unique([entityId, reference])
+  @@index([entityId, cashBackOn])
 }
