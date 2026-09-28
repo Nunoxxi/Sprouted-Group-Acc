@@ -39,6 +39,30 @@ export const agentFloatAccounts: AccountTemplate[] = [
   { code: '1060', name: 'Agent Float Advances', type: 'ASSET', parentCode: '1000', category: 'agent-float' },
 ];
 
+/**
+ * Borrowing to buy raw material before it is processed and sold; see
+ * src/lib/prefinance.ts. Traders and processors only.
+ *
+ * An aggregator advance is money out with nothing held against it, so it is
+ * carried as a receivable with its own provision account rather than folded in
+ * with trade debtors — an old advance is a real risk, not a late invoice, and
+ * the two should not be read as the same thing.
+ *
+ * The moisture and outturn split of a settlement is reported from
+ * AdvanceDelivery, not from separate ledger accounts: which half of a variance
+ * is water and which is kernel is analysis, and putting it in the chart would
+ * make every load post four lines to say what two can.
+ */
+export const preFinanceAccounts: AccountTemplate[] = [
+  { code: '1075', name: 'Aggregator Advances', type: 'ASSET', parentCode: '1000', category: 'aggregator-advance' },
+  { code: '1076', name: 'Provision against Aggregator Advances', type: 'ASSET', parentCode: '1000', category: 'aggregator-advance' },
+  { code: '2080', name: 'Pre-Finance Loan', type: 'LIABILITY', parentCode: '2000', category: 'pre-finance' },
+  { code: '2085', name: 'Accrued Loan Interest', type: 'LIABILITY', parentCode: '2000', category: 'pre-finance' },
+  { code: '5065', name: 'Quality Settlement Variance', type: 'COST_OF_SALES', parentCode: '5000', category: 'pre-finance' },
+  { code: '5070', name: 'Aggregator Advance Provision', type: 'EXPENSE', category: 'pre-finance' },
+  { code: '8010', name: 'Pre-Finance Interest', type: 'EXPENSE', category: 'pre-finance' },
+];
+
 /** Sales contracts and COCOBOD Licensed Buying Company mode; see src/lib/contracts.ts. Traders only. */
 export const contractAccounts: AccountTemplate[] = [
   { code: '1065', name: 'COCOBOD Receivable', type: 'ASSET', parentCode: '1000', category: 'lbc' },
@@ -164,6 +188,7 @@ export const manufacturingAccounts: AccountTemplate[] = [
   ...sharedTaxAccounts,
   ...sharedInventoryAccounts,
   ...agentFloatAccounts,
+  ...preFinanceAccounts,
   ...farmerAdvanceAccounts,
   ...contractAccounts,
   ...mobileMoneyAccounts,

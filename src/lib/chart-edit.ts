@@ -30,6 +30,7 @@ import { grantAccounts } from './grants';
 import { momoAccounts } from './momo';
 import { openingAccounts } from './opening';
 import { liabilityAccounts, payrollAccounts } from './payroll';
+import { preFinanceAccounts } from './prefinance-posting';
 import { tradingAccounts } from './trading';
 
 export type AccountType = 'ASSET' | 'LIABILITY' | 'EQUITY' | 'INCOME' | 'COST_OF_SALES' | 'EXPENSE';
@@ -63,6 +64,7 @@ export const protectedCodes: ReadonlySet<string> = new Set(
     tradingAccounts,
     contractAccounts,
     openingAccounts,
+    preFinanceAccounts,
   ].flatMap((group) => Object.values(group as Record<string, unknown>).filter(looksLikeCode)),
 );
 
