@@ -45,6 +45,8 @@ const expected: Record<Role, Permission[]> = {
     'privacy:manage',
     'audit:read',
     'export:run',
+    'prefinance:manage',
+    'prefinance:deliver',
   ],
   // Keeps the books: enters and posts, reconciles, adds an account. Does not
   // correct a posted entry, close a period or touch a person's data.
@@ -60,6 +62,7 @@ const expected: Record<Role, Permission[]> = {
     'pii:view',
     'audit:read',
     'export:run',
+    'prefinance:deliver',
   ],
   // Field staff telephone farmers and pay them, so they see contact details;
   // they cannot report on a person or erase one.
@@ -113,6 +116,24 @@ describe('role matrix', () => {
   it('Viewer can edit nothing', () => {
     const editing = permissions.filter((permission) => permission !== 'reports:view');
     expect(editing.some((permission) => roleHas('viewer', permission))).toBe(false);
+  });
+
+  // Money leaving the building with nothing held against it is a decision;
+  // writing down what a load weighed is not. The split is deliberate.
+  it('a Bookkeeper records what a load delivered but cannot advance money for one', () => {
+    expect(roleHas('bookkeeper', 'prefinance:deliver')).toBe(true);
+    expect(roleHas('bookkeeper', 'prefinance:manage')).toBe(false);
+  });
+
+  it('advancing money, drawing on a facility and writing an advance off are an Accountant or an Owner', () => {
+    expect(roles.filter((role) => roleHas(role, 'prefinance:manage'))).toEqual(['owner', 'accountant']);
+  });
+
+  it('nobody below a Bookkeeper touches pre-finance at all', () => {
+    for (const role of ['data-entry', 'viewer'] as const) {
+      expect(roleHas(role, 'prefinance:deliver')).toBe(false);
+      expect(roleHas(role, 'prefinance:manage')).toBe(false);
+    }
   });
 
   it('only Owners manage users, sessions and entities', () => {

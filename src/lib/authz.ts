@@ -66,6 +66,14 @@ export const permissions = [
   // takes something away: renumbering or retyping an account with postings,
   // switching one off, deleting, merging, importing, reordering. Owner only.
   'settings:manage',
+  // Borrowing and lending out: a facility, a drawdown, an advance to an
+  // aggregator, the interest run, the provision run, a write-off. Money leaves
+  // the building with nothing held against it, so this is not day-to-day entry.
+  'prefinance:manage',
+  // Recording what a load actually weighed and assayed, and settling it
+  // against the advance. The sums follow terms already agreed, so this is
+  // ordinary bookkeeping rather than a decision.
+  'prefinance:deliver',
   'users:manage', // invite, change role and entity access, deactivate, unlock
   'sessions:manage', // see who is signed in, force sign-out
 ] as const;
@@ -91,6 +99,8 @@ const matrix: Record<Role, ReadonlySet<Permission>> = {
     'privacy:manage',
     'audit:read',
     'export:run',
+    'prefinance:manage',
+    'prefinance:deliver',
   ]),
   // Keeps the books day to day: enters and posts invoices and bills and
   // reconciles them, and adds an account when one is missing. Correcting a
@@ -109,6 +119,7 @@ const matrix: Record<Role, ReadonlySet<Permission>> = {
     'pii:view',
     'audit:read',
     'export:run',
+    'prefinance:deliver',
   ]),
   // Field staff need to be able to telephone a farmer and to pay them, so
   // they see contact details — but they cannot produce a report about a
