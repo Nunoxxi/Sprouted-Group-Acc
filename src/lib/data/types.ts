@@ -18,6 +18,7 @@ import type { LiabilityKind } from '../payroll';
 import type { AttachmentTarget } from '../attachments';
 import type { SubjectKind } from '../privacy';
 import type { DepreciationMethod as SettingsDepreciationMethod, ProjectKind, TaxRates } from '../settings';
+import type { DayCountBasis, MoistureMethod, OutturnMethod } from '../prefinance';
 import type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus } from './enums';
 
 export type { ContactCategory, ContactType, FundClassification, WithholdingTaxStatus };
@@ -1163,4 +1164,148 @@ export type AssetCategoryRecord = {
   method: SettingsDepreciationMethod;
   accountCode: string | null;
   isActive: boolean;
+};
+
+// --- pre-finance -----------------------------------------------------------------------
+
+/** What a new advance is pre-filled with, and when an old one is flagged. */
+export type PreFinanceSettingRecord = {
+  entityId: string;
+  defaultOutturn: number;
+  defaultMoisturePct: number;
+  defaultMoistureMethod: MoistureMethod;
+  defaultMoisturePctPerPoint: number | null;
+  defaultOutturnMethod: OutturnMethod;
+  defaultOutturnMinorPerPoint: number | null;
+  defaultOutturnBonus: boolean | null;
+  flagAfterDays: number;
+  provisionAfterDays: number;
+  provisionPct: number;
+  updatedAt: string | null;
+  updatedByName: string;
+};
+
+/** A borrowing arrangement and how much of it is still available. */
+export type LoanFacilityRecord = {
+  id: string;
+  entityId: string;
+  reference: string;
+  lenderId: string | null;
+  lenderName: string;
+  limitMinor: number;
+  ratePct: string;
+  basis: DayCountBasis;
+  startsOn: string;
+  endsOn: string | null;
+  status: 'active' | 'closed';
+  notes: string;
+  /** Drawn and not yet repaid. */
+  outstandingMinor: number;
+  /** Drawn over the life of the facility, repaid or not. */
+  drawnEverMinor: number;
+  headroomMinor: number;
+  accruedInterestMinor: number;
+  trancheCount: number;
+};
+
+/** One drawdown against a facility. */
+export type LoanTrancheRecord = {
+  id: string;
+  entityId: string;
+  facilityId: string;
+  facilityReference: string;
+  drawnOn: string;
+  amountMinor: number;
+  bankAccountId: string | null;
+  bankAccountName: string;
+  repaidOn: string | null;
+  interestToDate: string | null;
+  interestMinor: number;
+  isPosted: boolean;
+  createdByName: string;
+};
+
+/** The quality a price assumed, as agreed on one advance. */
+export type QualityTermsRecord = {
+  outturn: number;
+  moisturePct: number;
+  moistureMethod: MoistureMethod;
+  moisturePctPerPoint: number | null;
+  outturnMethod: OutturnMethod;
+  outturnMinorPerPoint: number | null;
+  outturnBonus: boolean | null;
+};
+
+/** Money handed to an aggregator before any nuts arrived. */
+export type AggregatorAdvanceRecord = {
+  id: string;
+  entityId: string;
+  reference: string;
+  aggregatorId: string;
+  aggregatorName: string;
+  /** Null when no limit has been set for this aggregator. */
+  exposureLimitMinor: number | null;
+  advancedOn: string;
+  expectedOn: string;
+  amountMinor: number;
+  pricePerKgMinor: number;
+  bankAccountId: string | null;
+  bankAccountName: string;
+  facilityId: string | null;
+  facilityReference: string;
+  terms: QualityTermsRecord;
+  status: 'open' | 'settled' | 'written-off';
+  settledOn: string | null;
+  notes: string;
+  isPosted: boolean;
+  createdByName: string;
+  /** Value of everything delivered against it so far. */
+  deliveredValueMinor: number;
+  /** What the aggregator still owes, in nuts or in cash. */
+  outstandingMinor: number;
+  deliveryCount: number;
+};
+
+/** A load delivered against an advance, with how it settled. */
+export type AdvanceDeliveryRecord = {
+  id: string;
+  entityId: string;
+  advanceId: string;
+  advanceReference: string;
+  aggregatorName: string;
+  deliveredOn: string;
+  grams: number;
+  outturn: number;
+  moisturePct: number;
+  adjustedGrams: number;
+  adjustedPricePerKgMinor: number;
+  valueAtBasisMinor: number;
+  settledValueMinor: number;
+  varianceMinor: number;
+  moistureVarianceMinor: number;
+  outturnVarianceMinor: number;
+  notes: string;
+  isPosted: boolean;
+  createdByName: string;
+};
+
+/** One loop of the money, from drawn to cash back. */
+export type PreFinanceCycleRecord = {
+  id: string;
+  entityId: string;
+  reference: string;
+  facilityId: string | null;
+  facilityReference: string;
+  drawnOn: string;
+  advancedOn: string | null;
+  deliveredOn: string | null;
+  processedOn: string | null;
+  soldOn: string | null;
+  cashBackOn: string | null;
+  drawnMinor: number;
+  advancedMinor: number;
+  proceedsMinor: number;
+  costsMinor: number;
+  notes: string;
+  isComplete: boolean;
 };
