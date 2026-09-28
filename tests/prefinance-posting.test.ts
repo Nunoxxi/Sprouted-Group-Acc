@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { preFinanceAccounts as preFinanceTemplates } from '@/lib/account-templates';
+import { manufacturingAccounts, preFinanceAccounts as preFinanceTemplates } from '@/lib/account-templates';
 import { protectedCodes } from '@/lib/chart-edit';
 import {
   advanceJournal,
@@ -37,8 +37,8 @@ const amountOn = (lines: readonly PreFinanceJournalLine[], code: string, type: '
   lines.filter((line) => line.accountCode === code && line.type === type).reduce((sum, line) => sum + line.amount, 0);
 
 describe('the accounts exist in the chart the software seeds', () => {
-  it('every code the posting logic names is in the manufacturing template', () => {
-    const seeded = new Set(preFinanceTemplates.map((account) => account.code));
+  it('every code the posting logic names is in the manufacturing chart', () => {
+    const seeded = new Set([...preFinanceTemplates, ...manufacturingAccounts].map((account) => account.code));
     for (const code of Object.values(preFinanceAccounts)) {
       expect(seeded.has(code), `${code} is posted to but never seeded`).toBe(true);
     }

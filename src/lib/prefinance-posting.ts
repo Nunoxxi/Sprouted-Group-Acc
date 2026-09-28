@@ -40,6 +40,12 @@ export const preFinanceAccounts = {
   provisionCharge: '5070',
   /** Interest as a cost of the season. */
   interest: '8010',
+  /**
+   * Where delivered nuts land. Already in the manufacturing chart; named here
+   * because this is now a code the software posts to by number, which is what
+   * makes an account protected from being renumbered or switched off.
+   */
+  rawMaterials: '1030',
 } as const;
 
 export type PreFinanceJournalLine = {

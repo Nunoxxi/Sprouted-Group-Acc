@@ -104,6 +104,9 @@ vi.mock('@/lib/auth', () => {
   };
 });
 
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
+
 import * as documentActions from '@/app/actions/documents';
 import * as fxActions from '@/app/actions/fx';
 import * as vatActions from '@/app/actions/vat';
@@ -121,6 +124,7 @@ import * as attachmentActions from '@/app/actions/attachments';
 import * as privacyActions from '@/app/actions/privacy';
 import * as chartActions from '@/app/actions/chart';
 import * as settingsActions from '@/app/actions/settings';
+import * as preFinanceActions from '@/app/actions/prefinance';
 import * as userActions from '@/app/actions/users';
 import * as auditRoute from '@/app/api/audit/route';
 import * as backupsRoute from '@/app/api/backups/route';
@@ -378,6 +382,58 @@ const settingsCalls: Record<keyof typeof settingsActions, Call> = {
   resetTaxRates: () => settingsActions.resetTaxRates(FORBIDDEN_ENTITY),
 };
 
+/** Every pre-finance Server Function, invoked against the forbidden entity. */
+const preFinanceCalls: Record<keyof typeof preFinanceActions, Call> = {
+  savePreFinanceSettings: () =>
+    preFinanceActions.savePreFinanceSettings(FORBIDDEN_ENTITY, {
+      defaultOutturn: 48,
+      defaultMoisturePct: 8,
+      defaultMoistureMethod: 'weight-deduction',
+      defaultOutturnMethod: 'proportional',
+      flagAfterDays: 14,
+      provisionAfterDays: 60,
+      provisionPct: 50,
+    }),
+  saveFacility: () =>
+    preFinanceActions.saveFacility(FORBIDDEN_ENTITY, {
+      reference: 'FAC-1',
+      limitMinor: 500_000_00,
+      ratePct: '28.5',
+      basis: 'actual/365',
+      startsOn: '2026-09-01',
+    }),
+  closeFacility: () => preFinanceActions.closeFacility(FORBIDDEN_ENTITY, 'facility-1'),
+  drawTranche: () => preFinanceActions.drawTranche(FORBIDDEN_ENTITY, { facilityId: 'facility-1', drawnOn: '2026-09-10', amountMinor: 100_000_00, bankAccountId: 'bank-1' }),
+  repayTranche: () => preFinanceActions.repayTranche(FORBIDDEN_ENTITY, 'tranche-1', { repaidOn: '2026-11-10', bankAccountId: 'bank-1' }),
+  accrueTrancheInterest: () => preFinanceActions.accrueTrancheInterest(FORBIDDEN_ENTITY, 'tranche-1', '2026-10-31'),
+  saveAdvance: () =>
+    preFinanceActions.saveAdvance(FORBIDDEN_ENTITY, {
+      reference: 'ADV-1',
+      aggregatorId: 'contact-1',
+      advancedOn: '2026-09-12',
+      expectedOn: '2026-09-26',
+      amountMinor: 50_000_00,
+      pricePerKgMinor: 950,
+      bankAccountId: 'bank-1',
+      terms: { outturn: 48, moisturePct: 8, moistureMethod: 'weight-deduction', outturnMethod: 'proportional' },
+    }),
+  recordDelivery: () =>
+    preFinanceActions.recordDelivery(FORBIDDEN_ENTITY, { advanceId: 'advance-1', deliveredOn: '2026-09-25', grams: 4_180_000, outturn: 45, moisturePct: 11, outcome: 'carry-forward' }),
+  runAdvanceProvision: () => preFinanceActions.runAdvanceProvision(FORBIDDEN_ENTITY, '2026-09-30'),
+  writeOffAdvance: () => preFinanceActions.writeOffAdvance(FORBIDDEN_ENTITY, 'advance-1', { onDate: '2026-12-31', reason: 'Gone' }),
+  setExposureLimit: () => preFinanceActions.setExposureLimit(FORBIDDEN_ENTITY, 'contact-1', 100_000_00),
+  saveCycle: () => preFinanceActions.saveCycle(FORBIDDEN_ENTITY, { reference: 'CYC-1', drawnOn: '2026-09-10', drawnMinor: 100_000_00 }),
+  readAggregatorExposure: () => preFinanceActions.readAggregatorExposure(FORBIDDEN_ENTITY, 'contact-1'),
+};
+
+/**
+ * The pre-finance calls that change something. readAggregatorExposure only
+ * reads, under reports:view, so a Viewer is allowed it and it does not belong
+ * in the tests that assert a Viewer is refused.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const { readAggregatorExposure: _readExposure, ...preFinanceChanges } = preFinanceCalls;
+
 /** Every data protection Server Function. None of them is a Viewer's to make. */
 const privacyCalls: Record<keyof typeof privacyActions, Call> = {
   findSubjects: () => privacyActions.findSubjects(FORBIDDEN_ENTITY, 'Akosua'),
@@ -434,6 +490,42 @@ function onlyAccessLookup() {
 // --- coverage guard ----------------------------------------------------------------
 
 describe('coverage', () => {
+  /**
+   * The per-module checks below only reach modules somebody remembered to
+   * import at the top of this file. A whole new actions file could therefore
+   * go uncovered while the suite stayed green — which is exactly the sort of
+   * silence this test exists to prevent. So the directory itself is checked
+   * against the list, and adding a file fails here until it is covered.
+   */
+  it('every actions module is imported and covered, not only the ones already listed', () => {
+    const onDisk = readdirSync(join(process.cwd(), 'src', 'app', 'actions'))
+      .filter((name) => name.endsWith('.ts'))
+      .map((name) => name.replace(/\.ts$/, ''))
+      .sort();
+    const covered = [
+      'assets',
+      'attachments',
+      'cashflow',
+      'chart',
+      'contracts',
+      'documents',
+      'entities',
+      'fx',
+      'grants',
+      'inventory',
+      'momo',
+      'opening',
+      'payroll',
+      'prefinance',
+      'privacy',
+      'settings',
+      'trading',
+      'users',
+      'vat',
+    ].sort();
+    expect(onDisk, 'a Server Function module exists with no coverage in this file').toEqual(covered);
+  });
+
   it('every exported Server Function has a case', () => {
     const exportedDocs = Object.keys(documentActions).filter((k) => typeof (documentActions as Record<string, unknown>)[k] === 'function');
     expect(exportedDocs.sort()).toEqual(Object.keys(documentCalls).sort());
@@ -482,7 +574,7 @@ describe('coverage', () => {
 // --- signed out --------------------------------------------------------------------
 
 describe('signed out', () => {
-  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...attachmentCalls, ...privacyCalls, ...chartCalls, ...settingsCalls, ...userCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...attachmentCalls, ...privacyCalls, ...chartCalls, ...settingsCalls, ...preFinanceCalls, ...userCalls })) {
     if (!call) continue;
     it(`${name} is refused without touching the database`, async () => {
       expect(isRefusal(await call())).toBe(true);
@@ -502,7 +594,7 @@ describe('signed out', () => {
 describe('an Accountant on Sprouted Roots asking for Oikazi', () => {
   beforeEach(() => signIn({ role: 'accountant' }, [GRANTED_ENTITY]));
 
-  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...attachmentCalls, ...privacyCalls, ...chartCalls, ...settingsCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...attachmentCalls, ...privacyCalls, ...chartCalls, ...settingsCalls, ...preFinanceCalls })) {
     if (!call) continue;
     it(`${name} is refused and reads nothing`, async () => {
       const result = await call();
@@ -558,7 +650,7 @@ describe('a Viewer with access to Oikazi', () => {
   }
 
   it('cannot touch rates, banks, the functional currency, revaluation or VAT registration, even on their own entity', async () => {
-    for (const [name, call] of Object.entries({ ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...attachmentCalls, ...privacyCalls, ...chartCalls, ...settingsCalls })) {
+    for (const [name, call] of Object.entries({ ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...attachmentCalls, ...privacyCalls, ...chartCalls, ...settingsCalls, ...preFinanceChanges })) {
       if (name === 'listExchangeRates' || openingReads.has(name) || momoReads.has(name) || grantReads.has(name) || cashflowReads.has(name) || assetReads.has(name) || payrollReads.has(name) || attachmentReads.has(name)) continue; // reads are reports:view
       dbCalls.length = 0;
       const result = await call();

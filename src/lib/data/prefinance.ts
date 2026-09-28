@@ -388,11 +388,17 @@ export async function aggregatorExposure(entityId: string, aggregatorId: string)
     prisma.contact.findFirst({ where: { id: aggregatorId }, select: { name: true, exposureLimitMinor: true } }),
     prisma.aggregatorAdvance.findMany({
       where: { entityId, aggregatorId, status: 'OPEN' },
-      select: { amountMinor: true, deliveries: { select: { settledValueMinor: true } } },
+      select: { amountMinor: true, deliveries: { select: { settledValueMinor: true, varianceMinor: true } } },
     }),
     prisma.aggregatorAdvance.findMany({
       where: { entityId, aggregatorId, status: { in: ['SETTLED', 'WRITTEN_OFF'] } },
-      select: { amountMinor: true, advancedOn: true, settledOn: true, deliveries: { select: { settledValueMinor: true } } },
+      select: {
+        amountMinor: true,
+        advancedOn: true,
+        settledOn: true,
+        status: true,
+        deliveries: { select: { settledValueMinor: true, varianceMinor: true } },
+      },
     }),
   ]);
   if (!contact) return null;
@@ -402,17 +408,28 @@ export async function aggregatorExposure(entityId: string, aggregatorId: string)
     return sum + Math.max(toMinor(advance.amountMinor) - delivered, 0);
   }, 0);
 
+  const everyAdvance = [...open, ...settled];
+  const everyDelivery = everyAdvance.flatMap((advance) => advance.deliveries);
+
+  // What was never recovered: an advance marked written off, less whatever did
+  // arrive against it. That is the figure a track record turns on.
+  const unrecoveredMinor = settled
+    .filter((advance) => advance.status === 'WRITTEN_OFF')
+    .reduce((sum, advance) => {
+      const delivered = advance.deliveries.reduce((total, delivery) => total + toMinor(delivery.settledValueMinor), 0);
+      return sum + Math.max(toMinor(advance.amountMinor) - delivered, 0);
+    }, 0);
+
   return {
     name: contact.name,
     exposureLimitMinor: contact.exposureLimitMinor === null ? null : toMinor(contact.exposureLimitMinor),
     outstandingMinor,
     openCount: open.length,
     completedCount: settled.length,
-    advancedMinor: [...open, ...settled].reduce((sum, advance) => sum + toMinor(advance.amountMinor), 0),
-    deliveredValueMinor: [...open, ...settled].reduce(
-      (sum, advance) => sum + advance.deliveries.reduce((total, delivery) => total + toMinor(delivery.settledValueMinor), 0),
-      0,
-    ),
+    advancedMinor: everyAdvance.reduce((sum, advance) => sum + toMinor(advance.amountMinor), 0),
+    deliveredValueMinor: everyDelivery.reduce((sum, delivery) => sum + toMinor(delivery.settledValueMinor), 0),
+    qualityVariances: everyDelivery.map((delivery) => toMinor(delivery.varianceMinor)),
+    unrecoveredMinor,
     daysToDeliver: settled
       .filter((advance) => advance.settledOn !== null)
       .map((advance) => Math.round((advance.settledOn!.getTime() - advance.advancedOn.getTime()) / 86_400_000)),
