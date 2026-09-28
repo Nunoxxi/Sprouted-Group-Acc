@@ -40,6 +40,7 @@ import { BuyingPanel } from '@/components/app/buying-panel';
 import { ContractsPanel } from '@/components/app/contracts-panel';
 import { OpeningPanel } from '@/components/app/opening-panel';
 import { AssetsPanel } from '@/components/app/assets-panel';
+import { PreFinancePanel } from '@/components/app/prefinance-panel';
 import { PayrollPanel } from '@/components/app/payroll-panel';
 import { Attachments } from '@/components/app/attachments';
 import { InboxPanel } from '@/components/app/inbox-panel';
@@ -99,6 +100,7 @@ const navigationItems = [
   'Tax',
   'Inventory',
   'Buying',
+  'Pre-finance',
   'Contracts',
   'Reports',
   'Personal data',
@@ -4809,6 +4811,20 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
               runs={initialData.depreciationRunsByEntity[selectedEntity.id] ?? []}
               classes={initialData.allowanceClassesByEntity[selectedEntity.id] ?? []}
               taxYears={initialData.taxYearsByEntity[selectedEntity.id] ?? []}
+              contacts={contacts}
+              bankAccounts={entityBankAccounts}
+              allowed={allowed}
+            />
+          ) : activeNav === 'Pre-finance' ? (
+            <PreFinancePanel
+              key={selectedEntity.id}
+              entity={selectedEntity}
+              settings={initialData.preFinanceSettingsByEntity[selectedEntity.id]}
+              facilities={initialData.facilitiesByEntity[selectedEntity.id] ?? []}
+              tranches={initialData.tranchesByEntity[selectedEntity.id] ?? []}
+              advances={initialData.advancesByEntity[selectedEntity.id] ?? []}
+              deliveries={initialData.advanceDeliveriesByEntity[selectedEntity.id] ?? []}
+              cycles={initialData.preFinanceCyclesByEntity[selectedEntity.id] ?? []}
               contacts={contacts}
               bankAccounts={entityBankAccounts}
               allowed={allowed}

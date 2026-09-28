@@ -356,14 +356,14 @@ export async function loadPreFinanceData(scope: { entityId?: { in: string[] } },
     Object.fromEntries(entityIds.map((id) => [id, grouped[id] ?? []]));
 
   return {
-    settingsByEntity: Object.fromEntries(
+    preFinanceSettingsByEntity: Object.fromEntries(
       entityIds.map((id) => [id, settingRecord(settings.find((row) => row.entityId === id) ?? null, id)]),
     ) as Record<string, PreFinanceSettingRecord>,
     facilitiesByEntity: withAll(groupBy(facilities.map(facilityRecord), (row) => row.entityId)),
     tranchesByEntity: withAll(groupBy(tranches.map(trancheRecord), (row) => row.entityId)),
     advancesByEntity: withAll(groupBy(advances.map(advanceRecord), (row) => row.entityId)),
-    deliveriesByEntity: withAll(groupBy(deliveries.map(deliveryRecord), (row) => row.entityId)),
-    cyclesByEntity: withAll(groupBy(cycles.map(cycleRecord), (row) => row.entityId)),
+    advanceDeliveriesByEntity: withAll(groupBy(deliveries.map(deliveryRecord), (row) => row.entityId)),
+    preFinanceCyclesByEntity: withAll(groupBy(cycles.map(cycleRecord), (row) => row.entityId)),
   };
 }
 

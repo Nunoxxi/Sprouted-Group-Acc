@@ -1095,6 +1095,13 @@ export type InitialData = {
   budgetLinesByEntity: Record<string, ProjectBudgetLineRecord[]>;
   assetCategoriesByEntity: Record<string, AssetCategoryRecord[]>;
   taxRatesByEntity: Record<string, TaxRates>;
+  /** Every entity has these, defaulted, so the panel never guards for a missing row. */
+  preFinanceSettingsByEntity: Record<string, PreFinanceSettingRecord>;
+  facilitiesByEntity: Record<string, LoanFacilityRecord[]>;
+  tranchesByEntity: Record<string, LoanTrancheRecord[]>;
+  advancesByEntity: Record<string, AggregatorAdvanceRecord[]>;
+  advanceDeliveriesByEntity: Record<string, AdvanceDeliveryRecord[]>;
+  preFinanceCyclesByEntity: Record<string, PreFinanceCycleRecord[]>;
   /** False when the server has no PII_ENCRYPTION_KEY: numbers cannot be read back. */
   encryptionConfigured: boolean;
 };

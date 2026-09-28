@@ -45,6 +45,7 @@ import { encryptionConfigured } from '../pii-crypto';
 import { redactInitialData } from './redact';
 import { loadPayrollData } from './payroll';
 import { loadPrivacyData } from './privacy';
+import { loadPreFinanceData } from './prefinance';
 import { loadSettingsData } from './settings';
 import { loadGrantData } from './grants';
 import { bankAccountKindOf, loadMomoData } from './momo';
@@ -324,5 +325,6 @@ async function loadEverything(principal: Principal): Promise<InitialData> {
     ...(await loadAttachmentData(entityScope, entityIds)),
     ...(await loadPrivacyData(entityScope, entityIds)),
     ...(await loadSettingsData(entityScope, entityIds)),
+    ...(await loadPreFinanceData(entityScope, entityIds)),
   };
 }
