@@ -767,7 +767,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
   const visibleNavigation = navigationItems.filter(
     (item) =>
       (item !== 'Tax' || selectedEntity.vatRegistered) &&
-      ((item !== 'Inventory' && item !== 'Buying' && item !== 'Contracts') || holdsStock(selectedEntity.type)) &&
+      ((item !== 'Inventory' && item !== 'Buying' && item !== 'Contracts' && item !== 'Pre-finance') || holdsStock(selectedEntity.type)) &&
       (item !== 'Grants' || runsGrants(selectedEntity.type)),
   );
   // The table's default for this document's currency and date; the document may override it.
@@ -2472,7 +2472,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                     type="button"
                     onClick={() => {
                       setSelectedEntityId(entity.id);
-                      if ((activeNav === 'Tax' && !entity.vatRegistered) || ((activeNav === 'Inventory' || activeNav === 'Buying' || activeNav === 'Contracts') && !holdsStock(entity.type)) || (activeNav === 'Grants' && !runsGrants(entity.type))) {
+                      if ((activeNav === 'Tax' && !entity.vatRegistered) || ((activeNav === 'Inventory' || activeNav === 'Buying' || activeNav === 'Contracts' || activeNav === 'Pre-finance') && !holdsStock(entity.type)) || (activeNav === 'Grants' && !runsGrants(entity.type))) {
                         setActiveNav('Dashboard');
                       }
                       setEntityMenuOpen(false);
@@ -2561,12 +2561,13 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Workspace</p>
               <h1 className="mt-1 text-2xl font-semibold text-slate-900">{activeNav}</h1>
             </div>
-            <div className="flex items-center gap-3">
-              <Button variant="secondary" size="sm">
-                Export
-              </Button>
-              <Button size="sm">Add transaction</Button>
-            </div>
+            {/* There were an Export and an Add transaction button here. Neither
+                ever had anything behind it: they sat on every screen and did
+                nothing when pressed, which reads as the app being broken rather
+                than as the buttons being unfinished. Exporting lives in Reports
+                and in Settings, and every screen already has its own way of
+                adding what belongs on it, so nothing was lost by removing
+                them. */}
           </div>
         </header>
 
