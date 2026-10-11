@@ -47,6 +47,10 @@ const expected: Record<Role, Permission[]> = {
     'export:run',
     'prefinance:manage',
     'prefinance:deliver',
+    'payroll:view',
+    'payroll:prepare',
+    'payroll:approve',
+    'payroll:post',
   ],
   // Keeps the books: enters and posts, reconciles, adds an account. Does not
   // correct a posted entry, close a period or touch a person's data.
@@ -63,6 +67,9 @@ const expected: Record<Role, Permission[]> = {
     'audit:read',
     'export:run',
     'prefinance:deliver',
+    // Prepares payroll; an Accountant or an Owner approves and posts it.
+    'payroll:view',
+    'payroll:prepare',
   ],
   // Field staff telephone farmers and pay them, so they see contact details;
   // they cannot report on a person or erase one.

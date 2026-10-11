@@ -16,6 +16,7 @@ import type {
   CommodityKind as PrismaCommodityKind,
   Contact,
   FloatAdvance,
+  FloatLabourPayment,
   FloatReturn,
   JournalEntry,
   JournalLine,
@@ -102,7 +103,7 @@ export function agentRecord(row: BuyingAgent): BuyingAgentRecord {
 }
 
 export function floatRecord(
-  row: FloatAdvance & { journalEntry: JournalRow | null; returns: (FloatReturn & { journalEntry: JournalRow | null })[]; purchases: Pick<AgentPurchase, 'priceMinor' | 'payableMinor' | 'settlement' | 'status'>[]; createdBy: Pick<User, 'name'> | null; reconciledBy: Pick<User, 'name'> | null },
+  row: FloatAdvance & { journalEntry: JournalRow | null; returns: (FloatReturn & { journalEntry: JournalRow | null })[]; labour: FloatLabourPayment[]; purchases: Pick<AgentPurchase, 'priceMinor' | 'payableMinor' | 'settlement' | 'status'>[]; createdBy: Pick<User, 'name'> | null; reconciledBy: Pick<User, 'name'> | null },
 ): FloatAdvanceRecord {
   return {
     id: row.id,
@@ -118,6 +119,8 @@ export function floatRecord(
     // What left the float: purchases the agent settled, net of any advance recovered
     // (the farmer was handed the net, so only the net came out of the float).
     purchasedMinor: row.purchases.filter((p) => p.status === 'POSTED' && p.settlement === 'FLOAT').reduce((s, p) => s + toMinor(p.payableMinor), 0),
+    labour: row.labour.map((l) => ({ id: l.id, date: isoDate(l.date), description: l.description, workers: l.workers, amountMinor: toMinor(l.amountMinor) })),
+    labourMinor: row.labour.reduce((s, l) => s + toMinor(l.amountMinor), 0),
     reconciledAt: row.reconciledAt ? row.reconciledAt.toISOString() : null,
     reconciledByName: row.reconciledBy?.name ?? null,
     createdByName: row.createdBy?.name ?? '',
@@ -174,7 +177,7 @@ export function purchaseRecord(row: PurchaseRow): AgentPurchaseRecord {
 }
 
 export const lotInclude = { supplier: { select: { name: true } }, createdBy: { select: { name: true } }, documentLine: { select: { documentId: true } }, agentPurchase: { select: { id: true } } } as const;
-export const floatInclude = { journalEntry: { include: journalInclude }, returns: { include: { journalEntry: { include: journalInclude } } }, purchases: { select: { priceMinor: true, payableMinor: true, settlement: true, status: true } }, createdBy: { select: { name: true } }, reconciledBy: { select: { name: true } } } as const;
+export const floatInclude = { journalEntry: { include: journalInclude }, returns: { include: { journalEntry: { include: journalInclude } } }, purchases: { select: { priceMinor: true, payableMinor: true, settlement: true, status: true } }, labour: { orderBy: { date: 'asc' } }, createdBy: { select: { name: true } }, reconciledBy: { select: { name: true } } } as const;
 export const purchaseInclude = {
   journalEntry: { include: journalInclude },
   createdBy: { select: { name: true } },

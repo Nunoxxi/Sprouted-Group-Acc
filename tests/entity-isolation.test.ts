@@ -4,8 +4,8 @@
  *
  * The authorization layer is the real one (src/lib/dal.ts + src/lib/authz.ts).
  * What is faked is underneath it: the session Better Auth would return, and
- * the database. The database fake answers exactly one query — the
- * principal's own entity-access rows — and records every other call, so a
+ * the database. The database fake answers exactly one query â€” the
+ * principal's own entity-access rows â€” and records every other call, so a
  * test can assert not only that a request was refused but that nothing was
  * read or written on the way to refusing it.
  *
@@ -39,7 +39,7 @@ const { state, dbCalls, scopeProbe, UnexpectedDatabaseAccess, prismaFake } = vi.
     }
   }
 
-  /** prisma.<model>.<method>(...) → recorded; only userEntityAccess.findMany answers. */
+  /** prisma.<model>.<method>(...) â†’ recorded; only userEntityAccess.findMany answers. */
   const prismaFake: Record<string, unknown> = new Proxy(
   {},
   {
@@ -120,6 +120,8 @@ import * as grantActions from '@/app/actions/grants';
 import * as cashflowActions from '@/app/actions/cashflow';
 import * as assetActions from '@/app/actions/assets';
 import * as payrollActions from '@/app/actions/payroll';
+import * as payrollSettingsActions from '@/app/actions/payroll-settings';
+import * as payrollRatesActions from '@/app/actions/payroll-rates';
 import * as attachmentActions from '@/app/actions/attachments';
 import * as privacyActions from '@/app/actions/privacy';
 import * as chartActions from '@/app/actions/chart';
@@ -128,7 +130,7 @@ import * as preFinanceActions from '@/app/actions/prefinance';
 import * as userActions from '@/app/actions/users';
 import * as auditRoute from '@/app/api/audit/route';
 import * as backupsRoute from '@/app/api/backups/route';
-import { roles } from '@/lib/authz';
+import { roleHas, roles } from '@/lib/authz';
 import { getPrincipal } from '@/lib/dal';
 import { loadInitialData } from '@/lib/data/documents';
 
@@ -205,6 +207,7 @@ const tradingCalls: Record<keyof typeof tradingActions, Call> = {
   setFloatAgeLimit: () => tradingActions.setFloatAgeLimit(FORBIDDEN_ENTITY, 14),
   advanceFloat: () => tradingActions.advanceFloat(FORBIDDEN_ENTITY, { agentId: 'a', date: '2026-09-21', amountMinor: 100, bankAccountId: 'b' }),
   returnFloatCash: () => tradingActions.returnFloatCash(FORBIDDEN_ENTITY, { floatId: 'f', date: '2026-09-21', amountMinor: 100, bankAccountId: 'b' }),
+  recordFloatLabour: () => tradingActions.recordFloatLabour(FORBIDDEN_ENTITY, { floatId: 'f', date: '2026-09-21', description: 'Loading', workers: 4, amountMinor: 100 }),
   reconcileFloat: () => tradingActions.reconcileFloat(FORBIDDEN_ENTITY, 'f'),
   syncAgentPurchases: () => tradingActions.syncAgentPurchases(FORBIDDEN_ENTITY, [{ clientRef: 'x', agentId: 'a', date: '2026-09-21', farmerName: 'F', itemId: 'i', grams: 1, priceMinor: 1, paymentMethod: 'cash' }]),
   postAgentPurchases: () => tradingActions.postAgentPurchases(FORBIDDEN_ENTITY, ['p']),
@@ -324,19 +327,60 @@ const assetCalls: Record<keyof typeof assetActions, Call> = {
 /** The one asset read a Viewer may make on their own entity. */
 const assetReads = new Set(['taxWorksheet']);
 
-/** Every payroll import Server Function. */
-const payrollCalls: Record<keyof typeof payrollActions, Call> = {
-  setPayrollDueDays: () => payrollActions.setPayrollDueDays(FORBIDDEN_ENTITY, 15, 14),
-  savePayrollMapping: () => payrollActions.savePayrollMapping(FORBIDDEN_ENTITY, { name: 'Summary', employeeNameColumn: 'Name', grossColumn: 'Gross' }),
-  savePayrollDepartment: () => payrollActions.savePayrollDepartment(FORBIDDEN_ENTITY, 'Programmes', '6020'),
-  savePayrollAllocation: () => payrollActions.savePayrollAllocation(FORBIDDEN_ENTITY, { employeeKey: 'E001', grantId: 'grant', pct: '60' }),
-  removePayrollAllocation: () => payrollActions.removePayrollAllocation(FORBIDDEN_ENTITY, 'allocation'),
-  importPayroll: () => payrollActions.importPayroll(FORBIDDEN_ENTITY, { period: '2026-09', payDate: '2026-09-28', mappingId: 'mapping', fileName: 'p.csv', csv: 'Name,Gross\nAma,100.00' }),
-  payPayrollLiability: () => payrollActions.payPayrollLiability(FORBIDDEN_ENTITY, { liabilityId: 'liability', date: '2026-10-15', amountMinor: 1000, bankAccountId: 'bank' }),
-  payrollAllocationTotal: () => payrollActions.payrollAllocationTotal(FORBIDDEN_ENTITY, 'E001'),
+/**
+ * Every payroll Server Function that belongs to an entity. The group export
+ * spans entities and is tested on its own below.
+ */
+const payrollCalls: Record<Exclude<keyof typeof payrollActions, 'exportGroupPayrollReport'>, Call> = {
+  saveEmployee: () =>
+    payrollActions.saveEmployee(FORBIDDEN_ENTITY, {
+      staffNumber: 'S001',
+      name: 'Ama',
+      startDate: '2026-01-01',
+      employmentType: 'permanent',
+      residency: 'resident',
+      expenseAccountCode: '6001',
+      payMethod: 'bank',
+      bankAccountNumber: '123',
+      basicMinor: 100000,
+      juniorStaffOvertime: false,
+      tier3Minor: 0,
+      benefitsInKind: [],
+      reliefs: { marriage: false, childrenInEducation: 0, agedDependants: 0, disability: false, oldAge: false },
+    }),
+  saveAllowance: () => payrollActions.saveAllowance(FORBIDDEN_ENTITY, { employeeId: 'e', name: 'Transport', amountMinor: 100, taxable: true, pensionable: false }),
+  endAllowance: () => payrollActions.endAllowance(FORBIDDEN_ENTITY, 'a'),
+  setAllocations: () => payrollActions.setAllocations(FORBIDDEN_ENTITY, 'e', [{ projectId: 'p', shareBasisPoints: 10000 }]),
+  issueStaffLoan: () => payrollActions.issueStaffLoan(FORBIDDEN_ENTITY, { employeeId: 'e', kind: 'loan', description: 'Loan', principalMinor: 1000, instalmentMinor: 100, issuedOn: '2026-10-01', firstPeriod: '2026-10', bankAccountId: 'b' }),
+  createPayRun: () => payrollActions.createPayRun(FORBIDDEN_ENTITY, '2026-10'),
+  recalculatePayRun: () => payrollActions.recalculatePayRun(FORBIDDEN_ENTITY, 'r'),
+  setPayLineInputs: () => payrollActions.setPayLineInputs(FORBIDDEN_ENTITY, 'l', { bonusMinor: 0, overtimeMinor: 0 }),
+  approvePayRun: () => payrollActions.approvePayRun(FORBIDDEN_ENTITY, 'r'),
+  reopenPayRun: () => payrollActions.reopenPayRun(FORBIDDEN_ENTITY, 'r'),
+  postPayRun: () => payrollActions.postPayRun(FORBIDDEN_ENTITY, 'r'),
+  reversePayRun: () => payrollActions.reversePayRun(FORBIDDEN_ENTITY, 'r', 'Wrong'),
+  payRemittance: () => payrollActions.payRemittance(FORBIDDEN_ENTITY, 'x', { paidOn: '2026-11-14', reference: 'R1', bankAccountId: 'b' }),
+  downloadPayslip: () => payrollActions.downloadPayslip(FORBIDDEN_ENTITY, 'l'),
+  emailPayslip: () => payrollActions.emailPayslip(FORBIDDEN_ENTITY, 'l'),
+  exportPayrollReport: () => payrollActions.exportPayrollReport(FORBIDDEN_ENTITY, 'paye', '2026-10'),
 };
-/** The one payroll read a Viewer may make on their own entity. */
-const payrollReads = new Set(['payrollAllocationTotal']);
+const groupPayrollCalls = { exportGroupPayrollReport: () => payrollActions.exportGroupPayrollReport('labour-cost', '2026-01', '2026-10') };
+
+/** Every per-entity payroll settings Server Function. */
+const payrollSettingsCalls: Record<keyof typeof payrollSettingsActions, Call> = {
+  savePayrollSettings: () => payrollSettingsActions.savePayrollSettings(FORBIDDEN_ENTITY, { payrollEnabled: true, payDay: 28, tier3Offered: false, prorationBasis: 'calendar-days' }),
+};
+
+/**
+ * Every statutory payroll rate Server Function. National reference data, not
+ * tied to any entity: refused to anyone but an Owner, like user management.
+ */
+const payrollRatesCalls: Record<keyof typeof payrollRatesActions, Call> = {
+  addRateVersion: () => payrollRatesActions.addRateVersion({ key: 'ssnit.employee', effectiveFrom: '2026-07-01', rows: [{ rateBasisPoints: 550, amountMinor: null, maxCount: null }], verified: false }),
+  correctPlaceholderRates: () => payrollRatesActions.correctPlaceholderRates({ key: 'ssnit.employee', effectiveFrom: '2026-01-01', rows: [{ rateBasisPoints: 550, amountMinor: null, maxCount: null }], verified: false }),
+  verifyRates: () => payrollRatesActions.verifyRates('ssnit.employee', '2026-01-01', 'GRA notice'),
+  endRates: () => payrollRatesActions.endRates('ssnit.employee', '2026-01-01', '2026-06-30'),
+};
 
 /** Every attachment Server Function. */
 const attachmentCalls: Record<keyof typeof attachmentActions, Call> = {
@@ -493,7 +537,7 @@ describe('coverage', () => {
   /**
    * The per-module checks below only reach modules somebody remembered to
    * import at the top of this file. A whole new actions file could therefore
-   * go uncovered while the suite stayed green — which is exactly the sort of
+   * go uncovered while the suite stayed green â€” which is exactly the sort of
    * silence this test exists to prevent. So the directory itself is checked
    * against the list, and adding a file fails here until it is covered.
    */
@@ -516,6 +560,8 @@ describe('coverage', () => {
       'momo',
       'opening',
       'payroll',
+      'payroll-rates',
+      'payroll-settings',
       'prefinance',
       'privacy',
       'settings',
@@ -553,8 +599,12 @@ describe('coverage', () => {
     expect(exportedCashflow.sort()).toEqual(Object.keys(cashflowCalls).sort());
     const exportedAssets = Object.keys(assetActions).filter((k) => typeof (assetActions as Record<string, unknown>)[k] === 'function');
     expect(exportedAssets.sort()).toEqual(Object.keys(assetCalls).sort());
-    const exportedPayroll = Object.keys(payrollActions).filter((k) => typeof (payrollActions as Record<string, unknown>)[k] === 'function');
-    expect(exportedPayroll.sort()).toEqual(Object.keys(payrollCalls).sort());
+    const exportedPayrollRun = Object.keys(payrollActions).filter((k) => typeof (payrollActions as Record<string, unknown>)[k] === 'function');
+    expect(exportedPayrollRun.sort()).toEqual([...Object.keys(payrollCalls), ...Object.keys(groupPayrollCalls)].sort());
+    const exportedPayroll = Object.keys(payrollSettingsActions).filter((k) => typeof (payrollSettingsActions as Record<string, unknown>)[k] === 'function');
+    expect(exportedPayroll.sort()).toEqual(Object.keys(payrollSettingsCalls).sort());
+    const exportedRates = Object.keys(payrollRatesActions).filter((k) => typeof (payrollRatesActions as Record<string, unknown>)[k] === 'function');
+    expect(exportedRates.sort()).toEqual(Object.keys(payrollRatesCalls).sort());
     const exportedAttachments = Object.keys(attachmentActions).filter((k) => typeof (attachmentActions as Record<string, unknown>)[k] === 'function');
     expect(exportedAttachments.sort()).toEqual(Object.keys(attachmentCalls).sort());
     const exportedPrivacy = Object.keys(privacyActions).filter((k) => typeof (privacyActions as Record<string, unknown>)[k] === 'function');
@@ -574,7 +624,7 @@ describe('coverage', () => {
 // --- signed out --------------------------------------------------------------------
 
 describe('signed out', () => {
-  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...attachmentCalls, ...privacyCalls, ...chartCalls, ...settingsCalls, ...preFinanceCalls, ...userCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...payrollSettingsCalls, ...attachmentCalls, ...privacyCalls, ...chartCalls, ...settingsCalls, ...preFinanceCalls, ...userCalls, ...payrollRatesCalls, ...groupPayrollCalls })) {
     if (!call) continue;
     it(`${name} is refused without touching the database`, async () => {
       expect(isRefusal(await call())).toBe(true);
@@ -594,7 +644,7 @@ describe('signed out', () => {
 describe('an Accountant on Sprouted Roots asking for Oikazi', () => {
   beforeEach(() => signIn({ role: 'accountant' }, [GRANTED_ENTITY]));
 
-  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...attachmentCalls, ...privacyCalls, ...chartCalls, ...settingsCalls, ...preFinanceCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...payrollSettingsCalls, ...attachmentCalls, ...privacyCalls, ...chartCalls, ...settingsCalls, ...preFinanceCalls })) {
     if (!call) continue;
     it(`${name} is refused and reads nothing`, async () => {
       const result = await call();
@@ -611,13 +661,18 @@ describe('an Accountant on Sprouted Roots asking for Oikazi', () => {
     });
   }
 
-  it('sees only Sprouted Roots in the initial data — in the query itself, not after', async () => {
+  it('sees only Sprouted Roots in the initial data â€” in the query itself, not after', async () => {
     signIn({ id: 'scope-probe', role: 'accountant' }, [GRANTED_ENTITY]);
     const principal = await getPrincipal();
     expect(principal).not.toBeNull();
     await loadInitialData(principal!);
 
-    const entityScoped = scopeProbe.filter((probe) => probe.call !== 'contact.findMany');
+    // The statutory payroll rates are national law, held once for every
+    // entity, and say nothing about any of them: the one read that is not
+    // scoped, by design (CLAUDE.md). It must stay the only one.
+    const national = new Set(['statutoryRate.findMany']);
+    expect(scopeProbe.filter((probe) => national.has(probe.call)).map((probe) => (probe.args as { where: object }).where)).toEqual([{ withdrawnAt: null }]);
+    const entityScoped = scopeProbe.filter((probe) => probe.call !== 'contact.findMany' && !national.has(probe.call));
     expect(entityScoped.length).toBeGreaterThanOrEqual(6);
     for (const probe of entityScoped) {
       const where = (probe.args as { where: { entityId?: { in: string[] }; id?: { in: string[] } } }).where;
@@ -650,8 +705,8 @@ describe('a Viewer with access to Oikazi', () => {
   }
 
   it('cannot touch rates, banks, the functional currency, revaluation or VAT registration, even on their own entity', async () => {
-    for (const [name, call] of Object.entries({ ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...attachmentCalls, ...privacyCalls, ...chartCalls, ...settingsCalls, ...preFinanceChanges })) {
-      if (name === 'listExchangeRates' || openingReads.has(name) || momoReads.has(name) || grantReads.has(name) || cashflowReads.has(name) || assetReads.has(name) || payrollReads.has(name) || attachmentReads.has(name)) continue; // reads are reports:view
+    for (const [name, call] of Object.entries({ ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...payrollSettingsCalls, ...attachmentCalls, ...privacyCalls, ...chartCalls, ...settingsCalls, ...preFinanceChanges })) {
+      if (name === 'listExchangeRates' || openingReads.has(name) || momoReads.has(name) || grantReads.has(name) || cashflowReads.has(name) || assetReads.has(name) || attachmentReads.has(name)) continue; // reads are reports:view
       dbCalls.length = 0;
       const result = await call();
       expect(isRefusal(result), name).toBe(true);
@@ -671,7 +726,7 @@ describe('roles that are not Owner', () => {
   // Every role that is not an Owner, taken from the tuple so a new one is
   // covered here the day it is added.
   for (const role of roles.filter((name) => name !== 'owner')) {
-    for (const [name, call] of Object.entries(userCalls)) {
+    for (const [name, call] of Object.entries({ ...userCalls, ...payrollRatesCalls })) {
       it(`${role}: ${name} is refused and reads nothing`, async () => {
         signIn({ role }, [GRANTED_ENTITY, FORBIDDEN_ENTITY]);
         expect(isRefusal(await call())).toBe(true);
@@ -688,6 +743,14 @@ describe('roles that are not Owner', () => {
       signIn({ role }, [GRANTED_ENTITY]);
       const result = await vatActions.setVatRegistration(GRANTED_ENTITY, { registered: true, registeredFrom: '2026-10-01' });
       expect(isRefusal(result)).toBe(true);
+      onlyAccessLookup();
+    });
+  }
+
+  for (const role of roles.filter((name) => !roleHas(name, 'payroll:view'))) {
+    it(`${role}: cannot export a payroll report across the group`, async () => {
+      signIn({ role }, [GRANTED_ENTITY, FORBIDDEN_ENTITY]);
+      expect(isRefusal(await groupPayrollCalls.exportGroupPayrollReport())).toBe(true);
       onlyAccessLookup();
     });
   }
@@ -745,7 +808,7 @@ describe('stale sessions', () => {
 describe('positive control: the guard is what stopped the calls above', () => {
   it('an Accountant on Oikazi posting to Oikazi gets past the guard to the document lookup', async () => {
     signIn({ role: 'accountant' }, [FORBIDDEN_ENTITY]);
-    // The fake database refuses the first real read, so the call throws — and
+    // The fake database refuses the first real read, so the call throws â€” and
     // the name of that read is the proof the guard let it through.
     await expect(documentActions.postDocument(FORBIDDEN_ENTITY, 'doc-1')).rejects.toThrow('unexpected database access: entity.findUnique');
     expect(dbCalls).toEqual(['userEntityAccess.findMany', 'entity.findUnique']);

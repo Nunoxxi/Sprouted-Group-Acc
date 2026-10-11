@@ -52,6 +52,9 @@ describe('the register of personal data', () => {
       'AgentPurchase.evidenceData',
       'FarmerPayment.walletNumber',
       'BuyingAgent.phone',
+      'Employee.email',
+      'Employee.bankAccountNumber',
+      'Employee.momoNumber',
       'Contact.phone',
       'Contact.email',
       'Contact.address',
@@ -246,12 +249,13 @@ describe('erasure', () => {
     expect(plan.kept.map((row) => row.field)).toContain('tin');
   });
 
-  it("a member of staff loses their payroll reference too, since it names them just as surely", () => {
+  it("a member of staff loses their name everywhere it appears, and the numbers that reach them", () => {
     const plan = erasurePlan('employee', 'Member of staff X');
     const replaced = plan.replaced.map((row) => `${row.model}.${row.field}`);
-    expect(replaced).toContain('PayrollLine.employeeRef');
-    expect(replaced).toContain('PayrollLine.employeeName');
     expect(replaced).toContain('FixedAsset.custodian');
+    expect(replaced).toContain('Employee.name');
+    expect(plan.removed.map((row) => `${row.model}.${row.field}`)).toEqual(['Employee.email', 'Employee.bankAccountNumber', 'Employee.momoNumber']);
+    expect(plan.kept.map((row) => `${row.model}.${row.field}`)).toEqual(['Employee.tin', 'Employee.ssnitNumber']);
   });
 
   it('every kind of person can be erased', () => {

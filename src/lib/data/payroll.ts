@@ -1,222 +1,368 @@
 /**
- * Payroll readers: the saved column mappings, the departments and the
- * accounts their pay goes to, each month's run with its people and what it
- * left owing, and the percentages that split a person's cost across grants.
+ * Readers for payroll: employees and their pay, staff loans, pay runs with
+ * their lines and journals, what the runs left owing, and the facts the
+ * reports are built from.
  *
- * No payroll is computed here or anywhere in the app. These read what was
- * imported.
+ * Only someone who holds payroll:view is sent any of it (loadPayrollData is
+ * given that answer by the caller); src/lib/data/redact.ts then masks the
+ * numbers that identify a person, as it does for contacts and farmers.
  */
 
-import type {
-  Account,
-  BankAccount,
-  Grant,
-  GrantBudgetLine,
-  JournalEntry,
-  JournalLine,
-  PayrollAllocation,
-  PayrollDepartment,
-  PayrollLiability,
-  PayrollLiabilityKind,
-  PayrollLiabilityPayment,
-  PayrollLine,
-  PayrollMapping,
-  PayrollRun,
-  User,
-} from '@prisma/client';
+import type { Account, Employee, EmployeeAllocation, EmployeeAllowance, JournalEntry, JournalLine, PayRun, PayRunDeduction, PayRunLine, PayrollRemittance, Prisma, StaffLoan } from '@prisma/client';
 
-import type { LiabilityKind } from '../payroll';
+import type { BenefitKind, EmploymentType, PayInput, PayResult, Residency } from '../payroll-engine';
+import { payrollAccounts } from '../payroll-accounts';
+import { factOf, type PayLineFact } from '../payroll-reports';
+import { runTotals, type RemittanceKind, type RunTotals } from '../payroll-run';
+import { decryptField } from '../pii-crypto';
 import { prisma } from '../prisma';
 import { postedJournal } from './documents';
 import { toMinor } from './money';
-import type { PayrollAllocationRecord, PayrollDepartmentRecord, PayrollLiabilityRecord, PayrollMappingRecord, PayrollRunRecord } from './types';
-
-type JournalRow = JournalEntry & { lines: (JournalLine & { account: Pick<Account, 'code' | 'name'> })[] };
-const journalInclude = { lines: { include: { account: { select: { code: true, name: true } } } } } as const;
+import type { PostedJournal } from './types';
 
 const isoDate = (value: Date) => value.toISOString().slice(0, 10);
-const pctText = (value: { toString(): string }) => {
-  const text = value.toString();
-  return text.includes('.') ? text.replace(/0+$/, '').replace(/\.$/, '') : text;
+
+// --- employees --------------------------------------------------------------------------------
+
+export type EmployeeRecord = {
+  id: string;
+  entityId: string;
+  staffNumber: string;
+  name: string;
+  email: string;
+  tin: string;
+  ssnitNumber: string;
+  startDate: string;
+  endDate: string | null;
+  employmentType: EmploymentType;
+  residency: Residency;
+  department: string;
+  expenseAccountCode: string;
+  payMethod: 'bank' | 'mobile-money';
+  bankName: string;
+  bankAccountNumber: string;
+  momoNumber: string;
+  basicMinor: number;
+  juniorStaffOvertime: boolean;
+  tier3Minor: number;
+  benefitsInKind: BenefitKind[];
+  reliefs: { marriage: boolean; childrenInEducation: number; agedDependants: number; disability: boolean; oldAge: boolean };
+  allowances: { id: string; name: string; amountMinor: number; taxable: boolean; pensionable: boolean }[];
+  allocations: { id: string; projectId: string; shareBasisPoints: number }[];
 };
 
-// --- enum translations ------------------------------------------------------------
+export const employmentTypeOf: Record<Employee['employmentType'], EmploymentType> = { PERMANENT: 'permanent', CONTRACT: 'contract', CASUAL: 'casual' };
+export const employmentTypeToPrisma: Record<EmploymentType, Employee['employmentType']> = { permanent: 'PERMANENT', contract: 'CONTRACT', casual: 'CASUAL' };
+export const residencyOf: Record<Employee['residency'], Residency> = { RESIDENT: 'resident', NON_RESIDENT: 'non-resident' };
+export const residencyToPrisma: Record<Residency, Employee['residency']> = { resident: 'RESIDENT', 'non-resident': 'NON_RESIDENT' };
 
-const kindToRecord: Record<PayrollLiabilityKind, LiabilityKind> = {
-  PAYE: 'paye',
-  SSNIT_TIER_1: 'ssnit-tier-1',
-  SSNIT_TIER_2: 'ssnit-tier-2',
-  NET_PAY: 'net-pay',
-  OTHER_DEDUCTIONS: 'other-deductions',
-};
-export const kindToPrisma: Record<LiabilityKind, PayrollLiabilityKind> = {
-  paye: 'PAYE',
-  'ssnit-tier-1': 'SSNIT_TIER_1',
-  'ssnit-tier-2': 'SSNIT_TIER_2',
-  'net-pay': 'NET_PAY',
-  'other-deductions': 'OTHER_DEDUCTIONS',
-};
-export const liabilityKindOf = (value: PayrollLiabilityKind): LiabilityKind => kindToRecord[value];
+export const employeeInclude = {
+  expenseAccount: { select: { code: true } },
+  allowances: { where: { endedAt: null }, orderBy: { createdAt: 'asc' } },
+  allocations: { where: { endedAt: null }, orderBy: { createdAt: 'asc' } },
+} as const;
 
-// --- row → record ------------------------------------------------------------------
+type EmployeeRow = Employee & { expenseAccount: Pick<Account, 'code'>; allowances: EmployeeAllowance[]; allocations: EmployeeAllocation[] };
 
-export const mappingInclude = { defaultAccount: { select: { code: true } } } as const;
-
-export function mappingRecord(row: PayrollMapping & { defaultAccount: Pick<Account, 'code'> | null }): PayrollMappingRecord {
+export function employeeRecord(row: EmployeeRow): EmployeeRecord {
   return {
     id: row.id,
     entityId: row.entityId,
+    staffNumber: row.staffNumber,
     name: row.name,
-    employeeRefColumn: row.employeeRefColumn ?? '',
-    employeeNameColumn: row.employeeNameColumn,
-    departmentColumn: row.departmentColumn ?? '',
-    grossColumn: row.grossColumn,
-    payeColumn: row.payeColumn ?? '',
-    employeeSsnitColumn: row.employeeSsnitColumn ?? '',
-    employerSsnitColumn: row.employerSsnitColumn ?? '',
-    ssnitTier2Column: row.ssnitTier2Column ?? '',
-    otherDeductionsColumn: row.otherDeductionsColumn ?? '',
-    netColumn: row.netColumn ?? '',
-    defaultAccountCode: row.defaultAccount?.code ?? '',
+    email: decryptField('Employee.email', row.email) ?? '',
+    tin: row.tin ?? '',
+    ssnitNumber: row.ssnitNumber ?? '',
+    startDate: isoDate(row.startDate),
+    endDate: row.endDate ? isoDate(row.endDate) : null,
+    employmentType: employmentTypeOf[row.employmentType],
+    residency: residencyOf[row.residency],
+    department: row.department ?? '',
+    expenseAccountCode: row.expenseAccount.code,
+    payMethod: row.payMethod === 'MOBILE_MONEY' ? 'mobile-money' : 'bank',
+    bankName: row.bankName ?? '',
+    bankAccountNumber: decryptField('Employee.bankAccountNumber', row.bankAccountNumber) ?? '',
+    momoNumber: decryptField('Employee.momoNumber', row.momoNumber) ?? '',
+    basicMinor: toMinor(row.basicMinor),
+    juniorStaffOvertime: row.juniorStaffOvertime,
+    tier3Minor: toMinor(row.tier3Minor),
+    benefitsInKind: row.benefitsInKind as BenefitKind[],
+    reliefs: { marriage: row.marriageRelief, childrenInEducation: row.childrenInEducation, agedDependants: row.agedDependants, disability: row.disabilityRelief, oldAge: row.oldAgeRelief },
+    allowances: row.allowances.map((a) => ({ id: a.id, name: a.name, amountMinor: toMinor(a.amountMinor), taxable: a.taxable, pensionable: a.pensionable })),
+    allocations: row.allocations.map((a) => ({ id: a.id, projectId: a.projectId, shareBasisPoints: a.shareBasisPoints })),
   };
 }
 
-export const departmentInclude = { account: { select: { code: true, name: true } } } as const;
+// --- loans ------------------------------------------------------------------------------------
 
-export function departmentRecord(row: PayrollDepartment & { account: Pick<Account, 'code' | 'name'> }): PayrollDepartmentRecord {
-  return { id: row.id, entityId: row.entityId, name: row.name, accountCode: row.account.code, accountName: row.account.name };
-}
-
-export const runInclude = {
-  mapping: { select: { name: true } },
-  postedBy: { select: { name: true } },
-  journalEntry: { include: journalInclude },
-  lines: { orderBy: { employeeName: 'asc' } },
-  liabilities: { include: { payments: { include: { bankAccount: { select: { name: true } } }, orderBy: { date: 'asc' } } } },
-} as const;
-
-type RunRow = PayrollRun & {
-  mapping: Pick<PayrollMapping, 'name'> | null;
-  postedBy: Pick<User, 'name'> | null;
-  journalEntry: JournalRow | null;
-  lines: PayrollLine[];
-  liabilities: (PayrollLiability & { payments: (PayrollLiabilityPayment & { bankAccount: Pick<BankAccount, 'name'> })[] })[];
+export type StaffLoanRecord = {
+  id: string;
+  entityId: string;
+  employeeId: string;
+  kind: 'loan' | 'advance';
+  description: string;
+  principalMinor: number;
+  instalmentMinor: number;
+  issuedOn: string;
+  firstPeriod: string;
+  /** Instalments taken on posted, unreversed runs. */
+  repaidMinor: number;
+  outstandingMinor: number;
+  repayments: { period: string; amountMinor: number }[];
 };
 
-export function runRecord(row: RunRow): PayrollRunRecord {
-  const grossMinor = toMinor(row.grossMinor);
-  const employerSsnitMinor = toMinor(row.employerSsnitMinor);
-  const ssnitTier2Minor = toMinor(row.ssnitTier2Minor);
+export const loanInclude = { repayments: { include: { line: { include: { run: { select: { period: true, status: true } } } } } } } as const;
+type LoanRow = StaffLoan & { repayments: (PayRunDeduction & { line: PayRunLine & { run: Pick<PayRun, 'period' | 'status'> } })[] };
+
+export function staffLoanRecord(row: LoanRow): StaffLoanRecord {
+  const repayments = row.repayments
+    .filter((r) => r.line.run.status === 'POSTED')
+    .map((r) => ({ period: r.line.run.period, amountMinor: toMinor(r.amountMinor) }))
+    .sort((a, b) => a.period.localeCompare(b.period));
+  const repaidMinor = repayments.reduce((sum, r) => sum + r.amountMinor, 0);
+  return {
+    id: row.id,
+    entityId: row.entityId,
+    employeeId: row.employeeId,
+    kind: row.kind === 'advance' ? 'advance' : 'loan',
+    description: row.description,
+    principalMinor: toMinor(row.principalMinor),
+    instalmentMinor: toMinor(row.instalmentMinor),
+    issuedOn: isoDate(row.issuedOn),
+    firstPeriod: row.firstPeriod,
+    repaidMinor,
+    outstandingMinor: toMinor(row.principalMinor) - repaidMinor,
+    repayments,
+  };
+}
+
+// --- pay runs ---------------------------------------------------------------------------------
+
+/** What a line's inputsJson holds: everything a re-run of this line starts from. */
+export type StoredLineInputs = {
+  input: PayInput;
+  allocations: { projectId: string; fundId: string | null; shareBasisPoints: number }[];
+  expenseAccountCode: string;
+  deductions: { loanId: string | null; name: string; amountMinor: number }[];
+};
+
+export type PayRunLineRecord = {
+  id: string;
+  employeeId: string;
+  bonusInputMinor: number;
+  overtimeInputMinor: number;
+  error: string | null;
+  inputs: StoredLineInputs | null;
+  result: PayResult | null;
+};
+
+export type PayRunStatus = 'draft' | 'approved' | 'posted' | 'reversed';
+
+export type PayRunRecord = {
+  id: string;
+  entityId: string;
+  period: string;
+  sequence: number;
+  status: PayRunStatus;
+  payDate: string;
+  calculatedAt: string | null;
+  approvedByName: string;
+  approvedAt: string | null;
+  postedByName: string;
+  postedAt: string | null;
+  reversedByName: string;
+  reversedAt: string | null;
+  reversalReason: string;
+  lines: PayRunLineRecord[];
+  totals: RunTotals;
+  journal: PostedJournal | null;
+  reversalJournal: PostedJournal | null;
+};
+
+const statusOf: Record<PayRun['status'], PayRunStatus> = { DRAFT: 'draft', APPROVED: 'approved', POSTED: 'posted', REVERSED: 'reversed' };
+
+const journalInclude = { lines: { include: { account: { select: { code: true, name: true } } } } } as const;
+type JournalRow = JournalEntry & { lines: (JournalLine & { account: Pick<Account, 'code' | 'name'> })[] };
+
+export const payRunInclude = {
+  lines: { orderBy: { id: 'asc' } },
+  journalEntry: { include: journalInclude },
+  reversalJournal: { include: journalInclude },
+} as const satisfies Prisma.PayRunInclude;
+
+type PayRunRow = PayRun & { lines: PayRunLine[]; journalEntry: JournalRow | null; reversalJournal: JournalRow | null };
+
+function parse<T>(json: string | null): T | null {
+  if (!json) return null;
+  return JSON.parse(json) as T;
+}
+
+export function payRunRecord(row: PayRunRow, userNames: Record<string, string>): PayRunRecord {
+  const lines = row.lines.map((line) => ({
+    id: line.id,
+    employeeId: line.employeeId,
+    bonusInputMinor: toMinor(line.bonusInputMinor),
+    overtimeInputMinor: toMinor(line.overtimeInputMinor),
+    error: line.error,
+    inputs: parse<StoredLineInputs>(line.inputsJson),
+    result: parse<PayResult>(line.resultJson),
+  }));
+  const name = (id: string | null) => (id ? (userNames[id] ?? '') : '');
   return {
     id: row.id,
     entityId: row.entityId,
     period: row.period,
+    sequence: row.sequence,
+    status: statusOf[row.status],
     payDate: isoDate(row.payDate),
-    mappingName: row.mapping?.name ?? '',
-    fileName: row.fileName,
-    grossMinor,
-    payeMinor: toMinor(row.payeMinor),
-    employeeSsnitMinor: toMinor(row.employeeSsnitMinor),
-    employerSsnitMinor,
-    ssnitTier2Minor,
-    otherDeductionsMinor: toMinor(row.otherDeductionsMinor),
-    netMinor: toMinor(row.netMinor),
-    // What the month actually cost the entity: gross plus what it pays on top.
-    employerCostMinor: grossMinor + employerSsnitMinor + ssnitTier2Minor,
-    status: row.status === 'POSTED' ? 'posted' : 'draft',
-    note: row.note ?? '',
+    calculatedAt: row.calculatedAt ? row.calculatedAt.toISOString() : null,
+    approvedByName: name(row.approvedById),
+    approvedAt: row.approvedAt ? row.approvedAt.toISOString() : null,
+    postedByName: name(row.postedById),
     postedAt: row.postedAt ? row.postedAt.toISOString() : null,
-    postedByName: row.postedBy?.name ?? '',
+    reversedByName: name(row.reversedById),
+    reversedAt: row.reversedAt ? row.reversedAt.toISOString() : null,
+    reversalReason: row.reversalReason ?? '',
+    lines,
+    totals: runTotals(lines.flatMap((line) => (line.result ? [line.result] : []))),
     journal: row.journalEntry ? postedJournal(row.journalEntry) : null,
-    lines: row.lines.map((line) => ({
-      id: line.id,
-      employeeRef: line.employeeRef ?? '',
-      employeeName: line.employeeName,
-      department: line.department ?? '',
-      grossMinor: toMinor(line.grossMinor),
-      payeMinor: toMinor(line.payeMinor),
-      employeeSsnitMinor: toMinor(line.employeeSsnitMinor),
-      employerSsnitMinor: toMinor(line.employerSsnitMinor),
-      ssnitTier2Minor: toMinor(line.ssnitTier2Minor),
-      otherDeductionsMinor: toMinor(line.otherDeductionsMinor),
-      netMinor: toMinor(line.netMinor),
-    })),
-    liabilities: row.liabilities.map((liability) => liabilityRecord(liability, row.period)),
+    reversalJournal: row.reversalJournal ? postedJournal(row.reversalJournal) : null,
   };
 }
 
-export function liabilityRecord(
-  row: PayrollLiability & { payments: (PayrollLiabilityPayment & { bankAccount: Pick<BankAccount, 'name'> })[] },
-  period: string,
-): PayrollLiabilityRecord {
-  return {
-    id: row.id,
-    runId: row.runId,
-    period,
-    kind: kindToRecord[row.kind],
-    amountMinor: toMinor(row.amountMinor),
-    settledMinor: toMinor(row.settledMinor),
-    dueDate: isoDate(row.dueDate),
-    payments: row.payments.map((payment) => ({
-      id: payment.id,
-      date: isoDate(payment.date),
-      amountMinor: toMinor(payment.amountMinor),
-      bankAccountName: payment.bankAccount.name,
-      reference: payment.reference ?? '',
-    })),
-  };
-}
+// --- remittances ------------------------------------------------------------------------------
 
-export const allocationInclude = { grant: { select: { code: true } }, budgetLine: { select: { code: true, name: true } } } as const;
+export type RemittanceRecord = {
+  id: string;
+  entityId: string;
+  runId: string;
+  period: string;
+  kind: RemittanceKind;
+  amountMinor: number;
+  dueDate: string;
+  paidOn: string | null;
+  reference: string;
+  bankAccountName: string;
+  cancelled: boolean;
+};
 
-export function allocationRecord(row: PayrollAllocation & { grant: Pick<Grant, 'code'>; budgetLine: Pick<GrantBudgetLine, 'code' | 'name'> | null }): PayrollAllocationRecord {
+export const remittanceKindOf: Record<PayrollRemittance['kind'], RemittanceKind> = { PAYE: 'paye', SSNIT_TIER_1: 'ssnit-tier1', SSNIT_TIER_2: 'ssnit-tier2', TIER_3: 'tier3', NET_PAY: 'net-pay' };
+export const remittanceKindToPrisma: Record<RemittanceKind, PayrollRemittance['kind']> = { paye: 'PAYE', 'ssnit-tier1': 'SSNIT_TIER_1', 'ssnit-tier2': 'SSNIT_TIER_2', tier3: 'TIER_3', 'net-pay': 'NET_PAY' };
+
+export const remittanceInclude = { run: { select: { period: true } }, bankAccount: { select: { name: true } } } as const;
+
+export function remittanceRecord(row: PayrollRemittance & { run: Pick<PayRun, 'period'>; bankAccount: { name: string } | null }): RemittanceRecord {
   return {
     id: row.id,
     entityId: row.entityId,
-    employeeKey: row.employeeKey,
-    employeeName: row.employeeName ?? '',
-    grantId: row.grantId,
-    grantCode: row.grant.code,
-    budgetLineId: row.budgetLineId,
-    budgetLineName: row.budgetLine ? `${row.budgetLine.code} ${row.budgetLine.name}` : '',
-    pct: pctText(row.pct),
+    runId: row.runId,
+    period: row.run.period,
+    kind: remittanceKindOf[row.kind],
+    amountMinor: toMinor(row.amountMinor),
+    dueDate: isoDate(row.dueDate),
+    paidOn: row.paidOn ? isoDate(row.paidOn) : null,
+    reference: row.reference ?? '',
+    bankAccountName: row.bankAccount?.name ?? '',
+    cancelled: row.cancelledAt !== null,
   };
 }
 
-function groupBy<T>(items: T[], keyOf: (item: T) => string): Record<string, T[]> {
-  const groups: Record<string, T[]> = {};
-  for (const item of items) (groups[keyOf(item)] ??= []).push(item);
-  return groups;
+// --- the facts the reports read ------------------------------------------------------------------
+
+/** Every line of every posted run, as report facts, using the employee's details as they stand. */
+export function payFactsOf(runs: PayRunRecord[], employees: EmployeeRecord[]): PayLineFact[] {
+  const byId = new Map(employees.map((e) => [e.id, e]));
+  return runs
+    .filter((run) => run.status === 'posted')
+    .flatMap((run) =>
+      run.lines.flatMap((line) => {
+        const person = byId.get(line.employeeId);
+        if (!person || !line.result || !line.inputs) return [];
+        return [
+          factOf({
+            entityId: run.entityId,
+            runId: run.id,
+            employee: { id: person.id, staffNumber: person.staffNumber, name: person.name, department: person.department || null, tin: person.tin || null, ssnitNumber: person.ssnitNumber || null, startDate: person.startDate, endDate: person.endDate },
+            input: line.inputs.input,
+            result: line.result,
+            allocations: line.inputs.allocations.map((a) => ({ projectId: a.projectId, shareBasisPoints: a.shareBasisPoints })),
+          }),
+        ];
+      }),
+    );
 }
 
-/** Scoped by the principal's grant in every query. */
-export async function loadPayrollData(scope: { entityId?: { in: string[] } }, entityIds: string[]) {
-  const [mappings, departments, runs, allocations] = await Promise.all([
-    prisma.payrollMapping.findMany({ where: scope, include: mappingInclude, orderBy: [{ entityId: 'asc' }, { name: 'asc' }] }),
-    prisma.payrollDepartment.findMany({ where: scope, include: departmentInclude, orderBy: [{ entityId: 'asc' }, { name: 'asc' }] }),
-    prisma.payrollRun.findMany({ where: scope, include: runInclude, orderBy: { period: 'desc' }, take: 60 }),
-    prisma.payrollAllocation.findMany({ where: scope, include: allocationInclude, orderBy: [{ employeeName: 'asc' }, { createdAt: 'asc' }] }),
-  ]);
-  const withAll = <T>(grouped: Record<string, T[]>): Record<string, T[]> => Object.fromEntries(entityIds.map((id) => [id, grouped[id] ?? []]));
+/** Casual labour paid from agents' floats, for the labour report. */
+export type CasualLabourFact = { entityId: string; date: string; amountMinor: number; workers: number | null; description: string };
+
+/** The payroll control accounts the reconciliation reads, by code. */
+export const controlAccountCodes = [payrollAccounts.netPay, payrollAccounts.paye, payrollAccounts.ssnitTier1, payrollAccounts.ssnitTier2, payrollAccounts.tier3, payrollAccounts.staffLoans] as const;
+
+/**
+ * Each control account's balance as the ledger stands, positive on its normal
+ * side: credit for the liabilities, debit for staff loans.
+ */
+export async function ledgerBalances(scope: { entityId?: { in: string[] } }, entityIds: string[]): Promise<Record<string, Record<string, number>>> {
+  const accounts = await prisma.account.findMany({ where: { ...scope, code: { in: [...controlAccountCodes] } }, select: { id: true, code: true, entityId: true } });
+  const sums = accounts.length
+    ? await prisma.journalLine.groupBy({ by: ['accountId', 'direction'], where: { accountId: { in: accounts.map((a) => a.id) } }, _sum: { amountMinor: true } })
+    : [];
+  const result: Record<string, Record<string, number>> = Object.fromEntries(entityIds.map((id) => [id, {}]));
+  for (const account of accounts) {
+    const debit = toMinor(sums.find((s) => s.accountId === account.id && s.direction === 'MONEY_IN')?._sum.amountMinor ?? 0n);
+    const credit = toMinor(sums.find((s) => s.accountId === account.id && s.direction === 'MONEY_OUT')?._sum.amountMinor ?? 0n);
+    (result[account.entityId] ??= {})[account.code] = account.code === payrollAccounts.staffLoans ? debit - credit : credit - debit;
+  }
+  return result;
+}
+
+// --- the loader ---------------------------------------------------------------------------------
+
+export type PayrollData = {
+  employeesByEntity: Record<string, EmployeeRecord[]>;
+  payRunsByEntity: Record<string, PayRunRecord[]>;
+  staffLoansByEntity: Record<string, StaffLoanRecord[]>;
+  remittancesByEntity: Record<string, RemittanceRecord[]>;
+  payFactsByEntity: Record<string, PayLineFact[]>;
+  casualLabourByEntity: Record<string, CasualLabourFact[]>;
+  payrollLedgerByEntity: Record<string, Record<string, number>>;
+};
+
+export function emptyPayrollData(entityIds: string[]): PayrollData {
+  const none = <T>() => Object.fromEntries(entityIds.map((id) => [id, [] as T[]]));
   return {
-    payrollMappingsByEntity: withAll(groupBy(mappings.map(mappingRecord), (row) => row.entityId)),
-    payrollDepartmentsByEntity: withAll(groupBy(departments.map(departmentRecord), (row) => row.entityId)),
-    payrollRunsByEntity: withAll(groupBy(runs.map(runRecord), (row) => row.entityId)),
-    payrollAllocationsByEntity: withAll(groupBy(allocations.map(allocationRecord), (row) => row.entityId)),
+    employeesByEntity: none(),
+    payRunsByEntity: none(),
+    staffLoansByEntity: none(),
+    remittancesByEntity: none(),
+    payFactsByEntity: none(),
+    casualLabourByEntity: none(),
+    payrollLedgerByEntity: Object.fromEntries(entityIds.map((id) => [id, {}])),
   };
 }
 
-/** One run, fresh, for a server function to return. */
-export async function readRun(entityId: string, runId: string): Promise<PayrollRunRecord> {
-  return runRecord(await prisma.payrollRun.findFirstOrThrow({ where: { id: runId, entityId }, include: runInclude }));
-}
+/** Scoped by the principal's grant in every query. Nothing at all for someone without payroll:view. */
+export async function loadPayrollData(scope: { entityId?: { in: string[] } }, entityIds: string[], canView: boolean): Promise<PayrollData> {
+  if (!canView) return emptyPayrollData(entityIds);
+  const [employees, runs, loans, remittances, labour, ledger] = await Promise.all([
+    prisma.employee.findMany({ where: scope, include: employeeInclude, orderBy: { staffNumber: 'asc' } }),
+    prisma.payRun.findMany({ where: scope, include: payRunInclude, orderBy: [{ period: 'desc' }, { sequence: 'desc' }], take: 120 }),
+    prisma.staffLoan.findMany({ where: scope, include: loanInclude, orderBy: { issuedOn: 'desc' } }),
+    prisma.payrollRemittance.findMany({ where: scope, include: remittanceInclude, orderBy: { dueDate: 'asc' } }),
+    prisma.floatLabourPayment.findMany({ where: scope, orderBy: { date: 'desc' } }),
+    ledgerBalances(scope, entityIds),
+  ]);
+  const userIds = [...new Set(runs.flatMap((r) => [r.approvedById, r.postedById, r.reversedById]).filter((id): id is string => Boolean(id)))];
+  const users = userIds.length ? await prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true } }) : [];
+  const userNames = Object.fromEntries(users.map((u) => [u.id, u.name]));
 
-/** Every payroll liability of an entity, for the dashboard. */
-export async function liabilitiesFor(entityId: string) {
-  const rows = await prisma.payrollLiability.findMany({
-    where: { entityId, run: { status: 'POSTED' } },
-    include: { run: { select: { period: true } }, payments: { include: { bankAccount: { select: { name: true } } } } },
-    orderBy: { dueDate: 'asc' },
-  });
-  return rows.map((row) => liabilityRecord(row, row.run.period));
+  const data = emptyPayrollData(entityIds);
+  for (const row of employees) data.employeesByEntity[row.entityId]?.push(employeeRecord(row));
+  for (const row of runs) data.payRunsByEntity[row.entityId]?.push(payRunRecord(row, userNames));
+  for (const row of loans) data.staffLoansByEntity[row.entityId]?.push(staffLoanRecord(row));
+  for (const row of remittances) data.remittancesByEntity[row.entityId]?.push(remittanceRecord(row));
+  for (const row of labour) data.casualLabourByEntity[row.entityId]?.push({ entityId: row.entityId, date: isoDate(row.date), amountMinor: toMinor(row.amountMinor), workers: row.workers, description: row.description });
+  for (const id of entityIds) data.payFactsByEntity[id] = payFactsOf(data.payRunsByEntity[id] ?? [], data.employeesByEntity[id] ?? []);
+  data.payrollLedgerByEntity = ledger;
+  return data;
 }

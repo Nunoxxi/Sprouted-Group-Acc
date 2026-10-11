@@ -47,13 +47,13 @@ function groupBy<T>(items: T[], keyOf: (item: T) => string): Record<string, T[]>
  * written; scripts/encrypt-existing-pii.ts is what clears it.
  */
 async function countsFor(entityId: string): Promise<PersonalDataCount[]> {
-  const [farmers, agents, contacts, payrollPeople, staffTime, custodians] = await Promise.all([
+  const [farmers, agents, contacts, staffTime, custodians, employees] = await Promise.all([
     prisma.farmer.findMany({ where: { entityId }, select: { phone: true, walletNumber: true } }),
     prisma.buyingAgent.findMany({ where: { entityId }, select: { phone: true } }),
     prisma.contact.findMany({ where: { balances: { some: { entityId } } }, select: { phone: true, email: true, address: true } }),
-    prisma.payrollLine.findMany({ where: { entityId }, select: { employeeRef: true }, distinct: ['employeeRef'] }),
     prisma.staffTimeAllocation.findMany({ where: { entityId }, select: { personName: true }, distinct: ['personName'] }),
     prisma.fixedAsset.findMany({ where: { entityId, custodian: { not: null } }, select: { custodian: true } }),
+    prisma.employee.findMany({ where: { entityId }, select: { email: true, bankAccountNumber: true, momoNumber: true } }),
   ]);
 
   const plainText = (values: (string | null)[]): number => values.filter((value) => value && !isEncrypted(value)).length;
@@ -85,11 +85,11 @@ async function countsFor(entityId: string): Promise<PersonalDataCount[]> {
     },
     {
       subject: 'staff',
-      label: 'Staff on imported payrolls',
-      people: payrollPeople.length + staffTime.length + custodians.length,
-      encryptedValues: 0,
-      pendingValues: 0,
-      holds: 'Name, payroll reference, department, and the assets they hold. Pay figures come from the payroll system and stay in the ledger.',
+      label: 'Staff',
+      people: employees.length + staffTime.length + custodians.length,
+      encryptedValues: employees.flatMap((row) => [row.email, row.bankAccountNumber, row.momoNumber]).filter((value) => value && isEncrypted(value)).length,
+      pendingValues: plainText(employees.flatMap((row) => [row.email, row.bankAccountNumber, row.momoNumber])),
+      holds: 'Name, staff number, TIN, SSNIT number, payslip email, bank or mobile money details, pay, loans, department, and the assets they hold.',
     },
   ];
 }

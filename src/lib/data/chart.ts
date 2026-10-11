@@ -103,6 +103,35 @@ export async function seedChartForEntity(
 }
 
 /**
+ * Make sure the named template accounts exist in an entity's chart, creating
+ * only those that are missing. Unlike seedChartForEntity it never touches an
+ * account that is already there — a renamed account keeps its name. For a
+ * module whose accounts were added to the templates after older charts were
+ * seeded, so its first posting does not fail for want of one.
+ */
+export async function ensureAccounts(tx: Prisma.TransactionClient, entityId: string, type: EntityType, codes: readonly string[]): Promise<void> {
+  const templates = chartTemplateFor(type).filter((template) => codes.includes(template.code));
+  const held = new Set((await tx.account.findMany({ where: { entityId, code: { in: templates.map((t) => t.code) } }, select: { code: true } })).map((a) => a.code));
+  const missing = templates.filter((template) => !held.has(template.code));
+  if (missing.length === 0) return;
+  const parents = new Map(
+    (await tx.account.findMany({ where: { entityId, code: { in: missing.map((t) => t.parentCode).filter((c): c is string => Boolean(c)) } }, select: { id: true, code: true } })).map((a) => [a.code, a.id]),
+  );
+  await tx.account.createMany({
+    data: missing.map((template) => ({
+      id: randomUUID(),
+      entityId,
+      code: template.code,
+      name: template.name,
+      type: accountTypeOf(template.type),
+      category: template.category ?? null,
+      parentId: template.parentCode ? (parents.get(template.parentCode) ?? null) : null,
+      isActive: true,
+    })),
+  });
+}
+
+/**
  * Every entity starts with one bank account in its functional currency,
  * posting to 1001 "Cash and Bank". Further accounts (a USD account, say)
  * are added from Settings and get their own GL account. Idempotent.

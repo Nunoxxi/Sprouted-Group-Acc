@@ -111,14 +111,20 @@ export const farmerAdvanceAccounts: AccountTemplate[] = [
  * the two charts number it differently.
  */
 /**
- * Payroll. There is no payroll engine: the summary is imported and posted.
- * PAYE and SSNIT tier 1 already exist among the tax accounts; tier 2, net pay
- * and the employer's own contribution are added here. Every chart.
+ * Payroll, calculated in the app (src/lib/payroll-engine.ts).
+ * PAYE and SSNIT tier 1 already exist among the tax accounts; tier 2, tier 3,
+ * net pay, staff loans and the employer's own contribution are added here,
+ * and casual labour paid from an agent's float. Every chart: the numbers are
+ * free in both, and src/lib/data/payroll.ts adds any an older chart lacks
+ * before it posts.
  */
 export const payrollAccounts: AccountTemplate[] = [
+  { code: '1080', name: 'Staff Loans and Advances', type: 'ASSET', parentCode: '1000', category: 'staff-loan' },
   { code: '2046', name: 'SSNIT Tier 2 Payable', type: 'LIABILITY', parentCode: '2000', category: 'payroll-liability' },
   { code: '2047', name: 'Net Pay Payable', type: 'LIABILITY', parentCode: '2000', category: 'payroll-liability' },
+  { code: '2049', name: 'Tier 3 Pension Payable', type: 'LIABILITY', parentCode: '2000', category: 'payroll-liability' },
   { code: '6065', name: 'Employer SSNIT Contributions', type: 'EXPENSE', parentCode: '6000', category: 'employer-ssnit' },
+  { code: '6070', name: 'Casual Labour', type: 'EXPENSE', parentCode: '6000', category: 'casual-labour' },
 ];
 
 export const fixedAssetAccounts: AccountTemplate[] = [

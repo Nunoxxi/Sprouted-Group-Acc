@@ -14,7 +14,7 @@ import { Prisma } from '@prisma/client';
 import { recordAuditEvent } from '@/lib/audit';
 import type { Permission, Principal } from '@/lib/authz';
 import { authorizationFailure, requireEntityAccess } from '@/lib/dal';
-import { seedChartForEntity } from '@/lib/data/chart.ts';
+import { ensureAccounts, seedChartForEntity } from '@/lib/data/chart.ts';
 import { itemInclude, itemRecord } from '@/lib/data/inventory';
 import { entityRecord, entityTypeOf } from '@/lib/data/mappers';
 import { fromMinor, toMinor } from '@/lib/data/money';
@@ -32,6 +32,7 @@ import {
   abnormalLossValue,
   commodityKinds,
   floatAdvanceJournal,
+  floatLabourJournal,
   floatReturnJournal,
   holdsStock,
   shrinkageSplit,
@@ -41,6 +42,7 @@ import {
   type Quality,
   type TradingJournalLine,
 } from '@/lib/trading';
+import { payrollAccounts } from '@/lib/payroll-accounts';
 import { prisma } from '@/lib/prisma';
 
 import type { ActionResult } from './documents';
@@ -292,7 +294,11 @@ export async function returnFloatCash(entityId: string, input: FloatReturnInput)
         const float = await tx.floatAdvance.findFirst({ where: { id: input.floatId, entityId }, include: { ...floatInclude, agent: true } });
         if (!float) throw new StockRefusal('Float not found.');
         if (float.status === 'RECONCILED') throw new StockRefusal('This float is reconciled.');
-        const outstanding = toMinor(float.amountMinor) - float.purchases.filter((p) => p.status === 'POSTED').reduce((s, p) => s + toMinor(p.priceMinor), 0) - float.returns.reduce((s, r) => s + toMinor(r.amountMinor), 0);
+        const outstanding =
+          toMinor(float.amountMinor) -
+          float.purchases.filter((p) => p.status === 'POSTED').reduce((s, p) => s + toMinor(p.priceMinor), 0) -
+          float.labour.reduce((s, l) => s + toMinor(l.amountMinor), 0) -
+          float.returns.reduce((s, r) => s + toMinor(r.amountMinor), 0);
         if (input.amountMinor > outstanding) throw new StockRefusal(`Only ${(outstanding / 100).toFixed(2)} is outstanding on this float.`);
         const bank = await tx.bankAccount.findFirst({ where: { id: input.bankAccountId, entityId, isActive: true }, include: { account: true } });
         if (!bank) throw new StockRefusal('Choose a bank account of this entity.');
@@ -308,7 +314,63 @@ export async function returnFloatCash(entityId: string, input: FloatReturnInput)
   );
 }
 
-/** Close a float: refused unless advanced = purchases posted + cash returned, exactly. */
+/**
+ * Casual or seasonal labour the agent paid out of the float. A labour cost,
+ * not payroll: the float is relieved like a purchase relieves it, and the
+ * cost goes to Casual Labour (or another expense account chosen). How many
+ * people were paid is kept for the labour report; their names are not.
+ */
+export type FloatLabourInput = { floatId: string; date: string; description: string; workers?: number | null; amountMinor: number; accountCode?: string | null };
+
+export async function recordFloatLabour(entityId: string, input: FloatLabourInput): Promise<ActionResult<FloatAdvanceRecord>> {
+  return withEntityAccess(entityId, 'stock:post', (principal) =>
+    refusable(async () => {
+      const entity = await requireTrader(entityId);
+      if (!Number.isInteger(input.amountMinor) || input.amountMinor <= 0) return fail('Enter the amount paid.');
+      if (!input.description.trim()) return fail('Say what the work was, e.g. "loading, 3 days".');
+      if (input.workers != null && (!Number.isInteger(input.workers) || input.workers < 1)) return fail('The number of workers is a whole number, at least 1.');
+      dateOf(input.date);
+      await requireOpenPeriod(entityId, input.date);
+      const row = await prisma.$transaction(async (tx) => {
+        const float = await tx.floatAdvance.findFirst({ where: { id: input.floatId, entityId }, include: { ...floatInclude, agent: true } });
+        if (!float) throw new StockRefusal('Float not found.');
+        if (float.status === 'RECONCILED') throw new StockRefusal('This float is reconciled.');
+        const outstanding =
+          toMinor(float.amountMinor) -
+          float.purchases.filter((p) => p.status === 'POSTED').reduce((s, p) => s + toMinor(p.priceMinor), 0) -
+          float.labour.reduce((s, l) => s + toMinor(l.amountMinor), 0) -
+          float.returns.reduce((s, r) => s + toMinor(r.amountMinor), 0);
+        if (input.amountMinor > outstanding) throw new StockRefusal(`Only ${(outstanding / 100).toFixed(2)} is left on this float.`);
+        await ensureAccounts(tx, entityId, entityTypeOf(entity.type), [payrollAccounts.casualLabour]);
+        const code = input.accountCode?.trim() || payrollAccounts.casualLabour;
+        const account = await tx.account.findFirst({ where: { entityId, code, isActive: true } });
+        if (!account || (account.type !== 'EXPENSE' && account.type !== 'COST_OF_SALES')) throw new StockRefusal('Charge labour to an expense or direct-cost account.');
+        const names = await namesFor(tx, entityId);
+        const journalId = await postJournal(tx, entityId, floatLabourJournal(input.amountMinor, code, names), input.date, `FLOAT ${float.agent.name}`, `Casual labour paid by ${float.agent.name}: ${input.description.trim()}`, principal);
+        await tx.floatLabourPayment.create({
+          data: {
+            entityId,
+            floatId: float.id,
+            agentId: float.agentId,
+            date: dateOf(input.date),
+            description: input.description.trim(),
+            workers: input.workers ?? null,
+            amountMinor: fromMinor(input.amountMinor),
+            accountId: account.id,
+            journalEntryId: journalId,
+            createdById: principal.userId,
+          },
+        });
+        await recordAuditEvent({ entityId, userId: principal.userId, userName: principal.name, action: 'POST', resourceType: 'float', resourceRef: float.id, summary: `${(input.amountMinor / 100).toFixed(2)} casual labour paid by ${float.agent.name} from the float: ${input.description.trim()}`, metadata: { journalEntryId: journalId } }, tx);
+        return tx.floatAdvance.findUniqueOrThrow({ where: { id: float.id }, include: floatInclude });
+      });
+      refresh();
+      return { ok: true, value: floatRecord(row) };
+    }),
+  );
+}
+
+/** Close a float: refused unless advanced = purchases posted + labour paid + cash returned, exactly. */
 export async function reconcileFloat(entityId: string, floatId: string): Promise<ActionResult<FloatAdvanceRecord>> {
   return withEntityAccess(entityId, 'stock:post', (principal) =>
     refusable(async () => {
@@ -319,12 +381,13 @@ export async function reconcileFloat(entityId: string, floatId: string): Promise
         if (float.status === 'RECONCILED') throw new StockRefusal('Already reconciled.');
         const purchased = float.purchases.filter((p) => p.status === 'POSTED').reduce((s, p) => s + toMinor(p.priceMinor), 0);
         const returned = float.returns.reduce((s, r) => s + toMinor(r.amountMinor), 0);
-        const outstanding = toMinor(float.amountMinor) - purchased - returned;
-        if (outstanding !== 0) throw new StockRefusal(`Does not reconcile: advanced ${(toMinor(float.amountMinor) / 100).toFixed(2)}, purchases ${(purchased / 100).toFixed(2)}, returned ${(returned / 100).toFixed(2)} — ${(outstanding / 100).toFixed(2)} outstanding.`);
+        const labour = float.labour.reduce((s, l) => s + toMinor(l.amountMinor), 0);
+        const outstanding = toMinor(float.amountMinor) - purchased - labour - returned;
+        if (outstanding !== 0) throw new StockRefusal(`Does not reconcile: advanced ${(toMinor(float.amountMinor) / 100).toFixed(2)}, purchases ${(purchased / 100).toFixed(2)}, labour ${(labour / 100).toFixed(2)}, returned ${(returned / 100).toFixed(2)} — ${(outstanding / 100).toFixed(2)} outstanding.`);
         const pending = await tx.agentPurchase.count({ where: { floatId: float.id, status: 'PENDING' } });
         if (pending > 0) throw new StockRefusal(`${pending} purchase${pending === 1 ? '' : 's'} on this float still pending — post or reject them first.`);
         const updated = await tx.floatAdvance.update({ where: { id: float.id }, data: { status: 'RECONCILED', reconciledAt: new Date(), reconciledById: principal.userId }, include: floatInclude });
-        await recordAuditEvent({ entityId, userId: principal.userId, userName: principal.name, action: 'EDIT', resourceType: 'float', resourceRef: float.id, summary: `Float to ${float.agent.name} reconciled: ${(purchased / 100).toFixed(2)} in produce, ${(returned / 100).toFixed(2)} in cash` }, tx);
+        await recordAuditEvent({ entityId, userId: principal.userId, userName: principal.name, action: 'EDIT', resourceType: 'float', resourceRef: float.id, summary: `Float to ${float.agent.name} reconciled: ${(purchased / 100).toFixed(2)} in produce, ${(labour / 100).toFixed(2)} in casual labour, ${(returned / 100).toFixed(2)} in cash` }, tx);
         return updated;
       });
       refresh();

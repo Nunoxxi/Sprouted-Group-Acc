@@ -11,6 +11,7 @@ import type { AssetCategory, Account, ProjectBudgetLine } from '@prisma/client';
 import { statutoryTaxRates, type TaxRates } from '../settings';
 import { prisma } from '../prisma';
 import { toMinor } from './money';
+import { loadPayrollSettings, loadStatutoryRates } from './payroll-rates';
 import type { AssetCategoryRecord, ProjectBudgetLineRecord } from './types';
 
 export function budgetLineRecord(row: ProjectBudgetLine & { account: Pick<Account, 'code'> | null }): ProjectBudgetLineRecord {
@@ -48,10 +49,12 @@ function groupBy<T>(items: T[], keyOf: (item: T) => string): Record<string, T[]>
 
 /** Scoped by the principal's grant in every query. */
 export async function loadSettingsData(scope: { entityId?: { in: string[] } }, entityIds: string[]) {
-  const [budgetLines, categories, rates] = await Promise.all([
+  const [budgetLines, categories, rates, statutoryRates, payrollSettingsByEntity] = await Promise.all([
     prisma.projectBudgetLine.findMany({ where: scope, include: { account: { select: { code: true } } }, orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] }),
     prisma.assetCategory.findMany({ where: scope, include: { account: { select: { code: true } } }, orderBy: { name: 'asc' } }),
     prisma.taxRateSetting.findMany({ where: scope }),
+    loadStatutoryRates(),
+    loadPayrollSettings(scope, entityIds),
   ]);
 
   const withAll = <T>(grouped: Record<string, T[]>): Record<string, T[]> => Object.fromEntries(entityIds.map((id) => [id, grouped[id] ?? []]));
@@ -77,5 +80,7 @@ export async function loadSettingsData(scope: { entityId?: { in: string[] } }, e
     budgetLinesByEntity: withAll(groupBy(budgetLines.map(budgetLineRecord), (row) => row.entityId)),
     assetCategoriesByEntity: withAll(groupBy(categories.map(assetCategoryRecord), (row) => row.entityId)),
     taxRatesByEntity: ratesByEntity,
+    statutoryRates,
+    payrollSettingsByEntity,
   };
 }

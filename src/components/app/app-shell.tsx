@@ -42,6 +42,8 @@ import { OpeningPanel } from '@/components/app/opening-panel';
 import { AssetsPanel } from '@/components/app/assets-panel';
 import { PreFinancePanel } from '@/components/app/prefinance-panel';
 import { PayrollPanel } from '@/components/app/payroll-panel';
+import { remittanceLabels, remittancePosition } from '@/lib/payroll-run';
+import { PayrollRatesSettings } from '@/components/app/payroll-rates-panel';
 import { Attachments } from '@/components/app/attachments';
 import { InboxPanel } from '@/components/app/inbox-panel';
 import { ChartPanel } from '@/components/app/chart-panel';
@@ -54,7 +56,6 @@ import { GrantsPanel } from '@/components/app/grants-panel';
 import { PaymentsPanel } from '@/components/app/payments-panel';
 import { sellingCostKinds, sellingCostLabels, type SellingCostKind } from '@/lib/contracts';
 import { instalments, isTaxed, monthOf, provisionalPosition } from '@/lib/assets';
-import { liabilityKindLabels, liabilityPosition } from '@/lib/payroll';
 import { runsGrants } from '@/lib/grants';
 import { agentFloatSummaries, floatPosition, holdsStock, landedCostKinds, landedCostLabels, qualityFieldsFor, type LandedCostKind } from '@/lib/trading';
 import { CurrencyProvider, ReportMoney, TranslationProvider } from '@/components/ui/money';
@@ -109,7 +110,7 @@ const navigationItems = [
 ] as const;
 
 /** The Settings area, grouped by topic. Owner only. */
-const settingsTopics = ['Company', 'Chart of accounts', 'Projects', 'Funds', 'Contacts', 'Asset classes', 'Tax rates', 'Backups & audit'] as const;
+const settingsTopics = ['Company', 'Chart of accounts', 'Projects', 'Funds', 'Contacts', 'Asset classes', 'Tax rates', 'Payroll rates', 'Backups & audit'] as const;
 type SettingsTopic = (typeof settingsTopics)[number];
 
 type EntityMetrics = {
@@ -701,23 +702,6 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
     () => (initialData.grantsByEntity[selectedEntity.id] ?? []).filter((grant) => grant.status === 'active'),
     [initialData, selectedEntity.id],
   );
-  /** What payroll still owes and when, for the dashboard. */
-  const payrollOwed = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10);
-    const rows = (initialData.payrollRunsByEntity[selectedEntity.id] ?? []).flatMap((run) =>
-      run.liabilities.map((liability) => ({
-        id: liability.id,
-        period: liability.period,
-        kind: liability.kind,
-        amountMinor: liability.amountMinor,
-        settledMinor: liability.settledMinor,
-        dueDate: liability.dueDate,
-      })),
-    );
-    const position = liabilityPosition(rows, today);
-    return position.rows.length ? position : null;
-  }, [initialData, selectedEntity.id]);
-
   /**
    * Where the entity stands on its provisional tax, for the dashboard. The
    * year we are in is the one today falls inside; an exempt entity has none.
@@ -737,10 +721,18 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
     return { year, position: provisionalPosition(rows, today) };
   }, [initialData, selectedEntity.id, selectedEntity.taxStatus]);
 
+  /** What payroll owes and when, for the dashboard: anything past its date in red. */
+  const payrollOwed = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const rows = (initialData.remittancesByEntity[selectedEntity.id] ?? []).map((r) => ({ id: r.id, period: r.period, kind: r.kind, amountMinor: r.amountMinor, dueDate: r.dueDate, paidOn: r.paidOn, cancelled: r.cancelled }));
+    const position = remittancePosition(rows, today);
+    return position.open.length ? position : null;
+  }, [initialData, selectedEntity.id]);
+
   // Outstanding float per agent, for the dashboard: red when older than the entity's limit.
   const floatSummaries = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
-    const floats = (initialData.floatsByEntity[selectedEntity.id] ?? []).map((f) => ({ agentId: f.agentId, status: f.status, position: floatPosition({ amountMinor: f.amountMinor, date: f.date }, f.purchasedMinor, f.returns.reduce((sum, r) => sum + r.amountMinor, 0), today, selectedEntity.floatAgeLimitDays) }));
+    const floats = (initialData.floatsByEntity[selectedEntity.id] ?? []).map((f) => ({ agentId: f.agentId, status: f.status, position: floatPosition({ amountMinor: f.amountMinor, date: f.date }, f.purchasedMinor, f.returns.reduce((sum, r) => sum + r.amountMinor, 0), today, selectedEntity.floatAgeLimitDays, f.labourMinor) }));
     return agentFloatSummaries(initialData.agentsByEntity[selectedEntity.id] ?? [], floats).filter((summary) => summary.openFloats > 0 || summary.outstandingMinor !== 0);
   }, [initialData, selectedEntity.id, selectedEntity.floatAgeLimitDays]);
   // Rolling twelve-month taxable turnover against the registration threshold,
@@ -2608,36 +2600,31 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                 <Card className={['rounded-2xl border', payrollOwed.overdueMinor > 0 ? 'border-red-300 bg-red-50' : 'border-slate-200'].join(' ')}>
                   <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Payroll outstanding</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">What payroll owes</p>
                       <p className="mt-2 text-sm text-slate-700">
+                        {payrollOwed.overdueMinor > 0 ? (
+                          <>
+                            <span className="font-semibold text-red-800">
+                              <Money value={payrollOwed.overdueMinor} /> is past its due date.
+                            </span>{' '}
+                          </>
+                        ) : null}
                         <span className="font-semibold">
                           <Money value={payrollOwed.outstandingMinor} />
                         </span>{' '}
-                        still to pay
-                        {payrollOwed.overdueMinor > 0 ? (
-                          <>
-                            , of which{' '}
-                            <span className="font-semibold text-red-800">
-                              <Money value={payrollOwed.overdueMinor} /> is past due
-                            </span>
-                          </>
-                        ) : null}
-                        .
+                        still to pay.
                         {payrollOwed.next ? (
                           <>
                             {' '}
-                            Next: {liabilityKindLabels[payrollOwed.next.kind]} for {payrollOwed.next.period} by <span className="font-semibold">{payrollOwed.next.dueDate}</span>.
+                            Next: {remittanceLabels[payrollOwed.next.kind]} for {payrollOwed.next.period} by <span className="font-semibold">{payrollOwed.next.dueDate}</span>.
                           </>
                         ) : null}
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2 text-xs">
-                      {payrollOwed.rows.slice(0, 6).map((row) => (
-                        <span
-                          key={row.id}
-                          className={['rounded-lg border px-2.5 py-1.5', row.overdue ? 'border-red-300 bg-red-100 text-red-900' : 'border-slate-200 bg-white text-slate-600'].join(' ')}
-                        >
-                          {liabilityKindLabels[row.kind]} · {row.dueDate}
+                      {payrollOwed.open.slice(0, 6).map((row) => (
+                        <span key={row.id} className={['rounded-lg border px-2.5 py-1.5', payrollOwed.overdue.includes(row) ? 'border-red-300 bg-red-100 font-semibold text-red-900' : 'border-slate-200 bg-white text-slate-600'].join(' ')}>
+                          {remittanceLabels[row.kind]} · {row.period} · due {row.dueDate}
                         </span>
                       ))}
                     </div>
@@ -4309,6 +4296,9 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                   allowed={allowed}
                 />
               ) : null}
+              {settingsTopic === 'Payroll rates' ? (
+                <PayrollRatesSettings rows={initialData.statutoryRates} allowed={allowed} />
+              ) : null}
               {settingsTopic === 'Company' ? (
                 <CompanySettings key={selectedEntity.id} entity={selectedEntity} allowed={allowed} />
               ) : null}
@@ -4853,12 +4843,18 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
             <PayrollPanel
               key={selectedEntity.id}
               entity={selectedEntity}
-              runs={initialData.payrollRunsByEntity[selectedEntity.id] ?? []}
-              mappings={initialData.payrollMappingsByEntity[selectedEntity.id] ?? []}
-              departments={initialData.payrollDepartmentsByEntity[selectedEntity.id] ?? []}
-              allocations={initialData.payrollAllocationsByEntity[selectedEntity.id] ?? []}
-              grants={initialData.grantsByEntity[selectedEntity.id] ?? []}
+              entities={entities}
+              settings={initialData.payrollSettingsByEntity[selectedEntity.id]}
+              rates={initialData.statutoryRates}
+              employees={initialData.employeesByEntity[selectedEntity.id] ?? []}
+              runs={initialData.payRunsByEntity[selectedEntity.id] ?? []}
+              loans={initialData.staffLoansByEntity[selectedEntity.id] ?? []}
+              remittances={initialData.remittancesByEntity[selectedEntity.id] ?? []}
+              factsByEntity={initialData.payFactsByEntity}
+              casualByEntity={initialData.casualLabourByEntity}
+              ledger={initialData.payrollLedgerByEntity[selectedEntity.id] ?? {}}
               accounts={entityAccounts}
+              projects={initialData.projectsByEntity[selectedEntity.id] ?? []}
               bankAccounts={entityBankAccounts}
               allowed={allowed}
             />

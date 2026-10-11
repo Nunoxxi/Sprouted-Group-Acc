@@ -29,7 +29,7 @@ import { fxAccounts } from './fx';
 import { grantAccounts } from './grants';
 import { momoAccounts } from './momo';
 import { openingAccounts } from './opening';
-import { liabilityAccounts, payrollAccounts } from './payroll';
+import { payrollAccounts } from './payroll-accounts';
 import { preFinanceAccounts } from './prefinance-posting';
 import { tradingAccounts } from './trading';
 
@@ -59,7 +59,6 @@ export const protectedCodes: ReadonlySet<string> = new Set(
     assetAccounts,
     grantAccounts,
     payrollAccounts,
-    liabilityAccounts,
     momoAccounts,
     tradingAccounts,
     contractAccounts,

@@ -85,21 +85,21 @@ export async function findSubjects(entityId: string, query: string): Promise<Act
     if (term.length < 2) return fail('Type at least two letters of the name.');
     const contains = { contains: term, mode: 'insensitive' as const };
 
-    const [farmers, agents, contacts, payroll, staffTime] = await Promise.all([
+    const [farmers, agents, contacts, staffTime, employees] = await Promise.all([
       prisma.farmer.findMany({ where: { entityId, name: contains }, select: { id: true, name: true, community: true, district: true }, take: 25 }),
       prisma.buyingAgent.findMany({ where: { entityId, name: contains }, select: { id: true, name: true }, take: 25 }),
       prisma.contact.findMany({ where: { name: contains, balances: { some: { entityId } } }, select: { id: true, name: true, category: true }, take: 25 }),
-      prisma.payrollLine.findMany({ where: { entityId, employeeName: contains }, select: { employeeRef: true, employeeName: true, department: true }, distinct: ['employeeName'], take: 25 }),
       prisma.staffTimeAllocation.findMany({ where: { entityId, personName: contains }, select: { personName: true, role: true }, distinct: ['personName'], take: 25 }),
+      prisma.employee.findMany({ where: { entityId, name: contains }, select: { id: true, name: true, staffNumber: true, department: true }, take: 25 }),
     ]);
 
     const staff = new Map<string, SubjectMatch>();
-    for (const line of payroll) {
-      const key = line.employeeRef?.trim() || line.employeeName;
-      staff.set(key, { kind: 'employee', id: key, name: line.employeeName, detail: line.department ?? 'On the payroll' });
-    }
+    // An employee on the payroll is found by their record, which carries
+    // everything else held about them under the same name.
+    const employeeNames = new Set(employees.map((row) => row.name));
+    for (const row of employees) staff.set(row.id, { kind: 'employee', id: row.id, name: row.name, detail: `${row.staffNumber}${row.department ? ` · ${row.department}` : ''}` });
     for (const row of staffTime) {
-      if (!staff.has(row.personName)) staff.set(row.personName, { kind: 'employee', id: row.personName, name: row.personName, detail: row.role ?? 'Time charged to a grant' });
+      if (!staff.has(row.personName) && !employeeNames.has(row.personName)) staff.set(row.personName, { kind: 'employee', id: row.personName, name: row.personName, detail: row.role ?? 'Time charged to a grant' });
     }
 
     return {
@@ -167,7 +167,20 @@ export async function revealPersonalDetail(entityId: string, input: RevealInput)
       stored = decryptField(input.field, chosen[0]);
       detail = chosen[1];
     } else {
-      return fail('Nothing hidden is held about a member of staff: payroll figures come from the payroll system.');
+      const employee = await prisma.employee.findFirst({ where: { id: input.subjectId, entityId }, select: { name: true, email: true, tin: true, ssnitNumber: true, bankAccountNumber: true, momoNumber: true } });
+      if (!employee) return fail('That member of staff is not on this entity’s payroll.');
+      label = employee.name;
+      const fields: Record<string, [string | null, string]> = {
+        'Employee.email': [decryptField('Employee.email', employee.email), 'email address'],
+        'Employee.tin': [employee.tin, 'tax identification number'],
+        'Employee.ssnitNumber': [employee.ssnitNumber, 'SSNIT number'],
+        'Employee.bankAccountNumber': [decryptField('Employee.bankAccountNumber', employee.bankAccountNumber), 'bank account number'],
+        'Employee.momoNumber': [decryptField('Employee.momoNumber', employee.momoNumber), 'mobile money number'],
+      };
+      const chosen = fields[input.field];
+      if (!chosen) return fail('That is not a value that can be shown.');
+      stored = chosen[0];
+      detail = chosen[1];
     }
 
     if (!stored) {
@@ -329,41 +342,68 @@ async function contactReport(entityId: string, contactId: string): Promise<{ lab
   };
 }
 
-async function employeeReport(entityId: string, employeeKey: string): Promise<{ label: string; groups: SubjectRecordGroup[] } | null> {
-  const [lines, allocations, staffTime, assets] = await Promise.all([
-    prisma.payrollLine.findMany({ where: { entityId, OR: [{ employeeRef: employeeKey }, { employeeName: employeeKey }] }, include: { run: { select: { period: true } } }, orderBy: { id: 'asc' } }),
-    prisma.payrollAllocation.findMany({ where: { entityId, employeeKey }, include: { grant: { select: { name: true } } } }),
+async function employeeReport(entityId: string, employeeKeyOrId: string): Promise<{ label: string; groups: SubjectRecordGroup[] } | null> {
+  // An employee on the payroll is asked for by their record; everything else
+  // held about them is found under their name.
+  const employee = await prisma.employee.findFirst({
+    where: { id: employeeKeyOrId, entityId },
+    include: {
+      allowances: { orderBy: { createdAt: 'asc' } },
+      loans: true,
+      payLines: { include: { run: { select: { period: true, status: true } } }, orderBy: { id: 'asc' } },
+    },
+  });
+  const employeeKey = employee?.name ?? employeeKeyOrId;
+  const [staffTime, assets] = await Promise.all([
     prisma.staffTimeAllocation.findMany({ where: { entityId, personName: employeeKey }, include: { grant: { select: { name: true } } }, orderBy: { periodStart: 'desc' } }),
     prisma.fixedAsset.findMany({ where: { entityId, custodian: employeeKey }, select: { description: true, code: true } }),
   ]);
-  if (lines.length === 0 && allocations.length === 0 && staffTime.length === 0 && assets.length === 0) return null;
+  if (!employee && staffTime.length === 0 && assets.length === 0) return null;
 
   const entity = await prisma.entity.findUniqueOrThrow({ where: { id: entityId }, select: { functionalCurrency: true } });
   const money = (minor: bigint) => formatMoney(toMinor(minor), entity.functionalCurrency);
-  const label = lines[0]?.employeeName ?? employeeKey;
+  const label = employee?.name ?? employeeKey;
+
+  const payrollGroups: SubjectRecordGroup[] = employee
+    ? [
+        {
+          title: 'Your payroll record',
+          explanation: 'What we hold so that you are paid, and so that your tax and pension contributions reach GRA and SSNIT.',
+          rows: [
+            { label: 'Name', value: employee.name },
+            { label: 'Staff number', value: employee.staffNumber },
+            { label: 'Email for payslips', value: decryptField('Employee.email', employee.email) ?? 'None held' },
+            { label: 'Tax identification number', value: employee.tin ?? 'None held' },
+            { label: 'SSNIT number', value: employee.ssnitNumber ?? 'None held' },
+            { label: 'Paid to', value: employee.payMethod === 'MOBILE_MONEY' ? `Mobile money ${decryptField('Employee.momoNumber', employee.momoNumber) ?? ''}` : `${employee.bankName ?? 'Bank'} ${decryptField('Employee.bankAccountNumber', employee.bankAccountNumber) ?? ''}` },
+            { label: 'Employed', value: `From ${dateText(employee.startDate)}${employee.endDate ? ` to ${dateText(employee.endDate)}` : ''}` },
+            { label: 'Basic salary', value: `${money(employee.basicMinor)} a month` },
+            ...employee.allowances.map((a) => ({ label: a.name, value: `${money(a.amountMinor)} a month${a.endedAt ? ' (ended)' : ''}` })),
+          ],
+        },
+        {
+          title: 'Your pay, month by month',
+          explanation: 'Every pay period you were paid in. These are accounting records and cannot be deleted.',
+          rows: employee.payLines
+            .filter((line) => line.run.status === 'POSTED')
+            .map((line) => ({ label: line.run.period, value: `Gross ${money(line.grossMinor)}, SSNIT ${money(line.employeeSsnitMinor)}, PAYE ${money(line.payeMinor)}, net ${money(line.netMinor)}` })),
+        },
+        {
+          title: 'Loans and advances',
+          explanation: 'Money lent to you and repaid from your pay.',
+          rows: employee.loans.map((loan) => ({ label: `${loan.description} — ${dateText(loan.issuedOn)}`, value: `${money(loan.principalMinor)}, repaid at ${money(loan.instalmentMinor)} a month` })),
+        },
+      ]
+    : [];
 
   return {
     label,
     groups: [
+      ...payrollGroups,
       {
-        title: 'What we hold about you',
-        explanation: 'Your pay is worked out in a separate payroll system. What this app holds is the summary that was imported, so that the cost appears in the accounts.',
+        title: 'Time charged to funders',
+        explanation: 'Hours of your time charged to a grant, so that donors are reported to correctly.',
         rows: [
-          { label: 'Name', value: label },
-          { label: 'Payroll reference', value: lines[0]?.employeeRef ?? 'None held' },
-          { label: 'Department', value: lines[0]?.department ?? 'None held' },
-        ],
-      },
-      {
-        title: 'Imported payroll summaries',
-        explanation: 'One line per month, as it came from the payroll system. These are accounting records and cannot be deleted.',
-        rows: lines.map((line) => ({ label: line.run.period, value: `Gross ${money(line.grossMinor)}, PAYE ${money(line.payeMinor)}, net ${money(line.netMinor)}` })),
-      },
-      {
-        title: 'How your cost is split between funders',
-        explanation: 'The share of your cost charged to each grant, so that donors are reported to correctly.',
-        rows: [
-          ...allocations.map((allocation) => ({ label: allocation.grant.name, value: `${allocation.pct.toString()}%` })),
           ...staffTime.map((row) => ({ label: `${row.grant.name} — ${dateText(row.periodStart)} to ${dateText(row.periodEnd)}`, value: `${row.hours.toString()} hours, valued at ${money(row.valueMinor)}` })),
         ],
       },
@@ -500,16 +540,22 @@ export async function erasePerson(entityId: string, input: SubjectRequestInput):
           await tx.contact.update({ where: { id: contact.id }, data: { name: pseudonym, phone: null, email: null, address: null } });
           changed += 4;
         } else {
-          const lines = await tx.payrollLine.findMany({ where: { entityId, OR: [{ employeeRef: input.subjectId }, { employeeName: input.subjectId }] }, select: { id: true, employeeName: true } });
-          const times = await tx.staffTimeAllocation.findMany({ where: { entityId, personName: input.subjectId }, select: { id: true, personName: true } });
-          const allocations = await tx.payrollAllocation.findMany({ where: { entityId, employeeKey: input.subjectId }, select: { id: true } });
-          const assets = await tx.fixedAsset.findMany({ where: { entityId, custodian: input.subjectId }, select: { id: true } });
-          if (lines.length === 0 && times.length === 0 && allocations.length === 0 && assets.length === 0) {
+          // An employee on the payroll: their record loses the name and the
+          // numbers that reach them; the TIN and SSNIT number stay with the
+          // tax and pension record, and every pay line, amount and journal
+          // is untouched. Everything held under their name follows.
+          const employee = await tx.employee.findFirst({ where: { id: input.subjectId, entityId }, select: { id: true, name: true } });
+          const key = employee?.name ?? input.subjectId;
+          const times = await tx.staffTimeAllocation.findMany({ where: { entityId, personName: key }, select: { id: true, personName: true } });
+          const assets = await tx.fixedAsset.findMany({ where: { entityId, custodian: key }, select: { id: true } });
+          if (!employee && times.length === 0 && assets.length === 0) {
             return { refusal: 'Nothing is held about that person on this company.', row: null };
           }
-          subjectRef = lines[0]?.employeeName ?? times[0]?.personName ?? input.subjectId;
-          changed += (await tx.payrollLine.updateMany({ where: { id: { in: lines.map((line) => line.id) } }, data: { employeeName: pseudonym, employeeRef: pseudonym } })).count;
-          changed += (await tx.payrollAllocation.updateMany({ where: { id: { in: allocations.map((row) => row.id) } }, data: { employeeName: pseudonym, employeeKey: pseudonym } })).count;
+          subjectRef = employee?.name ?? times[0]?.personName ?? input.subjectId;
+          if (employee) {
+            await tx.employee.update({ where: { id: employee.id }, data: { name: pseudonym, email: null, bankAccountNumber: null, momoNumber: null } });
+            changed += 4;
+          }
           changed += (await tx.staffTimeAllocation.updateMany({ where: { id: { in: times.map((row) => row.id) } }, data: { personName: pseudonym } })).count;
           changed += (await tx.fixedAsset.updateMany({ where: { id: { in: assets.map((row) => row.id) } }, data: { custodian: pseudonym } })).count;
         }

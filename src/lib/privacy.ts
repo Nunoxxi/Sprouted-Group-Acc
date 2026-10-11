@@ -80,9 +80,12 @@ export const dataMap: PiiField[] = [
   { model: 'BuyingAgent', field: 'phone', describes: "A buying agent's telephone number", subject: 'agent', sensitivity: 'contact-detail', purpose: 'contact-the-person', encrypted: true, masked: true, onErasure: 'removed' },
 
   // --- staff ---
-  { model: 'PayrollLine', field: 'employeeName', describes: 'A member of staff on a payroll summary', subject: 'staff', sensitivity: 'identifier', purpose: 'account-for-the-money', encrypted: false, masked: true, onErasure: 'replaced-with-a-pseudonym' },
-  { model: 'PayrollLine', field: 'employeeRef', describes: 'Their staff reference', subject: 'staff', sensitivity: 'identifier', purpose: 'account-for-the-money', encrypted: false, masked: true, onErasure: 'replaced-with-a-pseudonym' },
-  { model: 'PayrollAllocation', field: 'employeeName', describes: 'A member of staff whose cost is split across grants', subject: 'staff', sensitivity: 'identifier', purpose: 'report-to-a-funder', encrypted: false, masked: true, onErasure: 'replaced-with-a-pseudonym' },
+  { model: 'Employee', field: 'name', describes: 'A member of staff on the payroll', subject: 'staff', sensitivity: 'identifier', purpose: 'pay-the-person', encrypted: false, masked: true, onErasure: 'replaced-with-a-pseudonym' },
+  { model: 'Employee', field: 'email', describes: 'Where their payslip is emailed', subject: 'staff', sensitivity: 'contact-detail', purpose: 'contact-the-person', encrypted: true, masked: true, onErasure: 'removed' },
+  { model: 'Employee', field: 'tin', describes: 'Their tax identification number, for the PAYE return', subject: 'staff', sensitivity: 'financial', purpose: 'account-for-the-money', encrypted: false, masked: true, onErasure: 'kept' },
+  { model: 'Employee', field: 'ssnitNumber', describes: 'Their SSNIT number, for the contribution report', subject: 'staff', sensitivity: 'financial', purpose: 'account-for-the-money', encrypted: false, masked: true, onErasure: 'kept' },
+  { model: 'Employee', field: 'bankAccountNumber', describes: 'The bank account their pay goes to', subject: 'staff', sensitivity: 'financial', purpose: 'pay-the-person', encrypted: true, masked: true, onErasure: 'removed' },
+  { model: 'Employee', field: 'momoNumber', describes: 'The mobile money number their pay goes to', subject: 'staff', sensitivity: 'contact-detail', purpose: 'pay-the-person', encrypted: true, masked: true, onErasure: 'removed' },
   { model: 'StaffTimeAllocation', field: 'personName', describes: 'Whose time was charged to a grant', subject: 'staff', sensitivity: 'identifier', purpose: 'report-to-a-funder', encrypted: false, masked: true, onErasure: 'replaced-with-a-pseudonym' },
   { model: 'FixedAsset', field: 'custodian', describes: 'Who is holding a piece of equipment', subject: 'staff', sensitivity: 'identifier', purpose: 'account-for-the-money', encrypted: false, masked: true, onErasure: 'replaced-with-a-pseudonym' },
 

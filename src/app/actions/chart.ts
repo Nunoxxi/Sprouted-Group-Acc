@@ -60,7 +60,7 @@ type Tx = Prisma.TransactionClient;
 
 /** Everything pointing at an account other than a posting. */
 async function referenceCount(client: Tx | typeof prisma, accountId: string): Promise<number> {
-  const [children, bank, items, locations, budgetLines, staffTime, recurring, mappings, departments, documentLines] = await Promise.all([
+  const [children, bank, items, locations, budgetLines, staffTime, recurring, employees, floatLabour, documentLines] = await Promise.all([
     client.account.count({ where: { parentId: accountId } }),
     client.bankAccount.count({ where: { accountId } }),
     client.item.count({ where: { accountId } }),
@@ -68,11 +68,11 @@ async function referenceCount(client: Tx | typeof prisma, accountId: string): Pr
     client.grantBudgetLine.count({ where: { accountId } }),
     client.staffTimeAllocation.count({ where: { accountId } }),
     client.recurringCost.count({ where: { accountId } }),
-    client.payrollMapping.count({ where: { defaultAccountId: accountId } }),
-    client.payrollDepartment.count({ where: { accountId } }),
+    client.employee.count({ where: { expenseAccountId: accountId } }),
+    client.floatLabourPayment.count({ where: { accountId } }),
     client.documentLine.count({ where: { accountId } }),
   ]);
-  return children + bank + items + locations + budgetLines + staffTime + recurring + mappings + departments + documentLines;
+  return children + bank + items + locations + budgetLines + staffTime + recurring + employees + floatLabour + documentLines;
 }
 
 async function factsFor(client: Tx | typeof prisma, row: { id: string; code: string; type: string; isActive: boolean }): Promise<AccountFacts> {

@@ -1,817 +1,748 @@
 'use client';
 
 /**
- * The payroll import. There is no payroll engine here: payroll is run in a
- * Ghanaian payroll system or a spreadsheet, and this reads its summary
- * against a mapping the app remembers and posts it.
+ * Payroll, per entity: pay runs from draft to posted, payslips, what payroll
+ * owes and when, employees and loans, the reports, and the entity's own
+ * payroll settings. The statutory rates are under Settings → Payroll rates,
+ * the same for every company in the group.
  *
- * Casual and seasonal labour paid by a buying agent is not payroll — it goes
- * through the agent float, on the Buying screen. The screen says so.
+ * Casual and seasonal labour paid through a buying agent is not payroll — it
+ * is recorded against the agent's float on the Buying screen, and appears
+ * beside payroll only in the labour cost report.
  */
 
-import { useMemo, useState, useTransition } from 'react';
+import { Fragment, useMemo, useState, useTransition } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Money } from '@/components/ui/money';
 import {
-  importPayroll,
-  payPayrollLiability,
-  removePayrollAllocation,
-  savePayrollAllocation,
-  savePayrollDepartment,
-  savePayrollMapping,
-  setPayrollDueDays,
-  type ImportResult,
+  approvePayRun,
+  createPayRun,
+  downloadPayslip,
+  emailPayslip,
+  payRemittance,
+  postPayRun,
+  recalculatePayRun,
+  reopenPayRun,
+  reversePayRun,
+  setPayLineInputs,
 } from '@/app/actions/payroll';
+import { savePayrollSettings } from '@/app/actions/payroll-settings';
+import { PayrollPeople } from '@/components/app/payroll-people';
+import { Banner, cedisOf, download, fieldLabel, minorOf, selectClass, todayIso, type Message } from '@/components/app/payroll-ui';
+import { PayrollReports } from '@/components/app/payroll-reports-view';
 import type { Permission } from '@/lib/authz';
-import type {
-  AccountRecord,
-  BankAccountRecord,
-  EntityRecord,
-  GrantRecord,
-  PayrollAllocationRecord,
-  PayrollDepartmentRecord,
-  PayrollMappingRecord,
-  PayrollRunRecord,
-} from '@/lib/data/types';
-import { allocationTotal, liabilityKindLabels, liabilityPosition, looksLikeCasualLabour } from '@/lib/payroll';
+import type { CasualLabourFact, EmployeeRecord, PayRunRecord, RemittanceRecord, StaffLoanRecord } from '@/lib/data/payroll';
+import type { PayrollSettingRecord } from '@/lib/data/payroll-rates';
+import type { AccountRecord, BankAccountRecord, EntityRecord, PostedJournal, ProjectRecord } from '@/lib/data/types';
+import type { ProrationBasis } from '@/lib/payroll-engine';
+import { lastDayOf, type StatutoryRateRow } from '@/lib/payroll-rates';
+import type { PayLineFact } from '@/lib/payroll-reports';
+import { approvalProblems, payRunJournal, remittanceLabels, remittancePosition, type PayJournalLine } from '@/lib/payroll-run';
+import { buildPayslip, periodLabel, type Payslip } from '@/lib/payslip';
 
 type Props = {
   entity: EntityRecord;
-  runs: PayrollRunRecord[];
-  mappings: PayrollMappingRecord[];
-  departments: PayrollDepartmentRecord[];
-  allocations: PayrollAllocationRecord[];
-  grants: GrantRecord[];
+  entities: EntityRecord[];
+  settings: PayrollSettingRecord;
+  rates: StatutoryRateRow[];
+  employees: EmployeeRecord[];
+  runs: PayRunRecord[];
+  loans: StaffLoanRecord[];
+  remittances: RemittanceRecord[];
+  factsByEntity: Record<string, PayLineFact[]>;
+  casualByEntity: Record<string, CasualLabourFact[]>;
+  ledger: Record<string, number>;
   accounts: AccountRecord[];
+  projects: ProjectRecord[];
   bankAccounts: BankAccountRecord[];
   allowed: (permission: Permission) => boolean;
 };
 
-type Tab = 'Import' | 'Liabilities' | 'Mapping' | 'Grant split';
-const selectClass = 'min-h-[44px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50';
-const label = 'mb-1.5 block text-sm font-medium text-slate-700';
-const todayIso = () => new Date().toISOString().slice(0, 10);
-const toMinor = (text: string) => Math.round(Number(String(text).replace(/,/g, '')) * 100);
+type Tab = 'Pay runs' | 'What payroll owes' | 'People' | 'Reports' | 'Settings';
 
-const columnFields = [
-  ['employeeNameColumn', 'Person', true],
-  ['grossColumn', 'Gross pay', true],
-  ['employeeRefColumn', 'Staff reference', false],
-  ['departmentColumn', 'Department', false],
-  ['payeColumn', 'PAYE', false],
-  ['employeeSsnitColumn', "Employee's SSNIT", false],
-  ['employerSsnitColumn', "Employer's SSNIT", false],
-  ['ssnitTier2Column', 'SSNIT tier 2', false],
-  ['otherDeductionsColumn', 'Other deductions', false],
-  ['netColumn', 'Net pay', false],
-] as const;
+const statusStyle: Record<PayRunRecord['status'], string> = {
+  draft: 'bg-slate-100 text-slate-700',
+  approved: 'bg-sky-100 text-sky-800',
+  posted: 'bg-green-100 text-green-700',
+  reversed: 'bg-rose-100 text-rose-700',
+};
+const statusWords: Record<PayRunRecord['status'], string> = { draft: 'Draft', approved: 'Approved', posted: 'Posted', reversed: 'Reversed' };
 
-export function PayrollPanel({ entity, runs, mappings, departments, allocations, grants, accounts, bankAccounts, allowed }: Props) {
-  const [tab, setTab] = useState<Tab>('Import');
-  const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
-  const [pending, startTransition] = useTransition();
-  const today = todayIso();
+function StatusBadge({ status }: { status: PayRunRecord['status'] }) {
+  return <span className={['inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em]', statusStyle[status]].join(' ')}>{statusWords[status]}</span>;
+}
 
-  const expenseAccounts = useMemo(() => accounts.filter((account) => account.type === 'EXPENSE' || account.type === 'COST_OF_SALES'), [accounts]);
-  const activeGrants = useMemo(() => grants.filter((grant) => grant.status === 'active'), [grants]);
+export function PayrollPanel(props: Props) {
+  const { entity, settings, employees, runs, allowed } = props;
+  const [tab, setTab] = useState<Tab>(settings.payrollEnabled ? 'Pay runs' : 'Settings');
+  const tabs: Tab[] = ['Pay runs', 'What payroll owes', 'People', 'Reports', 'Settings'];
 
-  /** Every liability across every month, for the position and the table. */
-  const position = useMemo(() => {
-    const rows = runs.flatMap((run) =>
-      run.liabilities.map((liability) => ({
-        id: liability.id,
-        period: liability.period,
-        kind: liability.kind,
-        amountMinor: liability.amountMinor,
-        settledMinor: liability.settledMinor,
-        dueDate: liability.dueDate,
-      })),
+  if (!allowed('payroll:view')) {
+    return (
+      <Card className="rounded-2xl">
+        <h3 className="text-xl font-semibold text-slate-900">Payroll</h3>
+        <p className="mt-2 text-sm text-slate-600">Your role does not show what named people are paid. Payroll totals are in the reports, through the ledger.</p>
+      </Card>
     );
-    return liabilityPosition(rows, today);
-  }, [runs, today]);
-  const liabilityById = useMemo(() => new Map(runs.flatMap((run) => run.liabilities.map((liability) => [liability.id, liability]))), [runs]);
+  }
 
-  function run(okText: string, action: () => Promise<{ ok: boolean; error?: string }>, after?: () => void) {
+  return (
+    <div className="space-y-6">
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{entity.name}</p>
+        <h3 className="mt-1 text-xl font-semibold text-slate-900">Payroll</h3>
+        <p className="mt-1 max-w-3xl text-sm text-slate-600">
+          Pay is worked out from the statutory rates under Settings → Payroll rates. Casual and seasonal labour paid through a buying agent is not payroll: it is recorded against the
+          agent’s float on the Buying screen.
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {tabs.map((name) => (
+          <button key={name} type="button" onClick={() => setTab(name)} className={['rounded-lg px-3 py-1.5 text-sm font-medium', tab === name ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'].join(' ')}>
+            {name}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'Pay runs' ? <PayRuns {...props} /> : null}
+      {tab === 'What payroll owes' ? <Remittances {...props} /> : null}
+      {tab === 'People' ? <PayrollPeople entity={entity} employees={employees} loans={props.loans} accounts={props.accounts} projects={props.projects} bankAccounts={props.bankAccounts} allowed={allowed} /> : null}
+      {tab === 'Reports' ? (
+        <PayrollReports entity={entity} entities={props.entities} factsByEntity={props.factsByEntity} casualByEntity={props.casualByEntity} remittances={props.remittances} ledger={props.ledger} loans={props.loans} projects={props.projects} runs={runs} />
+      ) : null}
+      {tab === 'Settings' ? <PayrollSettingsCard entity={entity} settings={settings} rates={props.rates} allowed={allowed} /> : null}
+    </div>
+  );
+}
+
+// --- pay runs -----------------------------------------------------------------------------------
+
+function PayRuns({ entity, settings, employees, runs, loans, factsByEntity, allowed }: Props) {
+  const [message, setMessage] = useState<Message>(null);
+  const [pending, startTransition] = useTransition();
+  const [period, setPeriod] = useState(todayIso().slice(0, 7));
+  const [selectedId, setSelectedId] = useState<string | null>(runs[0]?.id ?? null);
+  const [reason, setReason] = useState('');
+  const [openLine, setOpenLine] = useState<string | null>(null);
+  const [slipLine, setSlipLine] = useState<string | null>(null);
+  const [inputs, setInputs] = useState<Record<string, { bonus: string; overtime: string }>>({});
+
+  const run = runs.find((r) => r.id === selectedId) ?? null;
+  const employeeById = useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
+
+  function act(okText: string, action: () => Promise<{ ok: true; value?: unknown } | { ok: false; error: string }>, after?: (value: unknown) => void) {
     setMessage(null);
     startTransition(async () => {
       const result = await action();
       if (result.ok) {
         setMessage({ tone: 'ok', text: okText });
-        after?.();
-      } else setMessage({ tone: 'error', text: result.error ?? 'Something went wrong.' });
+        after?.(result.value);
+      } else setMessage({ tone: 'error', text: result.error });
     });
   }
 
-  // --- forms --------------------------------------------------------------------
-
-  const [importForm, setImportForm] = useState({ period: today.slice(0, 7), payDate: today, mappingId: mappings[0]?.id ?? '', fileName: '', csv: '' });
-  const [imported, setImported] = useState<ImportResult | null>(null);
-  const [mappingForm, setMappingForm] = useState<Record<string, string>>({ id: '', name: '', defaultAccountCode: '' });
-  const [headers, setHeaders] = useState<string[]>([]);
-  const [departmentForm, setDepartmentForm] = useState({ name: '', accountCode: '' });
-  const [dueDays, setDueDays] = useState({ paye: String(entity.payeDueDay), ssnit: String(entity.ssnitDueDay) });
-  const [splitForm, setSplitForm] = useState({ employeeKey: '', employeeName: '', grantId: '', budgetLineId: '', pct: '' });
-  const [payForm, setPayForm] = useState({ liabilityId: '', date: today, amount: '', bankAccountId: bankAccounts[0]?.id ?? '', reference: '' });
-
-  function editMapping(row: PayrollMappingRecord) {
-    setMappingForm({
-      id: row.id,
-      name: row.name,
-      employeeRefColumn: row.employeeRefColumn,
-      employeeNameColumn: row.employeeNameColumn,
-      departmentColumn: row.departmentColumn,
-      grossColumn: row.grossColumn,
-      payeColumn: row.payeColumn,
-      employeeSsnitColumn: row.employeeSsnitColumn,
-      employerSsnitColumn: row.employerSsnitColumn,
-      ssnitTier2Column: row.ssnitTier2Column,
-      otherDeductionsColumn: row.otherDeductionsColumn,
-      netColumn: row.netColumn,
-      defaultAccountCode: row.defaultAccountCode,
-    });
-  }
-
-  /** The people in the most recent run, for setting a split against. */
-  const people = useMemo(() => {
-    const seen = new Map<string, string>();
-    for (const row of runs) for (const line of row.lines) seen.set(line.employeeRef || line.employeeName, line.employeeName);
-    return [...seen].map(([key, name]) => ({ key, name }));
-  }, [runs]);
-
-  const splitByPerson = useMemo(() => {
-    const groups = new Map<string, PayrollAllocationRecord[]>();
-    for (const row of allocations) groups.set(row.employeeKey, [...(groups.get(row.employeeKey) ?? []), row]);
-    return [...groups].map(([key, rows]) => ({ key, name: rows[0].employeeName || key, rows, total: allocationTotal(rows) }));
-  }, [allocations]);
+  const problems = run && run.status === 'draft' ? approvalProblems(run.lines.map((l) => ({ error: l.error, result: l.result }))) : [];
+  // The journal a draft or approved run will post, from the same function posting uses.
+  const previewLines = run && !run.journal ? run.lines.filter((l) => l.result && l.inputs) : [];
+  const preview: PayJournalLine[] | null = previewLines.length
+    ? payRunJournal(previewLines.map((l) => ({ expenseAccountCode: l.inputs!.expenseAccountCode, allocations: l.inputs!.allocations, result: l.result! })))
+    : null;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{entity.name}</p>
-          <h2 className="mt-1 text-2xl font-semibold text-slate-900">Payroll</h2>
-          <p className="mt-1 text-sm text-slate-600">
-            Payroll is run in your payroll system or spreadsheet. Upload its monthly summary here and the app posts it — it never works out anybody&rsquo;s pay or tax.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {(['Import', 'Liabilities', 'Mapping', 'Grant split'] as Tab[]).map((name) => (
-            <Button key={name} size="sm" variant={tab === name ? 'primary' : 'secondary'} onClick={() => setTab(name)}>
-              {name}
+    <div className="space-y-5">
+      <Banner message={message} />
+      {!settings.payrollEnabled ? (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">Payroll is switched off for {entity.name}. Switch it on under Settings on this screen to run payroll.</div>
+      ) : allowed('payroll:prepare') ? (
+        <Card className="rounded-2xl">
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <label className={fieldLabel} htmlFor="pr-period">Pay period</label>
+              <Input id="pr-period" type="month" value={period} onChange={(e) => setPeriod(e.target.value)} />
+            </div>
+            <Button disabled={pending} onClick={() => act(`${periodLabel(period)} opened and worked out.`, () => createPayRun(entity.id, period), (value) => setSelectedId((value as PayRunRecord).id))}>
+              Open the pay run
             </Button>
-          ))}
-        </div>
-      </div>
-
-      {message ? (
-        <div className={['rounded-xl border px-4 py-3 text-sm', message.tone === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-rose-200 bg-rose-50 text-rose-900'].join(' ')}>{message.text}</div>
+            <p className="text-xs text-slate-500">Everyone employed on any day of the month is worked out. Bonus and overtime are entered per person once it is open.</p>
+          </div>
+        </Card>
       ) : null}
 
-      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-        <span className="font-semibold">Casual and seasonal labour does not belong here.</span> Farm hands and pickers paid by a buying agent are recorded on the <span className="font-semibold">Buying</span> screen,
-        against the agent&rsquo;s float, because that is where the money left.
-      </div>
-
-      {/* --- import ------------------------------------------------------------- */}
-      {tab === 'Import' ? (
-        <div className="space-y-6">
-          {allowed('document:post') ? (
-            <Card className="rounded-2xl">
-              <h3 className="text-lg font-semibold text-slate-900">Upload a month</h3>
-              <p className="mt-1 text-sm text-slate-600">One file a month. Gross pay goes to each department&rsquo;s account; PAYE, SSNIT and net pay go up as liabilities until they are paid.</p>
-              {mappings.length === 0 ? (
-                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                  No mapping yet. Set one up under <span className="font-semibold">Mapping</span> first — the columns are matched once and remembered.
-                </div>
-              ) : (
-                <>
-                  <div className="mt-4 grid gap-4 md:grid-cols-4">
-                    <div>
-                      <label className={label}>Month</label>
-                      <Input value={importForm.period} onChange={(e) => setImportForm((f) => ({ ...f, period: e.target.value }))} placeholder="2026-09" />
+      {runs.length === 0 ? (
+        <p className="text-sm text-slate-500">No pay runs yet.</p>
+      ) : (
+        <div className="grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)]">
+          <Card className="rounded-2xl p-0">
+            <ul className="divide-y divide-slate-100">
+              {runs.map((r) => (
+                <li key={r.id}>
+                  <button type="button" onClick={() => setSelectedId(r.id)} className={['w-full px-4 py-3 text-left', r.id === selectedId ? 'bg-brand-50' : 'hover:bg-slate-50'].join(' ')}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-slate-900">{periodLabel(r.period)}{r.sequence > 1 ? ` (${r.sequence})` : ''}</span>
+                      <StatusBadge status={r.status} />
                     </div>
-                    <div>
-                      <label className={label}>Pay date</label>
-                      <Input type="date" value={importForm.payDate} onChange={(e) => setImportForm((f) => ({ ...f, payDate: e.target.value }))} />
-                    </div>
-                    <div>
-                      <label className={label}>Mapping</label>
-                      <select className={selectClass} value={importForm.mappingId} onChange={(e) => setImportForm((f) => ({ ...f, mappingId: e.target.value }))}>
-                        {mappings.map((row) => (
-                          <option key={row.id} value={row.id}>
-                            {row.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className={label}>Payroll summary</label>
-                      <input
-                        type="file"
-                        accept=".csv,text/csv"
-                        className="min-h-[44px] w-full text-sm text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm"
-                        onChange={async (event) => {
-                          const file = event.target.files?.[0];
-                          if (!file) return;
-                          const csv = await file.text();
-                          setImportForm((f) => ({ ...f, fileName: file.name, csv }));
-                          setHeaders((csv.split(/\r?\n/)[0] ?? '').split(',').map((header) => header.trim().replace(/^"|"$/g, '')));
-                        }}
-                      />
-                    </div>
-                  </div>
-                  {importForm.csv ? (
-                    <div className="mt-4 flex flex-wrap items-center gap-3">
-                      <span className="text-sm text-slate-600">{importForm.fileName}</span>
-                      <Button
-                        size="sm"
-                        disabled={pending}
-                        onClick={() => {
-                          setMessage(null);
-                          setImported(null);
-                          startTransition(async () => {
-                            const result = await importPayroll(entity.id, importForm);
-                            if (result.ok) {
-                              setImported(result.value);
-                              setMessage({ tone: 'ok', text: `${importForm.period} imported and posted: ${result.value.run.lines.length} people.` });
-                              setImportForm((f) => ({ ...f, fileName: '', csv: '' }));
-                            } else setMessage({ tone: 'error', text: result.error });
-                          });
-                        }}
-                      >
-                        Import and post
-                      </Button>
-                    </div>
-                  ) : null}
-                </>
-              )}
-
-              {imported ? (
-                <div className="mt-4 space-y-2 text-sm">
-                  {imported.unbalanced.length ? (
-                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900">
-                      <p className="font-semibold">These rows did not add up, and were posted as the file stated them:</p>
-                      <ul className="mt-1 space-y-0.5">
-                        {imported.unbalanced.map((row) => (
-                          <li key={row.row}>
-                            Row {row.row}, {row.employeeName}: net pay is <Money value={row.statedMinor} /> but gross less the deductions comes to <Money value={row.expectedMinor} />.
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                  {imported.casualWarnings.length ? (
-                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900">
-                      &ldquo;{imported.casualWarnings.join('&rdquo;, &ldquo;')}&rdquo; sounds like casual labour. If those people are paid by a buying agent, record them on the Buying screen instead and leave them out of payroll.
-                    </div>
-                  ) : null}
-                  {imported.newDepartments.length ? (
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700">
-                      New department{imported.newDepartments.length === 1 ? '' : 's'} {imported.newDepartments.join(', ')} charged to the mapping&rsquo;s default account. Change that under Mapping if it is wrong.
-                    </div>
-                  ) : null}
-                  {imported.skipped.length ? <p className="text-slate-500">Passed over {imported.skipped.length} summary row{imported.skipped.length === 1 ? '' : 's'} in the file.</p> : null}
-                  {imported.errors.length ? (
-                    <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-rose-900">
-                      <p className="font-semibold">These rows could not be read and were left out:</p>
-                      <ul className="mt-1 space-y-0.5">
-                        {imported.errors.map((error) => (
-                          <li key={`${error.row}-${error.message}`}>
-                            Row {error.row}: {error.message}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-            </Card>
-          ) : null}
-
-          {runs.map((row) => (
-            <Card key={row.id} className="rounded-2xl">
-              <div className="flex flex-wrap items-baseline justify-between gap-3">
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-900">
-                    {row.period}
-                    <span className="ml-3 text-sm font-normal text-slate-500">
-                      paid {row.payDate} · {row.lines.length} {row.lines.length === 1 ? 'person' : 'people'} · {row.fileName}
-                    </span>
-                  </h3>
-                  <p className="text-sm text-slate-600">Posted by {row.postedByName}</p>
-                </div>
-                <div className="text-right text-sm">
-                  <p className="text-slate-600">
-                    Gross <Money value={row.grossMinor} />
-                  </p>
-                  <p className="font-semibold text-slate-900">
-                    Cost to {entity.name} <Money value={row.employerCostMinor} />
-                  </p>
-                </div>
-              </div>
-              <div className="mt-4 overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="text-left text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                    <tr>
-                      <th className="py-2">Person</th>
-                      <th className="py-2">Department</th>
-                      <th className="py-2 text-right">Gross</th>
-                      <th className="py-2 text-right">PAYE</th>
-                      <th className="py-2 text-right">SSNIT (them)</th>
-                      <th className="py-2 text-right">SSNIT (us)</th>
-                      <th className="py-2 text-right">Net</th>
-                      <th className="py-2">Grant split</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {row.lines.map((line) => {
-                      const key = line.employeeRef || line.employeeName;
-                      const theirs = allocations.filter((allocation) => allocation.employeeKey === key);
-                      return (
-                        <tr key={line.id} className={looksLikeCasualLabour(line.department) ? 'bg-amber-50' : ''}>
-                          <td className="py-2 text-slate-900">
-                            {line.employeeName}
-                            {line.employeeRef ? <span className="ml-2 font-mono text-xs text-slate-500">{line.employeeRef}</span> : null}
-                          </td>
-                          <td className="py-2 text-slate-600">{line.department}</td>
-                          <td className="py-2 text-right">
-                            <Money value={line.grossMinor} />
-                          </td>
-                          <td className="py-2 text-right text-slate-600">
-                            <Money value={line.payeMinor} />
-                          </td>
-                          <td className="py-2 text-right text-slate-600">
-                            <Money value={line.employeeSsnitMinor} />
-                          </td>
-                          <td className="py-2 text-right text-slate-600">
-                            <Money value={line.employerSsnitMinor + line.ssnitTier2Minor} />
-                          </td>
-                          <td className="py-2 text-right font-medium">
-                            <Money value={line.netMinor} />
-                          </td>
-                          <td className="py-2 text-xs text-slate-500">{theirs.length ? theirs.map((allocation) => `${allocation.grantCode} ${allocation.pct}%`).join(', ') : '—'}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          ))}
-          {runs.length === 0 ? (
-            <Card className="rounded-2xl">
-              <p className="text-sm text-slate-600">No payroll imported yet.</p>
-            </Card>
-          ) : null}
-        </div>
-      ) : null}
-
-      {/* --- liabilities --------------------------------------------------------- */}
-      {tab === 'Liabilities' ? (
-        <div className="space-y-6">
-          <Card className="rounded-2xl">
-            <div className="flex flex-wrap items-baseline justify-between gap-3">
-              <h3 className="text-lg font-semibold text-slate-900">What is still owed</h3>
-              <div className="text-sm text-slate-600">
-                Outstanding <Money value={position.outstandingMinor} />
-                {position.overdueMinor > 0 ? (
-                  <>
-                    {' · '}
-                    <span className="font-semibold text-rose-700">
-                      <Money value={position.overdueMinor} /> past due
-                    </span>
-                  </>
-                ) : null}
-              </div>
-            </div>
-            {position.next ? (
-              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                Next: {liabilityKindLabels[position.next.kind]} for {position.next.period}, <Money value={position.next.outstandingMinor} /> by <span className="font-semibold">{position.next.dueDate}</span>.
-              </div>
-            ) : position.rows.length === 0 ? (
-              <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">Nothing outstanding on payroll.</div>
-            ) : null}
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="text-left text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                  <tr>
-                    <th className="py-2">Month</th>
-                    <th className="py-2">What</th>
-                    <th className="py-2">Due</th>
-                    <th className="py-2 text-right">Owed</th>
-                    <th className="py-2 text-right">Paid</th>
-                    <th className="py-2 text-right">Outstanding</th>
-                    <th className="py-2" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {position.rows.map((row) => (
-                    <tr key={row.id} className={row.overdue ? 'bg-rose-50' : ''}>
-                      <td className="py-2 text-slate-600">{row.period}</td>
-                      <td className="py-2 text-slate-900">{liabilityKindLabels[row.kind]}</td>
-                      <td className={['py-2', row.overdue ? 'font-medium text-rose-700' : 'text-slate-600'].join(' ')}>{row.dueDate}</td>
-                      <td className="py-2 text-right">
-                        <Money value={row.amountMinor} />
-                      </td>
-                      <td className="py-2 text-right text-slate-600">
-                        <Money value={row.settledMinor} />
-                      </td>
-                      <td className="py-2 text-right font-medium">
-                        <Money value={row.outstandingMinor} />
-                      </td>
-                      <td className="py-2 text-right">
-                        {allowed('document:post') ? (
-                          <Button size="sm" variant="ghost" onClick={() => setPayForm((f) => ({ ...f, liabilityId: row.id, amount: (row.outstandingMinor / 100).toFixed(2) }))}>
-                            Pay
-                          </Button>
-                        ) : null}
-                      </td>
-                    </tr>
-                  ))}
-                  {position.rows.length === 0 ? (
-                    <tr>
-                      <td className="py-2 text-slate-500" colSpan={7}>
-                        Nothing outstanding.
-                      </td>
-                    </tr>
-                  ) : null}
-                </tbody>
-              </table>
-            </div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {r.totals.employees} paid · net <Money value={r.totals.netMinor} />
+                    </p>
+                  </button>
+                </li>
+              ))}
+            </ul>
           </Card>
 
-          {payForm.liabilityId && allowed('document:post') ? (
-            <Card className="rounded-2xl">
-              <h3 className="text-lg font-semibold text-slate-900">
-                Pay {liabilityKindLabels[liabilityById.get(payForm.liabilityId)?.kind ?? 'paye']} for {liabilityById.get(payForm.liabilityId)?.period}
-              </h3>
-              <div className="mt-4 grid gap-4 md:grid-cols-4">
-                <div>
-                  <label className={label}>Date</label>
-                  <Input type="date" value={payForm.date} onChange={(e) => setPayForm((f) => ({ ...f, date: e.target.value }))} />
-                </div>
-                <div>
-                  <label className={label}>Amount</label>
-                  <Input inputMode="decimal" value={payForm.amount} onChange={(e) => setPayForm((f) => ({ ...f, amount: e.target.value }))} />
-                </div>
-                <div>
-                  <label className={label}>From</label>
-                  <select className={selectClass} value={payForm.bankAccountId} onChange={(e) => setPayForm((f) => ({ ...f, bankAccountId: e.target.value }))}>
-                    {bankAccounts.map((account) => (
-                      <option key={account.id} value={account.id}>
-                        {account.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className={label}>Reference</label>
-                  <Input value={payForm.reference} onChange={(e) => setPayForm((f) => ({ ...f, reference: e.target.value }))} />
-                </div>
-              </div>
-              <div className="mt-4 flex gap-2">
-                <Button
-                  size="sm"
-                  disabled={pending || !payForm.amount || !payForm.bankAccountId}
-                  onClick={() =>
-                    run('Payment posted.', () => payPayrollLiability(entity.id, { liabilityId: payForm.liabilityId, date: payForm.date, amountMinor: toMinor(payForm.amount), bankAccountId: payForm.bankAccountId, reference: payForm.reference }), () =>
-                      setPayForm((f) => ({ ...f, liabilityId: '', amount: '', reference: '' })),
-                    )
-                  }
-                >
-                  Post the payment
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => setPayForm((f) => ({ ...f, liabilityId: '' }))}>
-                  Cancel
-                </Button>
-              </div>
-            </Card>
-          ) : null}
-
-          {allowed('document:post') ? (
-            <Card className="rounded-2xl">
-              <h3 className="text-lg font-semibold text-slate-900">When they fall due</h3>
-              <p className="mt-1 text-sm text-slate-600">The day of the following month. Settings, because filing dates move.</p>
-              <div className="mt-4 flex flex-wrap items-end gap-3">
-                <div>
-                  <label className={label}>PAYE, day of the month</label>
-                  <Input inputMode="numeric" value={dueDays.paye} onChange={(e) => setDueDays((f) => ({ ...f, paye: e.target.value }))} />
-                </div>
-                <div>
-                  <label className={label}>SSNIT, day of the month</label>
-                  <Input inputMode="numeric" value={dueDays.ssnit} onChange={(e) => setDueDays((f) => ({ ...f, ssnit: e.target.value }))} />
-                </div>
-                <Button size="sm" disabled={pending} onClick={() => run('Due days saved.', () => setPayrollDueDays(entity.id, Number(dueDays.paye), Number(dueDays.ssnit)))}>
-                  Save
-                </Button>
-                <p className="text-xs text-slate-500">Net pay is due on the pay date itself.</p>
-              </div>
-            </Card>
-          ) : null}
-        </div>
-      ) : null}
-
-      {/* --- mapping ------------------------------------------------------------- */}
-      {tab === 'Mapping' ? (
-        <div className="space-y-6">
-          <Card className="rounded-2xl">
-            <h3 className="text-lg font-semibold text-slate-900">Saved mappings</h3>
-            <p className="mt-1 text-sm text-slate-600">Which column of your payroll file holds what. Matched once; the same shape imports every month after.</p>
-            <div className="mt-4 space-y-2 text-sm">
-              {mappings.map((row) => (
-                <div key={row.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 px-4 py-3">
+          {run ? (
+            <div className="space-y-5">
+              <Card className="rounded-2xl">
+                <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <p className="font-medium text-slate-900">{row.name}</p>
-                    <p className="text-xs text-slate-600">
-                      Person &ldquo;{row.employeeNameColumn}&rdquo; · gross &ldquo;{row.grossColumn}&rdquo;
-                      {row.departmentColumn ? ` · department “${row.departmentColumn}”` : ''}
-                      {row.payeColumn ? ` · PAYE “${row.payeColumn}”` : ''}
-                      {row.defaultAccountCode ? ` · default account ${row.defaultAccountCode}` : ''}
+                    <h4 className="text-lg font-semibold text-slate-900">
+                      {periodLabel(run.period)} <StatusBadge status={run.status} />
+                    </h4>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Paid on {run.payDate}.
+                      {run.approvedAt ? ` Approved by ${run.approvedByName} on ${run.approvedAt.slice(0, 10)}.` : ''}
+                      {run.postedAt ? ` Posted by ${run.postedByName} on ${run.postedAt.slice(0, 10)}.` : ''}
+                      {run.reversedAt ? ` Reversed by ${run.reversedByName} on ${run.reversedAt.slice(0, 10)}: ${run.reversalReason}` : ''}
                     </p>
                   </div>
-                  {allowed('document:post') ? (
-                    <Button size="sm" variant="ghost" onClick={() => editMapping(row)}>
-                      Edit
-                    </Button>
-                  ) : null}
-                </div>
-              ))}
-              {mappings.length === 0 ? <p className="text-slate-500">None yet.</p> : null}
-            </div>
-          </Card>
-
-          {allowed('document:post') ? (
-            <Card className="rounded-2xl">
-              <h3 className="text-lg font-semibold text-slate-900">{mappingForm.id ? `Edit ${mappingForm.name}` : 'Add a mapping'}</h3>
-              {headers.length ? (
-                <p className="mt-1 text-sm text-slate-600">Columns found in the file you chose: {headers.join(', ')}</p>
-              ) : (
-                <p className="mt-1 text-sm text-slate-600">Type each column heading exactly as it appears in your file, or choose a file on the Import tab first and pick from the list.</p>
-              )}
-              <div className="mt-4 grid gap-4 md:grid-cols-3">
-                <div>
-                  <label className={label}>Name for this mapping</label>
-                  <Input value={mappingForm.name ?? ''} onChange={(e) => setMappingForm((f) => ({ ...f, name: e.target.value }))} placeholder="Monthly payroll summary" />
-                </div>
-                {columnFields.map(([field, text, required]) => (
-                  <div key={field}>
-                    <label className={label}>
-                      {text}
-                      {required ? '' : ' (optional)'}
-                    </label>
-                    {headers.length ? (
-                      <select className={selectClass} value={mappingForm[field] ?? ''} onChange={(e) => setMappingForm((f) => ({ ...f, [field]: e.target.value }))}>
-                        <option value="">{required ? 'Choose…' : 'Not in the file'}</option>
-                        {headers.map((header) => (
-                          <option key={header} value={header}>
-                            {header}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <Input value={mappingForm[field] ?? ''} onChange={(e) => setMappingForm((f) => ({ ...f, [field]: e.target.value }))} />
-                    )}
+                  <div className="flex flex-wrap gap-2">
+                    {run.status === 'draft' && allowed('payroll:prepare') ? (
+                      <Button size="sm" variant="secondary" disabled={pending} onClick={() => act('Worked out again from the employees, loans and rates as they stand.', () => recalculatePayRun(entity.id, run.id))}>
+                        Recalculate
+                      </Button>
+                    ) : null}
+                    {run.status === 'draft' && allowed('payroll:approve') ? (
+                      <Button size="sm" disabled={pending || problems.length > 0} onClick={() => act('Approved. The figures are locked.', () => approvePayRun(entity.id, run.id))}>
+                        Approve
+                      </Button>
+                    ) : null}
+                    {run.status === 'approved' && allowed('payroll:approve') ? (
+                      <Button size="sm" variant="secondary" disabled={pending} onClick={() => act('Back to draft.', () => reopenPayRun(entity.id, run.id))}>
+                        Back to draft
+                      </Button>
+                    ) : null}
+                    {run.status === 'approved' && allowed('payroll:post') ? (
+                      <Button size="sm" disabled={pending} onClick={() => act('Posted. What it leaves owing is under “What payroll owes”.', () => postPayRun(entity.id, run.id))}>
+                        Post the journal
+                      </Button>
+                    ) : null}
                   </div>
-                ))}
-                <div>
-                  <label className={label}>Default account for gross pay</label>
-                  <select className={selectClass} value={mappingForm.defaultAccountCode ?? ''} onChange={(e) => setMappingForm((f) => ({ ...f, defaultAccountCode: e.target.value }))}>
-                    <option value="">Choose…</option>
-                    {expenseAccounts.map((account) => (
-                      <option key={account.code} value={account.code}>
-                        {account.code} {account.name}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="mt-1 text-xs text-slate-500">Used for any department without its own account.</p>
                 </div>
-              </div>
-              <div className="mt-4 flex gap-2">
-                <Button
-                  size="sm"
-                  disabled={pending || !(mappingForm.name ?? '').trim() || !(mappingForm.employeeNameColumn ?? '').trim() || !(mappingForm.grossColumn ?? '').trim()}
-                  onClick={() =>
-                    run(
-                      'Mapping saved.',
-                      () =>
-                        savePayrollMapping(entity.id, {
-                          id: mappingForm.id || undefined,
-                          name: mappingForm.name,
-                          employeeRefColumn: mappingForm.employeeRefColumn,
-                          employeeNameColumn: mappingForm.employeeNameColumn,
-                          departmentColumn: mappingForm.departmentColumn,
-                          grossColumn: mappingForm.grossColumn,
-                          payeColumn: mappingForm.payeColumn,
-                          employeeSsnitColumn: mappingForm.employeeSsnitColumn,
-                          employerSsnitColumn: mappingForm.employerSsnitColumn,
-                          ssnitTier2Column: mappingForm.ssnitTier2Column,
-                          otherDeductionsColumn: mappingForm.otherDeductionsColumn,
-                          netColumn: mappingForm.netColumn,
-                          defaultAccountCode: mappingForm.defaultAccountCode,
-                        }),
-                      () => setMappingForm({ id: '', name: '', defaultAccountCode: '' }),
-                    )
-                  }
-                >
-                  Save
-                </Button>
-                {mappingForm.id ? (
-                  <Button size="sm" variant="ghost" onClick={() => setMappingForm({ id: '', name: '', defaultAccountCode: '' })}>
-                    Cancel
-                  </Button>
+
+                {problems.length ? (
+                  <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    <p className="font-semibold">Not ready to approve</p>
+                    <ul className="mt-1 list-disc pl-5">
+                      {problems.map((problem) => (
+                        <li key={problem}>{problem}</li>
+                      ))}
+                    </ul>
+                  </div>
                 ) : null}
-              </div>
-            </Card>
-          ) : null}
 
-          <Card className="rounded-2xl">
-            <h3 className="text-lg font-semibold text-slate-900">Departments and their accounts</h3>
-            <p className="mt-1 text-sm text-slate-600">Gross pay is charged to the account of the department the person is in.</p>
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full text-sm">
-                <tbody className="divide-y divide-slate-100">
-                  {departments.map((row) => (
-                    <tr key={row.id}>
-                      <td className="py-2 text-slate-900">{row.name}</td>
-                      <td className="py-2 text-slate-600">
-                        {row.accountCode} {row.accountName}
-                      </td>
-                      <td className="py-2 text-right">
-                        {allowed('document:post') ? (
-                          <Button size="sm" variant="ghost" onClick={() => setDepartmentForm({ name: row.name, accountCode: row.accountCode })}>
-                            Change
-                          </Button>
-                        ) : null}
-                      </td>
-                    </tr>
-                  ))}
-                  {departments.length === 0 ? (
-                    <tr>
-                      <td className="py-2 text-slate-500">None yet — they appear as payroll is imported.</td>
-                    </tr>
-                  ) : null}
-                </tbody>
-              </table>
-            </div>
-            {allowed('document:post') ? (
-              <div className="mt-4 flex flex-wrap items-end gap-3">
-                <div>
-                  <label className={label}>Department</label>
-                  <Input value={departmentForm.name} onChange={(e) => setDepartmentForm((f) => ({ ...f, name: e.target.value }))} />
-                </div>
-                <div>
-                  <label className={label}>Account</label>
-                  <select className="min-h-[44px] rounded-lg border border-slate-200 bg-white px-3 text-sm" value={departmentForm.accountCode} onChange={(e) => setDepartmentForm((f) => ({ ...f, accountCode: e.target.value }))}>
-                    <option value="">Choose…</option>
-                    {expenseAccounts.map((account) => (
-                      <option key={account.code} value={account.code}>
-                        {account.code} {account.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <Button
-                  size="sm"
-                  disabled={pending || !departmentForm.name.trim() || !departmentForm.accountCode}
-                  onClick={() => run('Department saved.', () => savePayrollDepartment(entity.id, departmentForm.name, departmentForm.accountCode), () => setDepartmentForm({ name: '', accountCode: '' }))}
-                >
-                  Save
-                </Button>
-              </div>
-            ) : null}
-          </Card>
-        </div>
-      ) : null}
-
-      {/* --- the grant split ------------------------------------------------------- */}
-      {tab === 'Grant split' ? (
-        <div className="space-y-6">
-          {activeGrants.length === 0 ? (
-            <Card className="rounded-2xl">
-              <p className="text-sm text-slate-600">
-                {entity.name} has no active grants, so there is nothing to split staff costs across. Add a grant on the <span className="font-semibold">Grants</span> screen first.
-              </p>
-            </Card>
-          ) : (
-            <>
-              <Card className="rounded-2xl">
-                <h3 className="text-lg font-semibold text-slate-900">How each person&rsquo;s cost is split</h3>
-                <p className="mt-1 text-sm text-slate-600">
-                  Set once against the person and used by every payroll after it. Gross pay and the employer&rsquo;s SSNIT are both split, so a donor sees the whole cost. Anything under 100% is core-funded and stays uncoded.
-                </p>
-                <div className="mt-4 space-y-3">
-                  {splitByPerson.map((person) => (
-                    <div key={person.key} className="rounded-xl border border-slate-200 px-4 py-3">
-                      <div className="flex flex-wrap items-baseline justify-between gap-2">
-                        <p className="font-medium text-slate-900">
-                          {person.name}
-                          <span className="ml-2 font-mono text-xs text-slate-500">{person.key}</span>
-                        </p>
-                        <span className={['text-sm', person.total > 100 ? 'text-rose-700' : person.total === 100 ? 'text-emerald-700' : 'text-slate-600'].join(' ')}>{person.total}% allocated</span>
-                      </div>
-                      <table className="mt-2 w-full text-sm">
-                        <tbody className="divide-y divide-slate-100">
-                          {person.rows.map((row) => (
-                            <tr key={row.id}>
-                              <td className="py-1.5 text-slate-900">{row.grantCode}</td>
-                              <td className="py-1.5 text-slate-600">{row.budgetLineName || 'no budget line'}</td>
-                              <td className="py-1.5 text-right">{row.pct}%</td>
-                              <td className="py-1.5 text-right">
-                                {allowed('document:post') ? (
-                                  <Button size="sm" variant="ghost" disabled={pending} onClick={() => run('Removed.', () => removePayrollAllocation(entity.id, row.id))}>
-                                    Remove
-                                  </Button>
-                                ) : null}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                  {[
+                    ['Gross pay', run.totals.grossMinor],
+                    ['PAYE', run.totals.payeMinor],
+                    ['SSNIT (employee + employer)', run.totals.employeeSsnitMinor + run.totals.employerSsnitMinor + run.totals.employerTier2Minor],
+                    ['Net pay', run.totals.netMinor],
+                    ['Cost to the company', run.totals.employerCostMinor],
+                  ].map(([name, value]) => (
+                    <div key={name as string} className="rounded-xl bg-slate-50 px-4 py-3">
+                      <p className="text-xs uppercase tracking-wide text-slate-500">{name}</p>
+                      <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900"><Money value={value as number} /></p>
                     </div>
                   ))}
-                  {splitByPerson.length === 0 ? <p className="text-sm text-slate-500">Nobody is split across grants yet.</p> : null}
                 </div>
               </Card>
 
-              {allowed('document:post') ? (
+              <Card className="rounded-2xl">
+                <h4 className="text-base font-semibold text-slate-900">Who is paid what</h4>
+                <div className="mt-3 overflow-x-auto">
+                  <table className="w-full min-w-[860px] text-sm">
+                    <thead>
+                      <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+                        <th className="pb-2 pr-3 font-medium">Employee</th>
+                        <th className="pb-2 pr-3 text-right font-medium">Gross</th>
+                        <th className="pb-2 pr-3 text-right font-medium">SSNIT</th>
+                        <th className="pb-2 pr-3 text-right font-medium">PAYE</th>
+                        <th className="pb-2 pr-3 text-right font-medium">Loans</th>
+                        <th className="pb-2 pr-3 text-right font-medium">Net pay</th>
+                        <th className="pb-2 pr-3 text-right font-medium">Cost</th>
+                        <th className="pb-2 font-medium" />
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {run.lines.map((line) => {
+                        const person = employeeById.get(line.employeeId);
+                        const r = line.result;
+                        const draft = inputs[line.id] ?? { bonus: line.bonusInputMinor ? cedisOf(line.bonusInputMinor) : '', overtime: line.overtimeInputMinor ? cedisOf(line.overtimeInputMinor) : '' };
+                        return (
+                          <Fragment key={line.id}>
+                            <tr className={line.error ? 'bg-rose-50' : ''}>
+                              <td className="py-2 pr-3">
+                                <p className="font-medium text-slate-900">{person?.name ?? 'Unknown'}</p>
+                                <p className="text-xs text-slate-500">{person?.staffNumber}{r && r.daysEmployed < r.daysInPeriod ? ` · ${r.daysEmployed} of ${r.daysInPeriod} days` : ''}</p>
+                              </td>
+                              {r ? (
+                                <>
+                                  <td className="py-2 pr-3 text-right tabular-nums"><Money value={r.grossMinor} /></td>
+                                  <td className="py-2 pr-3 text-right tabular-nums"><Money value={r.employeeSsnitMinor} /></td>
+                                  <td className="py-2 pr-3 text-right tabular-nums"><Money value={r.payeMinor} /></td>
+                                  <td className="py-2 pr-3 text-right tabular-nums">{r.deductionsMinor ? <Money value={r.deductionsMinor} /> : '—'}</td>
+                                  <td className="py-2 pr-3 text-right font-semibold tabular-nums"><Money value={r.netMinor} /></td>
+                                  <td className="py-2 pr-3 text-right tabular-nums"><Money value={r.employerCostMinor} /></td>
+                                </>
+                              ) : (
+                                <td colSpan={6} className="py-2 pr-3 text-sm text-rose-800">{line.error}</td>
+                              )}
+                              <td className="py-2 text-right">
+                                <div className="flex justify-end gap-1">
+                                  {r ? <Button size="sm" variant="ghost" onClick={() => setOpenLine(openLine === line.id ? null : line.id)}>{openLine === line.id ? 'Hide' : 'Working'}</Button> : null}
+                                  {r ? <Button size="sm" variant="ghost" onClick={() => setSlipLine(slipLine === line.id ? null : line.id)}>Payslip</Button> : null}
+                                </div>
+                              </td>
+                            </tr>
+                            {run.status === 'draft' && allowed('payroll:prepare') && openLine === line.id ? (
+                              <tr>
+                                <td colSpan={8} className="pb-3">
+                                  <div className="flex flex-wrap items-end gap-3 rounded-xl bg-slate-50 p-3">
+                                    <div>
+                                      <label className={fieldLabel} htmlFor={`b-${line.id}`}>Bonus this month (GHS)</label>
+                                      <Input id={`b-${line.id}`} inputMode="decimal" value={draft.bonus} onChange={(e) => setInputs({ ...inputs, [line.id]: { ...draft, bonus: e.target.value } })} />
+                                    </div>
+                                    <div>
+                                      <label className={fieldLabel} htmlFor={`o-${line.id}`}>Overtime this month (GHS)</label>
+                                      <Input id={`o-${line.id}`} inputMode="decimal" value={draft.overtime} onChange={(e) => setInputs({ ...inputs, [line.id]: { ...draft, overtime: e.target.value } })} />
+                                    </div>
+                                    <Button
+                                      size="sm"
+                                      disabled={pending}
+                                      onClick={() => {
+                                        const bonusMinor = minorOf(draft.bonus);
+                                        const overtimeMinor = minorOf(draft.overtime);
+                                        if (Number.isNaN(bonusMinor) || Number.isNaN(overtimeMinor)) return setMessage({ tone: 'error', text: 'Bonus and overtime are amounts in cedis.' });
+                                        act('Saved and worked out again.', () => setPayLineInputs(entity.id, line.id, { bonusMinor, overtimeMinor }));
+                                      }}
+                                    >
+                                      Save and recalculate
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ) : null}
+                            {openLine === line.id && r ? (
+                              <tr>
+                                <td colSpan={8} className="pb-4">
+                                  <Working result={r} />
+                                </td>
+                              </tr>
+                            ) : null}
+                            {slipLine === line.id && r && line.inputs && person ? (
+                              <tr>
+                                <td colSpan={8} className="pb-4">
+                                  <PayslipView
+                                    slip={buildPayslip({
+                                      entityName: entity.name,
+                                      period: run.period,
+                                      payDate: run.payDate,
+                                      posted: run.status === 'posted',
+                                      employee: { name: person.name, staffNumber: person.staffNumber, department: person.department, tin: person.tin, ssnitNumber: person.ssnitNumber },
+                                      result: r,
+                                      deductions: line.inputs.deductions,
+                                      loans: loans
+                                        .filter((loan) => loan.employeeId === person.id)
+                                        .map((loan) => ({
+                                          id: loan.id,
+                                          description: loan.description,
+                                          outstandingBeforeMinor: loan.outstandingMinor + (run.status === 'posted' ? (line.inputs!.deductions.find((d) => d.loanId === loan.id)?.amountMinor ?? 0) : 0),
+                                        })),
+                                      earlierThisYear: (factsByEntity[entity.id] ?? []).filter((f) => f.employeeId === person.id && f.period.slice(0, 4) === run.period.slice(0, 4) && f.period < run.period),
+                                    })}
+                                    pending={pending}
+                                    canEmail={allowed('payroll:prepare') && run.status === 'posted'}
+                                    onDownload={() =>
+                                      act('Payslip downloaded.', () => downloadPayslip(entity.id, line.id), (value) => {
+                                        const file = value as { fileName: string; base64: string };
+                                        download(file.fileName, file.base64, 'application/pdf');
+                                      })
+                                    }
+                                    onEmail={() => act('Payslip emailed.', () => emailPayslip(entity.id, line.id), (value) => setMessage({ tone: 'ok', text: `Payslip emailed to ${(value as { to: string }).to}.` }))}
+                                  />
+                                </td>
+                              </tr>
+                            ) : null}
+                          </Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+
+              <Card className="rounded-2xl">
+                <h4 className="text-base font-semibold text-slate-900">{run.journal ? 'The journal posted' : 'The journal it will post'}</h4>
+                <p className="mt-1 text-sm text-slate-600">
+                  Gross pay and the employer’s contributions are the cost, split by project where people are allocated. PAYE, SSNIT, tier 2, tier 3 and net pay are each money owed until
+                  paid.
+                </p>
+                {run.journal ? <PostedJournalTable journal={run.journal} /> : preview ? <PreviewJournalTable lines={preview} /> : <p className="mt-3 text-sm text-slate-500">Nothing to post yet.</p>}
+                {run.reversalJournal ? (
+                  <>
+                    <h5 className="mt-5 text-sm font-semibold text-slate-900">Reversed on {run.reversalJournal.postedAt}</h5>
+                    <PostedJournalTable journal={run.reversalJournal} />
+                  </>
+                ) : null}
+              </Card>
+
+              {run.status === 'posted' && allowed('payroll:post') ? (
                 <Card className="rounded-2xl">
-                  <h3 className="text-lg font-semibold text-slate-900">Split someone&rsquo;s cost</h3>
-                  <div className="mt-4 grid gap-4 md:grid-cols-4">
-                    <div>
-                      <label className={label}>Person</label>
-                      {people.length ? (
-                        <select
-                          className={selectClass}
-                          value={splitForm.employeeKey}
-                          onChange={(e) => {
-                            const person = people.find((row) => row.key === e.target.value);
-                            setSplitForm((f) => ({ ...f, employeeKey: e.target.value, employeeName: person?.name ?? '' }));
-                          }}
-                        >
-                          <option value="">Choose…</option>
-                          {people.map((person) => (
-                            <option key={person.key} value={person.key}>
-                              {person.name}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <Input value={splitForm.employeeKey} onChange={(e) => setSplitForm((f) => ({ ...f, employeeKey: e.target.value, employeeName: e.target.value }))} placeholder="Staff reference or name" />
-                      )}
-                      {people.length === 0 ? <p className="mt-1 text-xs text-slate-500">Import a payroll first and the names appear here.</p> : null}
+                  <h4 className="text-base font-semibold text-slate-900">Reverse this pay run</h4>
+                  <p className="mt-1 text-sm text-slate-600">A reversing entry dated today undoes the journal, recorded beside it. Only before anything it left owing has been paid. The month can then be run again.</p>
+                  <div className="mt-3 flex flex-wrap items-end gap-3">
+                    <div className="min-w-[280px] flex-1">
+                      <label className={fieldLabel} htmlFor="rev-reason">Why</label>
+                      <Input id="rev-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. wrong basic for two people" />
                     </div>
-                    <div>
-                      <label className={label}>Grant</label>
-                      <select className={selectClass} value={splitForm.grantId} onChange={(e) => setSplitForm((f) => ({ ...f, grantId: e.target.value, budgetLineId: '' }))}>
-                        <option value="">Choose…</option>
-                        {activeGrants.map((grant) => (
-                          <option key={grant.id} value={grant.id}>
-                            {grant.code} — {grant.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className={label}>Budget line</label>
-                      <select className={selectClass} value={splitForm.budgetLineId} onChange={(e) => setSplitForm((f) => ({ ...f, budgetLineId: e.target.value }))}>
-                        <option value="">None</option>
-                        {(activeGrants.find((grant) => grant.id === splitForm.grantId)?.budgetLines ?? []).map((line) => (
-                          <option key={line.id} value={line.id}>
-                            {line.code} {line.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className={label}>Share of their cost, %</label>
-                      <Input inputMode="decimal" value={splitForm.pct} onChange={(e) => setSplitForm((f) => ({ ...f, pct: e.target.value }))} placeholder="60" />
-                    </div>
-                  </div>
-                  <div className="mt-4">
-                    <Button
-                      size="sm"
-                      disabled={pending || !splitForm.employeeKey.trim() || !splitForm.grantId || !splitForm.pct}
-                      onClick={() =>
-                        run(
-                          'Split saved.',
-                          () => savePayrollAllocation(entity.id, { employeeKey: splitForm.employeeKey, employeeName: splitForm.employeeName, grantId: splitForm.grantId, budgetLineId: splitForm.budgetLineId || null, pct: splitForm.pct }),
-                          () => setSplitForm((f) => ({ ...f, grantId: '', budgetLineId: '', pct: '' })),
-                        )
-                      }
-                    >
-                      Save
+                    <Button variant="secondary" disabled={pending} onClick={() => act('Reversed.', () => reversePayRun(entity.id, run.id, reason), () => setReason(''))}>
+                      Reverse it
                     </Button>
-                    <p className="mt-2 text-xs text-slate-500">It applies to every payroll imported after this, not to months already posted.</p>
                   </div>
                 </Card>
               ) : null}
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Working({ result }: { result: NonNullable<PayRunRecord['lines'][number]['result']> }) {
+  const steps = [...new Set(result.working.map((line) => line.step))];
+  return (
+    <div className="rounded-xl border border-slate-200 p-3">
+      {result.ratesChangedWithin.length ? (
+        <p className="mb-2 text-xs text-amber-800">Changed part way through the month, and applied to all of it: {result.ratesChangedWithin.map((c) => `${c.label} (from ${c.from})`).join(', ')}.</p>
+      ) : null}
+      <table className="w-full text-sm">
+        <tbody>
+          {steps.map((step) => (
+            <Fragment key={step}>
+              <tr>
+                <th colSpan={3} className="pb-1 pt-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{step === 'Employer' ? 'Employer contributions (not taken from pay)' : step}</th>
+              </tr>
+              {result.working
+                .filter((line) => line.step === step)
+                .map((line, index) => (
+                  <tr key={index} className={line.total ? 'border-t border-slate-200 font-semibold' : ''}>
+                    <td className="py-0.5 pr-3 text-slate-800">{line.label}</td>
+                    <td className="py-0.5 pr-3 text-xs text-slate-500">{line.detail ?? ''}</td>
+                    <td className="py-0.5 text-right tabular-nums">{line.amountMinor === 0 && !line.total && !line.calc ? '' : <Money value={line.amountMinor} />}</td>
+                  </tr>
+                ))}
+            </Fragment>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PayslipView({ slip, pending, canEmail, onDownload, onEmail }: { slip: Payslip; pending: boolean; canEmail: boolean; onDownload: () => void; onEmail: () => void }) {
+  const rows = (items: { label: string; amountMinor: number; note?: string }[]) =>
+    items.map((item) => (
+      <div key={item.label} className="flex justify-between gap-3 py-0.5 text-sm">
+        <span className="text-slate-700">
+          {item.label}
+          {item.note ? <span className="ml-2 text-xs text-slate-400">{item.note}</span> : null}
+        </span>
+        <span className="tabular-nums text-slate-900"><Money value={item.amountMinor} /></span>
+      </div>
+    ));
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-slate-900">{slip.entityName} — payslip for {periodLabel(slip.period)}</p>
+          <p className="text-xs text-slate-500">{slip.employee.name} · {slip.employee.staffNumber} · paid on {slip.payDate}</p>
+          {slip.daysNote ? <p className="text-xs text-slate-500">{slip.daysNote}</p> : null}
+          {slip.provisional ? <p className="mt-1 text-xs font-semibold text-amber-800">Provisional — the run is not posted and the figures may change.</p> : null}
+        </div>
+        <div className="flex gap-2">
+          <Button size="sm" variant="secondary" disabled={pending} onClick={onDownload}>Download PDF</Button>
+          {canEmail ? <Button size="sm" variant="secondary" disabled={pending} onClick={onEmail}>Email it</Button> : null}
+        </div>
+      </div>
+      <div className="mt-3 grid gap-5 md:grid-cols-2">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Earnings</p>
+          {rows(slip.earnings)}
+          <div className="mt-1 border-t border-slate-200 pt-1 font-semibold">{rows([{ label: 'Gross pay', amountMinor: slip.grossMinor }])}</div>
+          <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Paid by the employer on top</p>
+          {rows(slip.employer)}
+        </div>
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Deductions</p>
+          {rows(slip.deductions)}
+          <div className="mt-1 border-t border-slate-200 pt-1 font-semibold">{rows([{ label: 'Net pay', amountMinor: slip.netMinor }])}</div>
+          <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Year to date</p>
+          {rows(slip.yearToDate)}
+          {slip.loans.length ? (
+            <>
+              <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Loans and advances — still owed</p>
+              {rows(slip.loans.map((loan) => ({ label: loan.description, amountMinor: loan.outstandingMinor })))}
             </>
-          )}
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PreviewJournalTable({ lines }: { lines: PayJournalLine[] }) {
+  return (
+    <table className="mt-3 w-full text-sm">
+      <thead>
+        <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+          <th className="pb-2 pr-3 font-medium">Account</th>
+          <th className="pb-2 pr-3 font-medium">What</th>
+          <th className="pb-2 pr-3 font-medium">Project</th>
+          <th className="pb-2 pr-3 text-right font-medium">Money in</th>
+          <th className="pb-2 text-right font-medium">Money out</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-slate-100">
+        {lines.map((line, index) => (
+          <tr key={index}>
+            <td className="py-1.5 pr-3 tabular-nums">{line.accountCode}</td>
+            <td className="py-1.5 pr-3">{line.memo}</td>
+            <td className="py-1.5 pr-3 text-xs text-slate-500">{line.projectId ? 'Charged to a project' : ''}</td>
+            <td className="py-1.5 pr-3 text-right tabular-nums">{line.type === 'debit' ? <Money value={line.amount} /> : ''}</td>
+            <td className="py-1.5 text-right tabular-nums">{line.type === 'credit' ? <Money value={line.amount} /> : ''}</td>
+          </tr>
+        ))}
+        <tr className="font-semibold">
+          <td className="py-1.5" colSpan={3}>Totals — they agree</td>
+          <td className="py-1.5 pr-3 text-right tabular-nums"><Money value={lines.filter((l) => l.type === 'debit').reduce((s, l) => s + l.amount, 0)} /></td>
+          <td className="py-1.5 text-right tabular-nums"><Money value={lines.filter((l) => l.type === 'credit').reduce((s, l) => s + l.amount, 0)} /></td>
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
+function PostedJournalTable({ journal }: { journal: PostedJournal }) {
+  return (
+    <table className="mt-3 w-full text-sm">
+      <thead>
+        <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+          <th className="pb-2 pr-3 font-medium">Account</th>
+          <th className="pb-2 pr-3 text-right font-medium">Money in</th>
+          <th className="pb-2 text-right font-medium">Money out</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-slate-100">
+        {journal.lines.map((line, index) => (
+          <tr key={index}>
+            <td className="py-1.5 pr-3">{line.accountCode} · {line.accountName}</td>
+            <td className="py-1.5 pr-3 text-right tabular-nums">{line.type === 'debit' ? <Money value={line.amount} /> : ''}</td>
+            <td className="py-1.5 text-right tabular-nums">{line.type === 'credit' ? <Money value={line.amount} /> : ''}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+// --- what payroll owes ----------------------------------------------------------------------------
+
+function Remittances({ entity, remittances, bankAccounts, allowed }: Props) {
+  const [message, setMessage] = useState<Message>(null);
+  const [pending, startTransition] = useTransition();
+  const [paying, setPaying] = useState<{ id: string; paidOn: string; reference: string; bankAccountId: string } | null>(null);
+  const today = todayIso();
+  const position = remittancePosition(remittances.map((r) => ({ id: r.id, period: r.period, kind: r.kind, amountMinor: r.amountMinor, dueDate: r.dueDate, paidOn: r.paidOn, cancelled: r.cancelled })), today);
+  const ordered = [...remittances].sort((a, b) => Number(Boolean(a.paidOn || a.cancelled)) - Number(Boolean(b.paidOn || b.cancelled)) || a.dueDate.localeCompare(b.dueDate));
+
+  return (
+    <div className="space-y-5">
+      <Banner message={message} />
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className={['rounded-xl px-4 py-3', position.overdueMinor > 0 ? 'bg-rose-50' : 'bg-slate-50'].join(' ')}>
+          <p className="text-xs uppercase tracking-wide text-slate-500">Past its due date</p>
+          <p className={['mt-1 text-lg font-semibold tabular-nums', position.overdueMinor > 0 ? 'text-rose-800' : 'text-slate-900'].join(' ')}><Money value={position.overdueMinor} /></p>
+        </div>
+        <div className="rounded-xl bg-slate-50 px-4 py-3">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Still to pay</p>
+          <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900"><Money value={position.outstandingMinor} /></p>
+        </div>
+        <div className="rounded-xl bg-slate-50 px-4 py-3">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Next due</p>
+          <p className="mt-1 text-sm font-semibold text-slate-900">{position.next ? `${remittanceLabels[position.next.kind]} for ${periodLabel(position.next.period)} by ${position.next.dueDate}` : 'Nothing'}</p>
+        </div>
+      </div>
+      <p className="text-sm text-slate-600">Due dates come from the payment deadline rules under Settings → Payroll rates, as they stood for each pay period. Paying one takes the money out of the bank against what is owed.</p>
+
+      <Card className="rounded-2xl">
+        {ordered.length === 0 ? (
+          <p className="text-sm text-slate-500">Nothing yet. A posted pay run puts what it leaves owing here.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+                <th className="pb-2 pr-3 font-medium">Period</th>
+                <th className="pb-2 pr-3 font-medium">Owed to</th>
+                <th className="pb-2 pr-3 text-right font-medium">Amount</th>
+                <th className="pb-2 pr-3 font-medium">Due</th>
+                <th className="pb-2 font-medium">Paid</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {ordered.map((r) => {
+                const overdue = !r.paidOn && !r.cancelled && r.dueDate < today;
+                return (
+                  <Fragment key={r.id}>
+                    <tr className={overdue ? 'bg-rose-50' : ''}>
+                      <td className="py-2 pr-3">{periodLabel(r.period)}</td>
+                      <td className="py-2 pr-3">{remittanceLabels[r.kind]}</td>
+                      <td className="py-2 pr-3 text-right tabular-nums"><Money value={r.amountMinor} /></td>
+                      <td className={['py-2 pr-3 tabular-nums', overdue ? 'font-semibold text-rose-800' : ''].join(' ')}>{r.dueDate}{overdue ? ' — overdue' : ''}</td>
+                      <td className="py-2">
+                        {r.cancelled ? (
+                          <span className="text-slate-500">Cancelled — the run was reversed</span>
+                        ) : r.paidOn ? (
+                          <span className="text-slate-700">{r.paidOn} · {r.reference} · {r.bankAccountName}</span>
+                        ) : allowed('payroll:post') ? (
+                          <Button size="sm" variant="secondary" onClick={() => setPaying({ id: r.id, paidOn: today, reference: '', bankAccountId: bankAccounts[0]?.id ?? '' })}>Mark paid</Button>
+                        ) : (
+                          <span className="text-slate-500">Not yet</span>
+                        )}
+                      </td>
+                    </tr>
+                    {paying?.id === r.id ? (
+                      <tr>
+                        <td colSpan={5} className="pb-3">
+                          <div className="grid gap-3 rounded-xl bg-slate-50 p-3 sm:grid-cols-4">
+                            <div>
+                              <label className={fieldLabel} htmlFor="pay-date">Paid on</label>
+                              <Input id="pay-date" type="date" value={paying.paidOn} onChange={(e) => setPaying({ ...paying, paidOn: e.target.value })} />
+                            </div>
+                            <div>
+                              <label className={fieldLabel} htmlFor="pay-ref">Reference</label>
+                              <Input id="pay-ref" value={paying.reference} placeholder="GRA or SSNIT receipt, bank ref" onChange={(e) => setPaying({ ...paying, reference: e.target.value })} />
+                            </div>
+                            <div>
+                              <label className={fieldLabel} htmlFor="pay-bank">From</label>
+                              <select id="pay-bank" className={selectClass} value={paying.bankAccountId} onChange={(e) => setPaying({ ...paying, bankAccountId: e.target.value })}>
+                                {bankAccounts.map((b) => (
+                                  <option key={b.id} value={b.id}>{b.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="flex items-end gap-2">
+                              <Button
+                                size="sm"
+                                disabled={pending}
+                                onClick={() => {
+                                  setMessage(null);
+                                  startTransition(async () => {
+                                    const result = await payRemittance(entity.id, paying.id, { paidOn: paying.paidOn, reference: paying.reference, bankAccountId: paying.bankAccountId });
+                                    setMessage(result.ok ? { tone: 'ok', text: 'Marked paid, and the payment posted.' } : { tone: 'error', text: result.error });
+                                    if (result.ok) setPaying(null);
+                                  });
+                                }}
+                              >
+                                Save
+                              </Button>
+                              <Button size="sm" variant="ghost" onClick={() => setPaying(null)}>Cancel</Button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+// --- settings -------------------------------------------------------------------------------------
+
+function PayrollSettingsCard({ entity, settings, rates, allowed }: { entity: EntityRecord; settings: PayrollSettingRecord; rates: StatutoryRateRow[]; allowed: (p: Permission) => boolean }) {
+  const may = allowed('settings:manage');
+  const [form, setForm] = useState({ ...settings, payDay: String(settings.payDay) });
+  const [message, setMessage] = useState<Message>(null);
+  const [pending, startTransition] = useTransition();
+  const monthEnd = lastDayOf(todayIso().slice(0, 7));
+  const placeholders = rates.filter((row) => row.isPlaceholder && row.effectiveFrom <= monthEnd && (row.effectiveTo === null || row.effectiveTo >= monthEnd)).length;
+
+  return (
+    <div className="space-y-4">
+      {placeholders > 0 ? (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          {placeholders} of the statutory figures in force this month are placeholders nobody has checked yet. Pay can be worked out with them but not approved.
         </div>
       ) : null}
+      <Banner message={message} />
+      <Card className="rounded-2xl">
+        <h4 className="text-base font-semibold text-slate-900">How {entity.name} runs payroll</h4>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <label className="flex items-start gap-2 text-sm text-slate-700">
+            <input type="checkbox" className="mt-1" checked={form.payrollEnabled} disabled={!may} onChange={(e) => setForm({ ...form, payrollEnabled: e.target.checked })} />
+            <span>
+              <span className="font-medium text-slate-900">{entity.name} runs payroll</span>
+              <span className="block text-xs text-slate-500">Off for a company with no staff on its own payroll.</span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2 text-sm text-slate-700">
+            <input type="checkbox" className="mt-1" checked={form.tier3Offered} disabled={!may} onChange={(e) => setForm({ ...form, tier3Offered: e.target.checked })} />
+            <span>
+              <span className="font-medium text-slate-900">Staff may pay into tier 3 through payroll</span>
+              <span className="block text-xs text-slate-500">A voluntary pension contribution, taken from pay.</span>
+            </span>
+          </label>
+          <div>
+            <label className={fieldLabel} htmlFor="ps-payday">Pay day (day of the month)</label>
+            <Input id="ps-payday" inputMode="numeric" value={form.payDay} disabled={!may} onChange={(e) => setForm({ ...form, payDay: e.target.value })} />
+            <p className="mt-1 text-xs text-slate-500">In a short month a day past its end means the last day. Net pay is due on it.</p>
+          </div>
+          <div>
+            <label className={fieldLabel} htmlFor="ps-basis">Someone who joins or leaves part way through a month is paid for</label>
+            <select id="ps-basis" className={selectClass} value={form.prorationBasis} disabled={!may} onChange={(e) => setForm({ ...form, prorationBasis: e.target.value as ProrationBasis })}>
+              <option value="calendar-days">The calendar days they were employed</option>
+              <option value="working-days">The working days (Monday to Friday) they were employed</option>
+            </select>
+            <p className="mt-1 text-xs text-slate-500">Working days do not yet allow for public holidays.</p>
+          </div>
+        </div>
+        {may ? (
+          <div className="mt-4">
+            <Button
+              size="sm"
+              disabled={pending}
+              onClick={() => {
+                setMessage(null);
+                startTransition(async () => {
+                  const result = await savePayrollSettings(entity.id, { payrollEnabled: form.payrollEnabled, payDay: Number(form.payDay), tier3Offered: form.tier3Offered, prorationBasis: form.prorationBasis });
+                  setMessage(result.ok ? { tone: 'ok', text: 'Payroll settings saved.' } : { tone: 'error', text: result.error });
+                });
+              }}
+            >
+              Save
+            </Button>
+          </div>
+        ) : null}
+        <p className="mt-4 text-xs text-slate-500">Payment deadlines for PAYE and SSNIT are national rules, under Settings → Payroll rates with the other statutory figures.</p>
+      </Card>
     </div>
   );
 }

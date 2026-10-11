@@ -175,13 +175,27 @@ export function agentPurchaseJournal(priceMinor: number, inventoryCode: string, 
   ];
 }
 
+/**
+ * Casual or seasonal labour the agent paid out of the float: a labour cost,
+ * float relieved. Not payroll — the workers are paid in the field, by the
+ * agent, and the float is where the money actually left.
+ */
+export function floatLabourJournal(amountMinor: number, labourCode: string, names: Record<string, string>): TradingJournalLine[] {
+  return [
+    { accountCode: labourCode, accountName: nameOf(names, labourCode, 'Casual Labour'), amount: amountMinor, type: 'debit' },
+    { accountCode: tradingAccounts.agentFloats, accountName: nameOf(names, tradingAccounts.agentFloats, 'Agent Float Advances'), amount: amountMinor, type: 'credit' },
+  ];
+}
+
 // --- floats -----------------------------------------------------------------------------------------
 
 export type FloatPosition = {
   advancedMinor: number;
   purchasedMinor: number;
   returnedMinor: number;
-  /** advanced − purchases posted − cash returned. Zero means it reconciles. */
+  /** Casual labour the agent paid out of it. */
+  labourMinor: number;
+  /** advanced − purchases posted − labour paid − cash returned. Zero means it reconciles. */
   outstandingMinor: number;
   ageDays: number;
   /** Outstanding and older than the entity's limit. */
@@ -197,16 +211,18 @@ function daysBetween(fromIso: string, toIso: string): number {
 
 /**
  * The reconciliation rule: what was advanced must equal what the agent
- * bought (posted purchases) plus what they handed back. Anything else is
- * outstanding, and outstanding past the age limit is flagged.
+ * bought (posted purchases), plus the casual labour they paid out of it,
+ * plus what they handed back. Anything else is outstanding, and outstanding
+ * past the age limit is flagged.
  */
-export function floatPosition(advance: { amountMinor: number; date: string }, purchasedMinor: number, returnedMinor: number, asOf: string, ageLimitDays: number): FloatPosition {
-  const outstandingMinor = advance.amountMinor - purchasedMinor - returnedMinor;
+export function floatPosition(advance: { amountMinor: number; date: string }, purchasedMinor: number, returnedMinor: number, asOf: string, ageLimitDays: number, labourMinor = 0): FloatPosition {
+  const outstandingMinor = advance.amountMinor - purchasedMinor - labourMinor - returnedMinor;
   const ageDays = daysBetween(advance.date, asOf);
   return {
     advancedMinor: advance.amountMinor,
     purchasedMinor,
     returnedMinor,
+    labourMinor,
     outstandingMinor,
     ageDays,
     overdue: outstandingMinor !== 0 && ageDays > ageLimitDays,

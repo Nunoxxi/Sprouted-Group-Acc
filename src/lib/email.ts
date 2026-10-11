@@ -19,6 +19,8 @@ export type OutboundEmail = {
   text: string;
   /** Overrides EMAIL_FROM. Must be on the same verified domain. */
   from?: string | null;
+  /** Files sent with it, e.g. a payslip PDF. Content is base64. */
+  attachments?: { filename: string; content: string }[];
 };
 
 const fallbackSender = 'Sprouted Accounting <accounting@example.com>';
@@ -60,7 +62,7 @@ export async function sendEmail(message: OutboundEmail): Promise<void> {
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from, to: [message.to], subject: message.subject, text: message.text }),
+      body: JSON.stringify({ from, to: [message.to], subject: message.subject, text: message.text, ...(message.attachments?.length ? { attachments: message.attachments } : {}) }),
     });
     if (!response.ok) {
       throw new Error(`Email delivery failed (${response.status}): ${await response.text()}`);
@@ -72,5 +74,6 @@ export async function sendEmail(message: OutboundEmail): Promise<void> {
     throw new Error('No email transport configured: set RESEND_API_KEY (and EMAIL_FROM).');
   }
 
-  console.log(`\n--- email from ${from} to ${message.to} ---\n${message.subject}\n\n${message.text}\n--- end email ---\n`);
+  const attached = message.attachments?.length ? `\n[attached: ${message.attachments.map((a) => a.filename).join(', ')}]` : '';
+  console.log(`\n--- email from ${from} to ${message.to} ---\n${message.subject}\n\n${message.text}${attached}\n--- end email ---\n`);
 }

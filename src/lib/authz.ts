@@ -74,6 +74,20 @@ export const permissions = [
   // against the advance. The sums follow terms already agreed, so this is
   // ordinary bookkeeping rather than a decision.
   'prefinance:deliver',
+  // The statutory payroll rates: PAYE bands, SSNIT, reliefs. National law,
+  // held once for every entity, so a change reaches every payroll in the
+  // group. Owner only, and not tied to any one entity.
+  'payroll-rates:manage',
+  // Payroll in an entity. Seeing what named people are paid is its own
+  // permission: a Viewer reads the ledger totals, never the payslips.
+  'payroll:view',
+  // Employees, their pay, loans, and a draft pay run: everything recalculable.
+  'payroll:prepare',
+  // Locking a run's figures. Separate from preparing it.
+  'payroll:approve',
+  // Writing the run's journal, reversing it, issuing a loan and paying what
+  // payroll owes — money and the ledger.
+  'payroll:post',
   'users:manage', // invite, change role and entity access, deactivate, unlock
   'sessions:manage', // see who is signed in, force sign-out
 ] as const;
@@ -101,6 +115,10 @@ const matrix: Record<Role, ReadonlySet<Permission>> = {
     'export:run',
     'prefinance:manage',
     'prefinance:deliver',
+    'payroll:view',
+    'payroll:prepare',
+    'payroll:approve',
+    'payroll:post',
   ]),
   // Keeps the books day to day: enters and posts invoices and bills and
   // reconciles them, and adds an account when one is missing. Correcting a
@@ -120,6 +138,8 @@ const matrix: Record<Role, ReadonlySet<Permission>> = {
     'audit:read',
     'export:run',
     'prefinance:deliver',
+    'payroll:view',
+    'payroll:prepare',
   ]),
   // Field staff need to be able to telephone a farmer and to pay them, so
   // they see contact details — but they cannot produce a report about a

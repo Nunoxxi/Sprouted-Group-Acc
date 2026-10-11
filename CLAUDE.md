@@ -5,6 +5,7 @@ The app serves Sprouted Group, three Ghanaian companies: Sprouted Roots (farmer 
 Non-negotiable rules for all code:
 
 - Every record carries an entityId. Every database query is scoped by entity by default. Adding a fourth entity must require no schema change.
+  - The one exception is statutory reference data that is national law and the same for every entity — today, the payroll rates (`StatutoryRate`: PAYE bands, SSNIT rates and splits, reliefs). It has no entityId, is held once, and is changed only by an Owner. The rule still applies to every transactional record, and to anything an entity decides for itself (e.g. `PayrollSetting`).
 - Accounting is double-entry. Every transaction posts balanced debits and credits to a journal. Nothing is ever hard-deleted — corrections are reversing entries.
 - Money is stored as integers in pesewas, never as floating-point numbers. Currency is Ghana cedi (GHS).
 - Ghana VAT is 20% effective, made up of 15% VAT, 2.5% NHIL and 2.5% GETFund, all charged on the same base and all recoverable as input tax.

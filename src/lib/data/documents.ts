@@ -42,8 +42,8 @@ import { loadAssetData } from './assets';
 import { loadCashflowData } from './cashflow';
 import { loadAttachmentData } from './attachments';
 import { encryptionConfigured } from '../pii-crypto';
-import { redactInitialData } from './redact';
 import { loadPayrollData } from './payroll';
+import { redactInitialData } from './redact';
 import { loadPrivacyData } from './privacy';
 import { loadPreFinanceData } from './prefinance';
 import { loadSettingsData } from './settings';
@@ -321,10 +321,10 @@ async function loadEverything(principal: Principal): Promise<InitialData> {
     ...(await loadGrantData(entityScope, entityIds)),
     ...(await loadCashflowData(entityScope, entityIds, entities)),
     ...(await loadAssetData(entityScope, entityIds)),
-    ...(await loadPayrollData(entityScope, entityIds)),
     ...(await loadAttachmentData(entityScope, entityIds)),
     ...(await loadPrivacyData(entityScope, entityIds)),
     ...(await loadSettingsData(entityScope, entityIds)),
     ...(await loadPreFinanceData(entityScope, entityIds)),
+    ...(await loadPayrollData(entityScope, entityIds, can(principal, 'payroll:view'))),
   };
 }

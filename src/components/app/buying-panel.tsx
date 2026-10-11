@@ -14,7 +14,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Money } from '@/components/ui/money';
 import { MaskedDetail, revealForEditing } from '@/components/app/reveal';
-import { advanceFloat, assignPurchaseFloat, postAgentPurchases, reconcileFloat, rejectAgentPurchase, returnFloatCash, saveAgent, setFloatAgeLimit } from '@/app/actions/trading';
+import { advanceFloat, assignPurchaseFloat, postAgentPurchases, reconcileFloat, recordFloatLabour, rejectAgentPurchase, returnFloatCash, saveAgent, setFloatAgeLimit } from '@/app/actions/trading';
 import type { Permission } from '@/lib/authz';
 import type { AgentPurchaseRecord, BankAccountRecord, BuyingAgentRecord, CommodityRecord, EntityRecord, FloatAdvanceRecord, ItemRecord, StockLocationRecord } from '@/lib/data/types';
 import { formatKg } from '@/lib/inventory';
@@ -48,7 +48,7 @@ export function BuyingPanel({ entity, agents, floats, purchases, items, commodit
   const locationById = useMemo(() => new Map(locations.map((l) => [l.id, l])), [locations]);
 
   const positions = useMemo(
-    () => floats.map((f) => ({ float: f, position: floatPosition({ amountMinor: f.amountMinor, date: f.date }, f.purchasedMinor, f.returns.reduce((s, r) => s + r.amountMinor, 0), today, entity.floatAgeLimitDays) })),
+    () => floats.map((f) => ({ float: f, position: floatPosition({ amountMinor: f.amountMinor, date: f.date }, f.purchasedMinor, f.returns.reduce((s, r) => s + r.amountMinor, 0), today, entity.floatAgeLimitDays, f.labourMinor) })),
     [floats, today, entity.floatAgeLimitDays],
   );
   const summaries = useMemo(() => agentFloatSummaries(agents, positions.map((p) => ({ agentId: p.float.agentId, position: p.position, status: p.float.status }))), [agents, positions]);
@@ -64,6 +64,8 @@ export function BuyingPanel({ entity, agents, floats, purchases, items, commodit
   const [agentForm, setAgentForm] = useState({ id: '', name: '', phone: '', defaultLocationId: '' });
   const [floatForm, setFloatForm] = useState({ agentId: '', date: today, amount: '', bankAccountId: bankAccounts[0]?.id ?? '', note: '' });
   const [returnForm, setReturnForm] = useState<{ floatId: string; date: string; amount: string; bankAccountId: string }>({ floatId: '', date: today, amount: '', bankAccountId: bankAccounts[0]?.id ?? '' });
+  // Casual and seasonal labour the agent paid out of the float: not payroll, a labour cost.
+  const [labourForm, setLabourForm] = useState<{ floatId: string; date: string; description: string; workers: string; amount: string }>({ floatId: '', date: today, description: '', workers: '', amount: '' });
   const [ageLimit, setAgeLimit] = useState(String(entity.floatAgeLimitDays));
   const [selectedPurchases, setSelectedPurchases] = useState<Set<string>>(new Set());
   const [rejectReasons, setRejectReasons] = useState<Record<string, string>>({});
@@ -104,30 +106,58 @@ export function BuyingPanel({ entity, agents, floats, purchases, items, commodit
 
             <Card className="rounded-2xl">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Floats</p>
-              <h3 className="mt-1 text-xl font-semibold text-slate-900">Advanced = purchases posted + cash returned</h3>
+              <h3 className="mt-1 text-xl font-semibold text-slate-900">Advanced = purchases posted + labour paid + cash returned</h3>
+              <p className="mt-1 text-sm text-slate-600">Casual and seasonal workers an agent pays in the field are paid from the float, not through payroll. Record what was paid against the float; it is a labour cost, and appears beside payroll in the labour cost report.</p>
               <div className="mt-4 space-y-3">
                 {positions.map(({ float, position }) => {
                   const agent = agentById.get(float.agentId);
                   const isReturning = returnForm.floatId === float.id;
+                  const isPayingLabour = labourForm.floatId === float.id;
                   return (
                     <div key={float.id} className={['rounded-xl border p-4', float.status === 'reconciled' ? 'border-emerald-200 bg-emerald-50/40' : position.overdue ? 'border-red-300 bg-red-50' : 'border-slate-200'].join(' ')}>
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <div className="font-medium text-slate-900">{agent?.name ?? float.agentId} · {float.date}{float.status === 'reconciled' ? <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-700">Reconciled</span> : position.overdue ? <span className="ml-2 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white">{position.ageDays} days</span> : <span className="ml-2 text-xs text-slate-500">{position.ageDays} days old</span>}</div>
-                          <div className="mt-1 grid grid-cols-4 gap-x-4 text-xs text-slate-600">
+                          <div className="mt-1 grid grid-cols-5 gap-x-4 text-xs text-slate-600">
                             <span>Advanced<br /><span className="font-mono text-slate-900"><Money value={position.advancedMinor} /></span></span>
                             <span>Purchases<br /><span className="font-mono text-slate-900"><Money value={position.purchasedMinor} /></span></span>
+                            <span>Labour paid<br /><span className="font-mono text-slate-900"><Money value={position.labourMinor} /></span></span>
                             <span>Cash back<br /><span className="font-mono text-slate-900"><Money value={position.returnedMinor} /></span></span>
                             <span>Outstanding<br /><span className={['font-mono', position.outstandingMinor === 0 ? 'text-emerald-700' : 'text-slate-900'].join(' ')}><Money value={position.outstandingMinor} /></span></span>
                           </div>
                         </div>
                         {float.status === 'open' && allowed('stock:post') ? (
                           <div className="flex gap-2">
+                            <Button size="sm" variant="secondary" onClick={() => setLabourForm({ floatId: isPayingLabour ? '' : float.id, date: today, description: '', workers: '', amount: '' })}>Labour paid</Button>
                             <Button size="sm" variant="secondary" onClick={() => setReturnForm({ floatId: isReturning ? '' : float.id, date: today, amount: '', bankAccountId: bankAccounts[0]?.id ?? '' })}>Cash returned</Button>
                             <Button size="sm" disabled={pending || !position.reconciles} onClick={() => run('Float reconciled.', () => reconcileFloat(entity.id, float.id))}>Reconcile</Button>
                           </div>
                         ) : null}
                       </div>
+                      {isPayingLabour ? (
+                        <div className="mt-3 grid gap-3 md:grid-cols-[1.4fr_0.6fr_1fr_1fr_auto] md:items-end">
+                          <div><label className={label}>What the work was</label><Input value={labourForm.description} placeholder="e.g. loading, 3 days" onChange={(e) => setLabourForm({ ...labourForm, description: e.target.value })} /></div>
+                          <div><label className={label}>Workers</label><Input inputMode="numeric" value={labourForm.workers} onChange={(e) => setLabourForm({ ...labourForm, workers: e.target.value })} /></div>
+                          <div><label className={label}>Amount paid</label><Input type="number" inputMode="decimal" min={0} step="0.01" value={labourForm.amount} onChange={(e) => setLabourForm({ ...labourForm, amount: e.target.value })} /></div>
+                          <div><label className={label}>Date</label><Input type="date" value={labourForm.date} onChange={(e) => setLabourForm({ ...labourForm, date: e.target.value })} /></div>
+                          <Button
+                            size="sm"
+                            disabled={pending || !labourForm.amount || !labourForm.description.trim()}
+                            onClick={() =>
+                              run(
+                                'Labour paid from the float recorded.',
+                                () => recordFloatLabour(entity.id, { floatId: float.id, date: labourForm.date, description: labourForm.description, workers: labourForm.workers ? Number(labourForm.workers) : null, amountMinor: Math.round(Number(labourForm.amount) * 100) }),
+                                () => setLabourForm({ ...labourForm, floatId: '', amount: '', description: '', workers: '' }),
+                              )
+                            }
+                          >
+                            Record
+                          </Button>
+                        </div>
+                      ) : null}
+                      {float.labour.length ? (
+                        <p className="mt-2 text-xs text-slate-500">Labour: {float.labour.map((l) => `${l.date} ${l.description}${l.workers ? ` (${l.workers} workers)` : ''} ${(l.amountMinor / 100).toFixed(2)}`).join(' · ')}</p>
+                      ) : null}
                       {isReturning ? (
                         <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto] md:items-end">
                           <div><label className={label}>Amount</label><Input type="number" inputMode="decimal" min={0} step="0.01" value={returnForm.amount} onChange={(e) => setReturnForm({ ...returnForm, amount: e.target.value })} /></div>

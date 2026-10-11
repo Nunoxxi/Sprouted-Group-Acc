@@ -55,10 +55,6 @@ model Entity {
   producerPriceMinorPerKg BigInt?
   buyerMarginMinorPerKg   BigInt?
   haulageMinorPerKg       BigInt?
-  /// The day of the following month PAYE and SSNIT fall due. Settings,
-  /// because filing dates move and a date in code is one nobody can correct.
-  payeDueDay              Int                 @default(15)
-  ssnitDueDay             Int                 @default(14)
   /// Whether this entity pays company tax at all, and if so at whose rate.
   /// Sprouted Roots may be exempt; the computation is hidden when it is.
   taxStatus               EntityTaxStatus     @default(TAXABLE)
@@ -68,86 +64,89 @@ model Entity {
   createdAt               DateTime            @default(now())
   updatedAt               DateTime            @updatedAt
 
-  userAccess         UserEntityAccess[]
-  exchangeRates      ExchangeRate[]
-  bankAccounts       BankAccount[]
-  payments           Payment[]
-  revaluations       Revaluation[]
-  accounts           Account[]
-  journalEntries     JournalEntry[]
-  contactBalances    ContactEntityBalance[]
-  auditEvents        AuditEvent[]
-  funds              Fund[]
-  projects           Project[]
-  documents          Document[]
-  documentLines      DocumentLine[]
-  taxPeriodFilings   TaxPeriodFiling[]
-  documentCounters   DocumentCounter[]
-  backupRuns         BackupRun[]
-  items              Item[]
-  stockLocations     StockLocation[]
-  stockBalances      StockBalance[]
-  stockMovements     StockMovement[]
-  stockCounts        StockCount[]
-  stockCountLines    StockCountLine[]
-  nrvPrices          NrvPrice[]
-  commodities        Commodity[]
-  lots               Lot[]
-  landedCosts        LandedCostAllocation[]
-  buyingAgents       BuyingAgent[]
-  floatAdvances      FloatAdvance[]
-  floatReturns       FloatReturn[]
-  agentPurchases     AgentPurchase[]
-  salesContracts     SalesContract[]
-  deliveries         ContractDelivery[]
-  sellingCosts       ContractSellingCost[]
-  seedFunds          SeedFundMovement[]
-  openingBatches     OpeningBatch[]
-  farmerAdvances     FarmerAdvance[]
-  farmers            Farmer[]
-  statementMappings  StatementMapping[]
-  statementImports   StatementImport[]
-  statementLines     StatementLine[]
-  paymentBatches     FarmerPaymentBatch[]
-  farmerPayments     FarmerPayment[]
-  grants             Grant[]
-  grantBudgetLines   GrantBudgetLine[]
-  grantConditions    GrantCondition[]
-  grantReceipts      GrantReceipt[]
-  grantReleases      GrantRelease[]
-  inKind             InKindContribution[]
-  staffTime          StaffTimeAllocation[]
-  buyingSeasons      BuyingSeason[]
-  recurringCosts     RecurringCost[]
-  cashScenarios      CashScenario[]
-  cashScenarioRates  CashScenarioRate[]
-  cashScenarioLines  CashScenarioLine[]
-  fixedAssets        FixedAsset[]
-  depreciationRuns   DepreciationRun[]
-  assetDisposals     AssetDisposal[]
-  allowanceClasses   CapitalAllowanceClass[]
-  taxYears           TaxYear[]
-  taxAdjustments     TaxAdjustment[]
-  provisionalTax     ProvisionalTaxPayment[]
-  payrollMappings    PayrollMapping[]
-  payrollRuns        PayrollRun[]
-  payrollLines       PayrollLine[]
-  payrollAllocations PayrollAllocation[]
-  payrollDepartments PayrollDepartment[]
-  payrollLiabilities PayrollLiability[]
-  payrollPayments    PayrollLiabilityPayment[]
-  attachments        Attachment[]
-  attachmentRules    AttachmentRule[]
-  dataRequests       DataSubjectRequest[]
-  projectBudgetLines ProjectBudgetLine[]
-  assetCategories    AssetCategory[]
-  taxRateSetting     TaxRateSetting?
-  preFinanceSetting  PreFinanceSetting?
-  loanFacilities     LoanFacility[]
-  loanTranches       LoanTranche[]
-  aggregatorAdvances AggregatorAdvance[]
-  advanceDeliveries  AdvanceDelivery[]
-  preFinanceCycles   PreFinanceCycle[]
+  userAccess          UserEntityAccess[]
+  exchangeRates       ExchangeRate[]
+  bankAccounts        BankAccount[]
+  payments            Payment[]
+  revaluations        Revaluation[]
+  accounts            Account[]
+  journalEntries      JournalEntry[]
+  contactBalances     ContactEntityBalance[]
+  auditEvents         AuditEvent[]
+  funds               Fund[]
+  projects            Project[]
+  documents           Document[]
+  documentLines       DocumentLine[]
+  taxPeriodFilings    TaxPeriodFiling[]
+  documentCounters    DocumentCounter[]
+  backupRuns          BackupRun[]
+  items               Item[]
+  stockLocations      StockLocation[]
+  stockBalances       StockBalance[]
+  stockMovements      StockMovement[]
+  stockCounts         StockCount[]
+  stockCountLines     StockCountLine[]
+  nrvPrices           NrvPrice[]
+  commodities         Commodity[]
+  lots                Lot[]
+  landedCosts         LandedCostAllocation[]
+  buyingAgents        BuyingAgent[]
+  floatAdvances       FloatAdvance[]
+  floatReturns        FloatReturn[]
+  agentPurchases      AgentPurchase[]
+  salesContracts      SalesContract[]
+  deliveries          ContractDelivery[]
+  sellingCosts        ContractSellingCost[]
+  seedFunds           SeedFundMovement[]
+  openingBatches      OpeningBatch[]
+  farmerAdvances      FarmerAdvance[]
+  farmers             Farmer[]
+  statementMappings   StatementMapping[]
+  statementImports    StatementImport[]
+  statementLines      StatementLine[]
+  paymentBatches      FarmerPaymentBatch[]
+  farmerPayments      FarmerPayment[]
+  grants              Grant[]
+  grantBudgetLines    GrantBudgetLine[]
+  grantConditions     GrantCondition[]
+  grantReceipts       GrantReceipt[]
+  grantReleases       GrantRelease[]
+  inKind              InKindContribution[]
+  staffTime           StaffTimeAllocation[]
+  buyingSeasons       BuyingSeason[]
+  recurringCosts      RecurringCost[]
+  cashScenarios       CashScenario[]
+  cashScenarioRates   CashScenarioRate[]
+  cashScenarioLines   CashScenarioLine[]
+  fixedAssets         FixedAsset[]
+  depreciationRuns    DepreciationRun[]
+  assetDisposals      AssetDisposal[]
+  allowanceClasses    CapitalAllowanceClass[]
+  taxYears            TaxYear[]
+  taxAdjustments      TaxAdjustment[]
+  provisionalTax      ProvisionalTaxPayment[]
+  attachments         Attachment[]
+  attachmentRules     AttachmentRule[]
+  dataRequests        DataSubjectRequest[]
+  projectBudgetLines  ProjectBudgetLine[]
+  assetCategories     AssetCategory[]
+  taxRateSetting      TaxRateSetting?
+  preFinanceSetting   PreFinanceSetting?
+  loanFacilities      LoanFacility[]
+  loanTranches        LoanTranche[]
+  aggregatorAdvances  AggregatorAdvance[]
+  advanceDeliveries   AdvanceDelivery[]
+  preFinanceCycles    PreFinanceCycle[]
+  payrollSetting      PayrollSetting?
+  employees           Employee[]
+  employeeAllowances  EmployeeAllowance[]
+  employeeAllocations EmployeeAllocation[]
+  staffLoans          StaffLoan[]
+  payRuns             PayRun[]
+  payRunLines         PayRunLine[]
+  payRunDeductions    PayRunDeduction[]
+  payrollRemittances  PayrollRemittance[]
+  floatLabour         FloatLabourPayment[]
 }
 
 // Append-only. Events form a hash chain per entity ordered by `sequence`, which
@@ -248,8 +247,8 @@ model Contact {
   inKindContributions InKindContribution[]
   fixedAssets         FixedAsset[]
   projects            Project[]
-  facilitiesLent      LoanFacility[]       @relation("FacilityLender")
-  advancesReceived    AggregatorAdvance[]  @relation("AdvanceAggregator")
+  facilitiesLent      LoanFacility[]         @relation("FacilityLender")
+  advancesReceived    AggregatorAdvance[]    @relation("AdvanceAggregator")
 }
 
 model ContactEntityBalance {
@@ -295,41 +294,41 @@ model User {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
-  invitedBy              User?                     @relation("Invitations", fields: [invitedById], references: [id])
-  invitees               User[]                    @relation("Invitations")
+  invitedBy              User?                   @relation("Invitations", fields: [invitedById], references: [id])
+  invitees               User[]                  @relation("Invitations")
   sessions               AuthSession[]
   authAccounts           AuthAccount[]
   twoFactors             TwoFactor[]
   entityAccess           UserEntityAccess[]
-  grantedAccess          UserEntityAccess[]        @relation("AccessGrantedBy")
+  grantedAccess          UserEntityAccess[]      @relation("AccessGrantedBy")
   auditEvents            AuditEvent[]
   postedEntries          JournalEntry[]
-  createdDocs            Document[]                @relation("DocumentCreatedBy")
-  editedDocs             Document[]                @relation("DocumentEditedBy")
+  createdDocs            Document[]              @relation("DocumentCreatedBy")
+  editedDocs             Document[]              @relation("DocumentEditedBy")
   filings                TaxPeriodFiling[]
   exchangeRates          ExchangeRate[]
   payments               Payment[]
-  revaluations           Revaluation[]             @relation("RevaluationRunBy")
-  reversedRevaluations   Revaluation[]             @relation("RevaluationReversedBy")
+  revaluations           Revaluation[]           @relation("RevaluationRunBy")
+  reversedRevaluations   Revaluation[]           @relation("RevaluationReversedBy")
   stockMovements         StockMovement[]
-  stockCounts            StockCount[]              @relation("StockCountCreatedBy")
-  postedStockCounts      StockCount[]              @relation("StockCountPostedBy")
+  stockCounts            StockCount[]            @relation("StockCountCreatedBy")
+  postedStockCounts      StockCount[]            @relation("StockCountPostedBy")
   nrvPrices              NrvPrice[]
   lots                   Lot[]
-  floatAdvances          FloatAdvance[]            @relation("FloatCreatedBy")
-  reconciledFloats       FloatAdvance[]            @relation("FloatReconciledBy")
+  floatAdvances          FloatAdvance[]          @relation("FloatCreatedBy")
+  reconciledFloats       FloatAdvance[]          @relation("FloatReconciledBy")
   floatReturns           FloatReturn[]
-  agentPurchases         AgentPurchase[]           @relation("PurchaseCreatedBy")
-  postedPurchases        AgentPurchase[]           @relation("PurchasePostedBy")
+  agentPurchases         AgentPurchase[]         @relation("PurchaseCreatedBy")
+  postedPurchases        AgentPurchase[]         @relation("PurchasePostedBy")
   salesContracts         SalesContract[]
-  deliveries             ContractDelivery[]        @relation("DeliveryCreatedBy")
-  acceptedDeliveries     ContractDelivery[]        @relation("DeliveryAcceptedBy")
+  deliveries             ContractDelivery[]      @relation("DeliveryCreatedBy")
+  acceptedDeliveries     ContractDelivery[]      @relation("DeliveryAcceptedBy")
   seedFunds              SeedFundMovement[]
   openingBatches         OpeningBatch[]
   farmerAdvances         FarmerAdvance[]
   statementImports       StatementImport[]
-  paymentBatches         FarmerPaymentBatch[]      @relation("BatchCreatedBy")
-  paidBatches            FarmerPaymentBatch[]      @relation("BatchPaidBy")
+  paymentBatches         FarmerPaymentBatch[]    @relation("BatchCreatedBy")
+  paidBatches            FarmerPaymentBatch[]    @relation("BatchPaidBy")
   grants                 Grant[]
   grantConditions        GrantCondition[]
   grantReceipts          GrantReceipt[]
@@ -345,17 +344,14 @@ model User {
   assetDisposals         AssetDisposal[]
   taxYears               TaxYear[]
   provisionalTaxPayments ProvisionalTaxPayment[]
-  payrollPosted          PayrollRun[]              @relation("PayrollPostedBy")
-  payrollCreated         PayrollRun[]              @relation("PayrollCreatedBy")
-  payrollPayments        PayrollLiabilityPayment[]
   attachments            Attachment[]
   dataSubjectRequests    DataSubjectRequest[]
-  preFinanceSettings     PreFinanceSetting[]       @relation("PreFinanceSettingUpdatedBy")
-  loanFacilities         LoanFacility[]            @relation("FacilityCreatedBy")
-  loanTranches           LoanTranche[]             @relation("TrancheCreatedBy")
-  aggregatorAdvances     AggregatorAdvance[]       @relation("AdvanceCreatedBy")
-  advanceDeliveries      AdvanceDelivery[]         @relation("DeliveryCreatedBy")
-  preFinanceCycles       PreFinanceCycle[]         @relation("CycleCreatedBy")
+  preFinanceSettings     PreFinanceSetting[]     @relation("PreFinanceSettingUpdatedBy")
+  loanFacilities         LoanFacility[]          @relation("FacilityCreatedBy")
+  loanTranches           LoanTranche[]           @relation("TrancheCreatedBy")
+  aggregatorAdvances     AggregatorAdvance[]     @relation("AdvanceCreatedBy")
+  advanceDeliveries      AdvanceDelivery[]       @relation("DeliveryCreatedBy")
+  preFinanceCycles       PreFinanceCycle[]       @relation("CycleCreatedBy")
 
   @@index([deactivatedAt])
 }
@@ -480,10 +476,10 @@ model Account {
   grantBudgetLines     GrantBudgetLine[]
   staffTimeAllocations StaffTimeAllocation[]
   recurringCosts       RecurringCost[]
-  payrollMappings      PayrollMapping[]
-  payrollDepartments   PayrollDepartment[]
   projectBudgetLines   ProjectBudgetLine[]
   assetCategories      AssetCategory[]
+  employees            Employee[]
+  floatLabour          FloatLabourPayment[]
 
   @@unique([entityId, code])
   @@index([entityId, parentId])
@@ -516,28 +512,28 @@ model JournalEntry {
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
-  entity                Entity                   @relation(fields: [entityId], references: [id])
-  postedBy              User?                    @relation(fields: [postedById], references: [id])
+  entity                Entity                 @relation(fields: [entityId], references: [id])
+  postedBy              User?                  @relation(fields: [postedById], references: [id])
   lines                 JournalLine[]
-  reversalOf            JournalEntry?            @relation("Reversal", fields: [reversalOfId], references: [id])
-  reversedBy            JournalEntry?            @relation("Reversal")
-  postedDocument        Document?                @relation("DocumentPosting")
-  voidedDocument        Document?                @relation("DocumentVoid")
+  reversalOf            JournalEntry?          @relation("Reversal", fields: [reversalOfId], references: [id])
+  reversedBy            JournalEntry?          @relation("Reversal")
+  postedDocument        Document?              @relation("DocumentPosting")
+  voidedDocument        Document?              @relation("DocumentVoid")
   payment               Payment?
-  revaluation           Revaluation?             @relation("RevaluationEntry")
-  revaluationReversal   Revaluation?             @relation("RevaluationReversal")
+  revaluation           Revaluation?           @relation("RevaluationEntry")
+  revaluationReversal   Revaluation?           @relation("RevaluationReversal")
   stockMovements        StockMovement[]
   stockCount            StockCount?
   floatAdvance          FloatAdvance?
   floatReturn           FloatReturn?
   agentPurchase         AgentPurchase?
-  delivery              ContractDelivery?        @relation("DeliveryJournal")
-  acceptance            ContractDelivery?        @relation("AcceptanceJournal")
+  delivery              ContractDelivery?      @relation("DeliveryJournal")
+  acceptance            ContractDelivery?      @relation("AcceptanceJournal")
   seedFund              SeedFundMovement?
   openingBatch          OpeningBatch?
   farmerAdvance         FarmerAdvance?
-  paymentBatch          FarmerPaymentBatch?      @relation("BatchJournal")
-  batchSettlement       FarmerPaymentBatch?      @relation("BatchSettlementJournal")
+  paymentBatch          FarmerPaymentBatch?    @relation("BatchJournal")
+  batchSettlement       FarmerPaymentBatch?    @relation("BatchSettlementJournal")
   statementLines        StatementLine[]
   grantReceipt          GrantReceipt?
   grantRelease          GrantRelease?
@@ -547,11 +543,14 @@ model JournalEntry {
   assetDisposal         AssetDisposal?
   taxYear               TaxYear?
   provisionalTaxPayment ProvisionalTaxPayment?
-  payrollRun            PayrollRun?
-  payrollPayment        PayrollLiabilityPayment?
   loanTranche           LoanTranche?
   aggregatorAdvance     AggregatorAdvance?
   advanceDelivery       AdvanceDelivery?
+  payRunPosting         PayRun?                @relation("PayRunJournal")
+  payRunReversal        PayRun?                @relation("PayRunReversal")
+  staffLoan             StaffLoan?
+  payrollRemittance     PayrollRemittance?
+  floatLabour           FloatLabourPayment?
 
   @@index([entityId, postedAt])
   @@index([entityId, kind])
@@ -651,13 +650,14 @@ model Project {
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
-  entity        Entity              @relation(fields: [entityId], references: [id])
-  fund          Fund?               @relation(fields: [fundId], references: [id])
-  funderContact Contact?            @relation(fields: [funderContactId], references: [id])
-  budgetLines   ProjectBudgetLine[]
-  journalLines  JournalLine[]
-  documentLines DocumentLine[]
-  grants        Grant[]
+  entity              Entity               @relation(fields: [entityId], references: [id])
+  fund                Fund?                @relation(fields: [fundId], references: [id])
+  funderContact       Contact?             @relation(fields: [funderContactId], references: [id])
+  budgetLines         ProjectBudgetLine[]
+  journalLines        JournalLine[]
+  documentLines       DocumentLine[]
+  grants              Grant[]
+  employeeAllocations EmployeeAllocation[]
 
   @@unique([entityId, code])
   @@index([entityId, fundId])
@@ -878,8 +878,8 @@ model BankAccount {
   isActive  Boolean         @default(true)
   createdAt DateTime        @default(now())
 
-  entity                 Entity                    @relation(fields: [entityId], references: [id])
-  account                Account                   @relation(fields: [accountId], references: [id])
+  entity                 Entity                  @relation(fields: [entityId], references: [id])
+  account                Account                 @relation(fields: [accountId], references: [id])
   payments               Payment[]
   statementImports       StatementImport[]
   statementLines         StatementLine[]
@@ -887,9 +887,10 @@ model BankAccount {
   grantReceipts          GrantReceipt[]
   assetDisposals         AssetDisposal[]
   provisionalTaxPayments ProvisionalTaxPayment[]
-  payrollPayments        PayrollLiabilityPayment[]
   loanTranches           LoanTranche[]
   aggregatorAdvances     AggregatorAdvance[]
+  staffLoans             StaffLoan[]
+  payrollRemittances     PayrollRemittance[]
 
   @@index([entityId])
 }
@@ -1104,17 +1105,17 @@ model StockMovement {
   createdById    String?
   createdAt      DateTime          @default(now())
 
-  entity       Entity            @relation(fields: [entityId], references: [id])
-  item         Item              @relation(fields: [itemId], references: [id])
-  fromLocation StockLocation?    @relation("MovementFrom", fields: [fromLocationId], references: [id])
-  toLocation   StockLocation?    @relation("MovementTo", fields: [toLocationId], references: [id])
-  documentLine DocumentLine?     @relation(fields: [documentLineId], references: [id])
-  stockCount   StockCount?       @relation(fields: [stockCountId], references: [id])
-  lot          Lot?              @relation(fields: [lotId], references: [id])
-  delivery     ContractDelivery? @relation(fields: [deliveryId], references: [id])
-  journalEntry JournalEntry?     @relation(fields: [journalEntryId], references: [id])
-  reverses     StockMovement?    @relation("MovementReversal", fields: [reversesId], references: [id])
-  reversedBy   StockMovement?    @relation("MovementReversal")
+  entity          Entity            @relation(fields: [entityId], references: [id])
+  item            Item              @relation(fields: [itemId], references: [id])
+  fromLocation    StockLocation?    @relation("MovementFrom", fields: [fromLocationId], references: [id])
+  toLocation      StockLocation?    @relation("MovementTo", fields: [toLocationId], references: [id])
+  documentLine    DocumentLine?     @relation(fields: [documentLineId], references: [id])
+  stockCount      StockCount?       @relation(fields: [stockCountId], references: [id])
+  lot             Lot?              @relation(fields: [lotId], references: [id])
+  delivery        ContractDelivery? @relation(fields: [deliveryId], references: [id])
+  journalEntry    JournalEntry?     @relation(fields: [journalEntryId], references: [id])
+  reverses        StockMovement?    @relation("MovementReversal", fields: [reversesId], references: [id])
+  reversedBy      StockMovement?    @relation("MovementReversal")
   createdBy       User?             @relation(fields: [createdById], references: [id])
   advanceDelivery AdvanceDelivery?
 
@@ -1303,10 +1304,11 @@ model BuyingAgent {
   isActive          Boolean  @default(true)
   createdAt         DateTime @default(now())
 
-  entity          Entity          @relation(fields: [entityId], references: [id])
-  defaultLocation StockLocation?  @relation(fields: [defaultLocationId], references: [id])
+  entity          Entity               @relation(fields: [entityId], references: [id])
+  defaultLocation StockLocation?       @relation(fields: [defaultLocationId], references: [id])
   floats          FloatAdvance[]
   purchases       AgentPurchase[]
+  labour          FloatLabourPayment[]
 
   @@index([entityId])
 }
@@ -1333,14 +1335,15 @@ model FloatAdvance {
   createdById    String?
   createdAt      DateTime    @default(now())
 
-  entity       Entity          @relation(fields: [entityId], references: [id])
-  agent        BuyingAgent     @relation(fields: [agentId], references: [id])
-  bankAccount  BankAccount?    @relation(fields: [bankAccountId], references: [id])
-  journalEntry JournalEntry?   @relation(fields: [journalEntryId], references: [id])
-  createdBy    User?           @relation("FloatCreatedBy", fields: [createdById], references: [id])
-  reconciledBy User?           @relation("FloatReconciledBy", fields: [reconciledById], references: [id])
+  entity       Entity               @relation(fields: [entityId], references: [id])
+  agent        BuyingAgent          @relation(fields: [agentId], references: [id])
+  bankAccount  BankAccount?         @relation(fields: [bankAccountId], references: [id])
+  journalEntry JournalEntry?        @relation(fields: [journalEntryId], references: [id])
+  createdBy    User?                @relation("FloatCreatedBy", fields: [createdById], references: [id])
+  reconciledBy User?                @relation("FloatReconciledBy", fields: [reconciledById], references: [id])
   purchases    AgentPurchase[]
   returns      FloatReturn[]
+  labour       FloatLabourPayment[]
 
   @@index([entityId, status])
 }
@@ -1976,20 +1979,19 @@ model Grant {
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
 
-  entity             Entity                @relation(fields: [entityId], references: [id])
-  donor              Contact               @relation(fields: [donorContactId], references: [id])
-  fund               Fund?                 @relation(fields: [fundId], references: [id])
-  project            Project?              @relation(fields: [projectId], references: [id])
-  createdBy          User?                 @relation(fields: [createdById], references: [id])
-  budgetLines        GrantBudgetLine[]
-  conditions         GrantCondition[]
-  receipts           GrantReceipt[]
-  releases           GrantRelease[]
-  inKind             InKindContribution[]
-  staffTime          StaffTimeAllocation[]
-  journalLines       JournalLine[]
-  documentLines      DocumentLine[]
-  payrollAllocations PayrollAllocation[]
+  entity        Entity                @relation(fields: [entityId], references: [id])
+  donor         Contact               @relation(fields: [donorContactId], references: [id])
+  fund          Fund?                 @relation(fields: [fundId], references: [id])
+  project       Project?              @relation(fields: [projectId], references: [id])
+  createdBy     User?                 @relation(fields: [createdById], references: [id])
+  budgetLines   GrantBudgetLine[]
+  conditions    GrantCondition[]
+  receipts      GrantReceipt[]
+  releases      GrantRelease[]
+  inKind        InKindContribution[]
+  staffTime     StaffTimeAllocation[]
+  journalLines  JournalLine[]
+  documentLines DocumentLine[]
 
   @@unique([entityId, code])
   @@index([entityId, status])
@@ -2007,14 +2009,13 @@ model GrantBudgetLine {
   note        String?
   createdAt   DateTime @default(now())
 
-  entity             Entity                @relation(fields: [entityId], references: [id])
-  grant              Grant                 @relation(fields: [grantId], references: [id])
-  account            Account               @relation(fields: [accountId], references: [id])
-  journalLines       JournalLine[]
-  documentLines      DocumentLine[]
-  inKind             InKindContribution[]
-  staffTime          StaffTimeAllocation[]
-  payrollAllocations PayrollAllocation[]
+  entity        Entity                @relation(fields: [entityId], references: [id])
+  grant         Grant                 @relation(fields: [grantId], references: [id])
+  account       Account               @relation(fields: [accountId], references: [id])
+  journalLines  JournalLine[]
+  documentLines DocumentLine[]
+  inKind        InKindContribution[]
+  staffTime     StaffTimeAllocation[]
 
   @@unique([grantId, code])
   @@index([entityId, grantId])
@@ -2526,188 +2527,6 @@ model ProvisionalTaxPayment {
   @@index([entityId, taxYearId])
 }
 
-// --- payroll import ------------------------------------------------------------
-//
-// There is no payroll engine here. Payroll is run in a Ghanaian payroll
-// system or a spreadsheet; this takes the summary it produces, reads it
-// against a mapping the app remembers, and posts one journal a month.
-//
-// Casual and seasonal labour paid by a buying agent is not payroll. It goes
-// through the agent float, where the money actually left.
-
-enum PayrollRunStatus {
-  DRAFT
-  POSTED
-}
-
-enum PayrollLiabilityKind {
-  PAYE
-  SSNIT_TIER_1
-  SSNIT_TIER_2
-  NET_PAY
-  OTHER_DEDUCTIONS
-}
-
-/// Which column of the payroll file holds what, matched once and kept.
-model PayrollMapping {
-  id                    String   @id @default(cuid())
-  entityId              String
-  name                  String
-  employeeRefColumn     String?
-  employeeNameColumn    String
-  departmentColumn      String?
-  grossColumn           String
-  payeColumn            String?
-  employeeSsnitColumn   String?
-  employerSsnitColumn   String?
-  ssnitTier2Column      String?
-  otherDeductionsColumn String?
-  netColumn             String?
-  /// Where gross pay goes when a department has not been given its own account.
-  defaultAccountId      String?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-
-  entity         Entity       @relation(fields: [entityId], references: [id])
-  defaultAccount Account?     @relation(fields: [defaultAccountId], references: [id])
-  runs           PayrollRun[]
-
-  @@unique([entityId, name])
-}
-
-/// Which account a department's gross pay is charged to.
-model PayrollDepartment {
-  id        String   @id @default(cuid())
-  entityId  String
-  name      String
-  accountId String
-  createdAt DateTime @default(now())
-
-  entity  Entity  @relation(fields: [entityId], references: [id])
-  account Account @relation(fields: [accountId], references: [id])
-
-  @@unique([entityId, name])
-}
-
-/// One month of payroll, imported and posted as a single journal.
-model PayrollRun {
-  id                   String           @id @default(cuid())
-  entityId             String
-  /// YYYY-MM.
-  period               String
-  payDate              DateTime         @db.Date
-  mappingId            String?
-  fileName             String
-  grossMinor           BigInt           @default(0)
-  payeMinor            BigInt           @default(0)
-  employeeSsnitMinor   BigInt           @default(0)
-  employerSsnitMinor   BigInt           @default(0)
-  ssnitTier2Minor      BigInt           @default(0)
-  otherDeductionsMinor BigInt           @default(0)
-  netMinor             BigInt           @default(0)
-  status               PayrollRunStatus @default(DRAFT)
-  note                 String?
-  journalEntryId       String?          @unique
-  postedById           String?
-  postedAt             DateTime?
-  createdById          String?
-  createdAt            DateTime         @default(now())
-
-  entity       Entity             @relation(fields: [entityId], references: [id])
-  mapping      PayrollMapping?    @relation(fields: [mappingId], references: [id])
-  journalEntry JournalEntry?      @relation(fields: [journalEntryId], references: [id])
-  postedBy     User?              @relation("PayrollPostedBy", fields: [postedById], references: [id])
-  createdBy    User?              @relation("PayrollCreatedBy", fields: [createdById], references: [id])
-  lines        PayrollLine[]
-  liabilities  PayrollLiability[]
-
-  @@unique([entityId, period])
-  @@index([entityId, status])
-}
-
-/// One person in one month, exactly as the payroll system reported them.
-model PayrollLine {
-  id                   String  @id @default(cuid())
-  entityId             String
-  runId                String
-  employeeRef          String?
-  employeeName         String
-  department           String?
-  grossMinor           BigInt  @default(0)
-  payeMinor            BigInt  @default(0)
-  employeeSsnitMinor   BigInt  @default(0)
-  employerSsnitMinor   BigInt  @default(0)
-  ssnitTier2Minor      BigInt  @default(0)
-  otherDeductionsMinor BigInt  @default(0)
-  netMinor             BigInt  @default(0)
-
-  entity Entity     @relation(fields: [entityId], references: [id])
-  run    PayrollRun @relation(fields: [runId], references: [id], onDelete: Cascade)
-
-  @@index([entityId, runId])
-}
-
-/// How much of one person's cost each grant carries. Kept against the person,
-/// not the month, so it is set once and applies to every payroll after it.
-model PayrollAllocation {
-  id           String   @id @default(cuid())
-  entityId     String
-  /// The staff reference in the payroll file, or their name when there is none.
-  employeeKey  String
-  employeeName String?
-  grantId      String
-  budgetLineId String?
-  pct          Decimal  @db.Decimal(6, 3)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  entity     Entity           @relation(fields: [entityId], references: [id])
-  grant      Grant            @relation(fields: [grantId], references: [id])
-  budgetLine GrantBudgetLine? @relation(fields: [budgetLineId], references: [id])
-
-  @@unique([entityId, employeeKey, grantId])
-  @@index([entityId])
-}
-
-/// What a month of payroll left owing, and when it has to be paid.
-model PayrollLiability {
-  id           String               @id @default(cuid())
-  entityId     String
-  runId        String
-  kind         PayrollLiabilityKind
-  amountMinor  BigInt
-  settledMinor BigInt               @default(0)
-  dueDate      DateTime             @db.Date
-
-  entity   Entity                    @relation(fields: [entityId], references: [id])
-  run      PayrollRun                @relation(fields: [runId], references: [id], onDelete: Cascade)
-  payments PayrollLiabilityPayment[]
-
-  @@unique([runId, kind])
-  @@index([entityId, dueDate])
-}
-
-model PayrollLiabilityPayment {
-  id             String   @id @default(cuid())
-  entityId       String
-  liabilityId    String
-  date           DateTime @db.Date
-  amountMinor    BigInt
-  bankAccountId  String
-  reference      String?
-  journalEntryId String?  @unique
-  createdById    String?
-  createdAt      DateTime @default(now())
-
-  entity       Entity           @relation(fields: [entityId], references: [id])
-  liability    PayrollLiability @relation(fields: [liabilityId], references: [id], onDelete: Cascade)
-  bankAccount  BankAccount      @relation(fields: [bankAccountId], references: [id])
-  journalEntry JournalEntry?    @relation(fields: [journalEntryId], references: [id])
-  createdBy    User?            @relation(fields: [createdById], references: [id])
-
-  @@index([entityId, liabilityId])
-}
-
 // --- attachments ---------------------------------------------------------------
 //
 // Files live in cloud storage, never in the database. What is here is where
@@ -2879,6 +2698,392 @@ model TaxRateSetting {
   entity Entity @relation(fields: [entityId], references: [id])
 }
 
+/// One statutory payroll figure — a PAYE band, an SSNIT rate, a relief, a
+/// concessionary rate, a choice the law leaves open — and the dates it was in
+/// force.
+///
+/// National reference data, not a transaction: the same law applies to every
+/// entity, so there is no entityId here and no per-entity copy. This is the
+/// one exception to the entityId rule, recorded in CLAUDE.md. What is
+/// per-entity about payroll lives in PayrollSetting.
+///
+/// Rates are data, never code. A payroll run reads the rows in force on the
+/// last day of its own pay period, so re-running an old month reproduces it
+/// exactly however the figures have moved since. What each key means, and
+/// whether it holds a rate, an amount, a count or a choice, is the catalogue
+/// in src/lib/payroll-rates.ts.
+///
+/// A change is a new row from its own effective date, with the old one closed
+/// the day before — never an edit that rewrites history. A row is corrected in
+/// place only while it is still a placeholder, and then by withdrawing it.
+model StatutoryRate {
+  id              String    @id @default(cuid())
+  /// e.g. 'paye.band', 'ssnit.employee'. A string, so a new kind of rate
+  /// needs no schema change.
+  key             String
+  /// Order within a set that has several rows: the PAYE bands, lowest first.
+  sequence        Int       @default(0)
+  /// Any date; the screen offers the first of a month.
+  effectiveFrom   DateTime  @db.Date
+  /// Null while still in force.
+  effectiveTo     DateTime? @db.Date
+  /// Hundredths of a percent: 1750 is 17.5%. Integer, so no rounding drift.
+  rateBasisPoints Int?
+  /// Pesewas a month: a band width, a relief, a cap.
+  amountMinor     BigInt?
+  /// The most a relief can be claimed for, e.g. three children.
+  maxCount        Int?
+  /// For a key whose catalogue entry is a choice, e.g. 'progressive' | 'flat'.
+  choice          String?
+  /// For a deadline: the day of the month after the pay period it falls due.
+  dayOfMonth      Int?
+  /// True until somebody has checked the figure against GRA or SSNIT. A run
+  /// using a placeholder can be calculated but not approved.
+  isPlaceholder   Boolean   @default(true)
+  /// Where the figure was verified: a GRA notice, an SSNIT circular.
+  source          String?
+  note            String?
+  /// Set when a placeholder is corrected: the row is kept, never deleted, and
+  /// never read again. Only an unverified row can be withdrawn.
+  withdrawnAt     DateTime?
+  updatedById     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([key, effectiveFrom])
+}
+
+enum PayrollProrationBasis {
+  CALENDAR_DAYS
+  WORKING_DAYS
+}
+
+/// How one entity runs payroll. Everything statutory is in StatutoryRate;
+/// this is only what the entity itself decides.
+model PayrollSetting {
+  id             String                @id @default(cuid())
+  entityId       String                @unique
+  /// Not every entity runs payroll. Off until an Owner switches it on.
+  payrollEnabled Boolean               @default(false)
+  /// Day of the month staff are paid; a day past the month end means its last day.
+  payDay         Int                   @default(28)
+  /// Whether employees may make voluntary tier 3 contributions through payroll.
+  tier3Offered   Boolean               @default(false)
+  /// How a part month is paid when someone joins or leaves part way through.
+  prorationBasis PayrollProrationBasis @default(CALENDAR_DAYS)
+  updatedById    String?
+  updatedAt      DateTime              @updatedAt
+
+  entity Entity @relation(fields: [entityId], references: [id])
+}
+
+// --- payroll ---------------------------------------------------------------------
+//
+// Calculated in the app: src/lib/payroll-engine.ts works out one employee's
+// pay from the statutory rates in force; src/lib/payroll-run.ts turns a
+// month of it into a journal and the amounts owed to GRA, SSNIT and staff.
+
+enum EmploymentType {
+  PERMANENT
+  CONTRACT
+  /// Recorded, but refused by the calculation until the rules are confirmed.
+  CASUAL
+}
+
+enum TaxResidency {
+  RESIDENT
+  NON_RESIDENT
+}
+
+enum EmployeePayMethod {
+  BANK
+  MOBILE_MONEY
+}
+
+/// A member of staff on one entity's payroll.
+model Employee {
+  id                  String            @id @default(cuid())
+  entityId            String
+  staffNumber         String
+  name                String
+  /// For emailing payslips. Encrypted at rest.
+  email               String?
+  tin                 String?
+  ssnitNumber         String?
+  startDate           DateTime          @db.Date
+  /// Null while employed. Nothing is deleted: a leaver keeps their record.
+  endDate             DateTime?         @db.Date
+  employmentType      EmploymentType    @default(PERMANENT)
+  residency           TaxResidency      @default(RESIDENT)
+  department          String?
+  /// Where gross pay is charged.
+  expenseAccountId    String
+  payMethod           EmployeePayMethod @default(BANK)
+  bankName            String?
+  /// Encrypted at rest.
+  bankAccountNumber   String?
+  /// Encrypted at rest.
+  momoNumber          String?
+  /// Monthly basic salary: always pensionable, kept apart from allowances.
+  basicMinor          BigInt
+  juniorStaffOvertime Boolean           @default(false)
+  /// Voluntary tier 3 each month, where the entity offers it.
+  tier3Minor          BigInt            @default(0)
+  /// Benefit kinds from src/lib/payroll-engine.ts, e.g. 'vehicle-fuel'.
+  benefitsInKind      String[]          @default([])
+  /// Personal reliefs registered for the employee; amounts come from the rates.
+  marriageRelief      Boolean           @default(false)
+  childrenInEducation Int               @default(0)
+  agedDependants      Int               @default(0)
+  disabilityRelief    Boolean           @default(false)
+  oldAgeRelief        Boolean           @default(false)
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  entity         Entity               @relation(fields: [entityId], references: [id])
+  expenseAccount Account              @relation(fields: [expenseAccountId], references: [id])
+  allowances     EmployeeAllowance[]
+  allocations    EmployeeAllocation[]
+  loans          StaffLoan[]
+  payLines       PayRunLine[]
+
+  @@unique([entityId, staffNumber])
+  @@index([entityId])
+}
+
+/// A named allowance on an employee's pay. Ended, never deleted.
+model EmployeeAllowance {
+  id          String    @id @default(cuid())
+  entityId    String
+  employeeId  String
+  name        String
+  amountMinor BigInt
+  taxable     Boolean   @default(true)
+  /// In the SSNIT base. Off unless the contract says so.
+  pensionable Boolean   @default(false)
+  endedAt     DateTime?
+  createdAt   DateTime  @default(now())
+
+  entity   Entity   @relation(fields: [entityId], references: [id])
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([entityId, employeeId])
+}
+
+/// One share of an employee's cost charged to a project. The live shares add
+/// to 100%; a new split ends the old rows rather than deleting them.
+model EmployeeAllocation {
+  id               String    @id @default(cuid())
+  entityId         String
+  employeeId       String
+  projectId        String
+  /// Hundredths of a percent: 10000 is all of it.
+  shareBasisPoints Int
+  endedAt          DateTime?
+  createdAt        DateTime  @default(now())
+
+  entity   Entity   @relation(fields: [entityId], references: [id])
+  employee Employee @relation(fields: [employeeId], references: [id])
+  project  Project  @relation(fields: [projectId], references: [id])
+
+  @@index([entityId, employeeId])
+}
+
+/// A loan or advance to a member of staff, repaid from pay. What is left is
+/// the principal less instalments on posted, unreversed pay runs.
+model StaffLoan {
+  id              String   @id @default(cuid())
+  entityId        String
+  employeeId      String
+  /// 'loan' | 'advance'
+  kind            String   @default("loan")
+  description     String
+  principalMinor  BigInt
+  instalmentMinor BigInt
+  issuedOn        DateTime @db.Date
+  /// YYYY-MM: the first pay period an instalment is taken.
+  firstPeriod     String
+  bankAccountId   String
+  journalEntryId  String?  @unique
+  createdById     String?
+  createdAt       DateTime @default(now())
+
+  entity       Entity            @relation(fields: [entityId], references: [id])
+  employee     Employee          @relation(fields: [employeeId], references: [id])
+  bankAccount  BankAccount       @relation(fields: [bankAccountId], references: [id])
+  journalEntry JournalEntry?     @relation(fields: [journalEntryId], references: [id])
+  repayments   PayRunDeduction[]
+
+  @@index([entityId, employeeId])
+}
+
+enum PayRunStatus {
+  /// Everything recalculable.
+  DRAFT
+  /// Figures locked; waiting to post.
+  APPROVED
+  /// Journal written.
+  POSTED
+  /// Posted, then undone by a recorded reversing entry. The period can run again.
+  REVERSED
+}
+
+/// One pay period for one entity: draft, approved, posted.
+model PayRun {
+  id                     String       @id @default(cuid())
+  entityId               String
+  /// YYYY-MM.
+  period                 String
+  /// 1 for the first run of a period; a period whose run was reversed runs again as 2.
+  sequence               Int          @default(1)
+  status                 PayRunStatus @default(DRAFT)
+  payDate                DateTime     @db.Date
+  calculatedAt           DateTime?
+  approvedById           String?
+  approvedAt             DateTime?
+  postedById             String?
+  postedAt               DateTime?
+  journalEntryId         String?      @unique
+  reversalJournalEntryId String?      @unique
+  reversedById           String?
+  reversedAt             DateTime?
+  reversalReason         String?
+  createdById            String?
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+
+  entity          Entity              @relation(fields: [entityId], references: [id])
+  journalEntry    JournalEntry?       @relation("PayRunJournal", fields: [journalEntryId], references: [id])
+  reversalJournal JournalEntry?       @relation("PayRunReversal", fields: [reversalJournalEntryId], references: [id])
+  lines           PayRunLine[]
+  remittances     PayrollRemittance[]
+
+  @@unique([entityId, period, sequence])
+  @@index([entityId, status])
+}
+
+/// One employee in one pay run: what went in, what came out, and the working.
+model PayRunLine {
+  id                   String  @id @default(cuid())
+  entityId             String
+  runId                String
+  employeeId           String
+  /// Entered for this period only.
+  bonusInputMinor      BigInt  @default(0)
+  overtimeInputMinor   BigInt  @default(0)
+  /// Why this employee could not be calculated, e.g. a casual worker. Blocks approval.
+  error                String?
+  /// The PayInput and project split used, as JSON: what a re-run starts from.
+  inputsJson           String?
+  /// The full PayResult with its working and the rates used, as JSON.
+  resultJson           String?
+  daysEmployed         Int     @default(0)
+  basicMinor           BigInt  @default(0)
+  allowancesMinor      BigInt  @default(0)
+  nonTaxableMinor      BigInt  @default(0)
+  bonusMinor           BigInt  @default(0)
+  overtimeMinor        BigInt  @default(0)
+  grossMinor           BigInt  @default(0)
+  ssnitBaseMinor       BigInt  @default(0)
+  employeeSsnitMinor   BigInt  @default(0)
+  tier3Minor           BigInt  @default(0)
+  benefitsMinor        BigInt  @default(0)
+  reliefsMinor         BigInt  @default(0)
+  chargeableMinor      BigInt  @default(0)
+  payeMinor            BigInt  @default(0)
+  bonusTaxMinor        BigInt  @default(0)
+  overtimeTaxMinor     BigInt  @default(0)
+  bonusConcessionMinor BigInt  @default(0)
+  deductionsMinor      BigInt  @default(0)
+  netMinor             BigInt  @default(0)
+  employerSsnitMinor   BigInt  @default(0)
+  employerTier2Minor   BigInt  @default(0)
+
+  entity     Entity            @relation(fields: [entityId], references: [id])
+  run        PayRun            @relation(fields: [runId], references: [id])
+  employee   Employee          @relation(fields: [employeeId], references: [id])
+  deductions PayRunDeduction[]
+
+  @@unique([runId, employeeId])
+  @@index([entityId, employeeId])
+}
+
+/// A loan instalment or other deduction taken on one pay line.
+model PayRunDeduction {
+  id          String  @id @default(cuid())
+  entityId    String
+  lineId      String
+  loanId      String?
+  name        String
+  amountMinor BigInt
+
+  entity Entity     @relation(fields: [entityId], references: [id])
+  line   PayRunLine @relation(fields: [lineId], references: [id])
+  loan   StaffLoan? @relation(fields: [loanId], references: [id])
+
+  @@index([entityId, loanId])
+}
+
+enum RemittanceKind {
+  PAYE
+  SSNIT_TIER_1
+  SSNIT_TIER_2
+  TIER_3
+  NET_PAY
+}
+
+/// What a posted pay run left owing, to whom, and by when. Paying it posts
+/// the money out of the bank against the liability.
+model PayrollRemittance {
+  id             String         @id @default(cuid())
+  entityId       String
+  runId          String
+  kind           RemittanceKind
+  amountMinor    BigInt
+  dueDate        DateTime       @db.Date
+  paidOn         DateTime?      @db.Date
+  reference      String?
+  bankAccountId  String?
+  journalEntryId String?        @unique
+  paidById       String?
+  /// Set when the run is reversed before this was paid: no longer owed.
+  cancelledAt    DateTime?
+
+  entity       Entity        @relation(fields: [entityId], references: [id])
+  run          PayRun        @relation(fields: [runId], references: [id])
+  bankAccount  BankAccount?  @relation(fields: [bankAccountId], references: [id])
+  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id])
+
+  @@unique([runId, kind])
+  @@index([entityId, dueDate])
+}
+
+/// Casual or seasonal labour paid by a buying agent out of their float. Not
+/// payroll: it relieves the float like a purchase does, and is a labour cost.
+model FloatLabourPayment {
+  id             String   @id @default(cuid())
+  entityId       String
+  floatId        String
+  agentId        String
+  date           DateTime @db.Date
+  description    String
+  /// How many people were paid, for the labour report. No names are held.
+  workers        Int?
+  amountMinor    BigInt
+  accountId      String
+  journalEntryId String?  @unique
+  createdById    String?
+  createdAt      DateTime @default(now())
+
+  entity       Entity        @relation(fields: [entityId], references: [id])
+  float        FloatAdvance  @relation(fields: [floatId], references: [id])
+  agent        BuyingAgent   @relation(fields: [agentId], references: [id])
+  account      Account       @relation(fields: [accountId], references: [id])
+  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id])
+
+  @@index([entityId, date])
+}
+
 /// Which database this is. One row, set once by `npm run db:mark`.
 ///
 /// It lives in the database rather than in an environment variable so that it
@@ -3019,18 +3224,18 @@ model LoanFacility {
 
 /// One drawdown against a facility, and its repayment.
 model LoanTranche {
-  id            String    @id @default(cuid())
-  entityId      String
-  facilityId    String
-  drawnOn       DateTime
-  amountMinor   BigInt
+  id             String    @id @default(cuid())
+  entityId       String
+  facilityId     String
+  drawnOn        DateTime
+  amountMinor    BigInt
   /// Where the money landed. Null for a drawdown from before the cut-over.
-  bankAccountId String?
+  bankAccountId  String?
   /// When the principal was repaid in full. Null while still outstanding.
-  repaidOn      DateTime?
+  repaidOn       DateTime?
   /// How far interest has been posted, so an accrual run knows where it stopped.
   interestToDate DateTime?
-  interestMinor  BigInt   @default(0)
+  interestMinor  BigInt    @default(0)
 
   journalEntryId String?  @unique
   createdById    String?
@@ -3052,18 +3257,18 @@ model LoanTranche {
 /// The quality block is a snapshot of what was agreed, copied from
 /// PreFinanceSetting when the advance is created and never rewritten.
 model AggregatorAdvance {
-  id            String   @id @default(cuid())
-  entityId      String
-  aggregatorId  String
-  reference     String
-  advancedOn    DateTime
+  id              String   @id @default(cuid())
+  entityId        String
+  aggregatorId    String
+  reference       String
+  advancedOn      DateTime
   /// When the nuts were promised. Ageing runs from here, not from the advance.
-  expectedOn    DateTime
-  amountMinor   BigInt
+  expectedOn      DateTime
+  amountMinor     BigInt
   /// Where the money went out from.
-  bankAccountId String?
+  bankAccountId   String?
   /// Which facility funded it, when it was funded by borrowing.
-  facilityId    String?
+  facilityId      String?
   /// The agreed price per kilogram, at the quality basis below.
   pricePerKgMinor BigInt
 
@@ -3113,20 +3318,20 @@ model AdvanceDelivery {
   /// What the ticket said, so a dispute can be settled against the paper
   /// rather than against a number somebody re-typed. All optional: a load
   /// weighed on a platform scale has no gross and tare at all.
-  vehicle       String?
-  waybill       String?
+  vehicle    String?
+  waybill    String?
   /// Truck and load together.
-  grossGrams    BigInt?
+  grossGrams BigInt?
   /// Truck alone.
-  tareGrams     BigInt?
-  bags          Int?
+  tareGrams  BigInt?
+  bags       Int?
   /// Who released the sample result, when the lab slip is signed.
-  assayedBy     String?
+  assayedBy  String?
 
   /// Gross less tare where both were given, otherwise weighed directly.
   grams       BigInt
-  outturn     Decimal  @db.Decimal(6, 2)
-  moisturePct Decimal  @db.Decimal(6, 2)
+  outturn     Decimal @db.Decimal(6, 2)
+  moisturePct Decimal @db.Decimal(6, 2)
 
   /// Weight actually paid for; differs from grams only under WEIGHT_DEDUCTION.
   adjustedGrams           BigInt
