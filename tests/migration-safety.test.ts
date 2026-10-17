@@ -29,6 +29,7 @@ describe('what may run under a live deployment', () => {
     'ALTER TABLE "Advance" ADD CONSTRAINT "Advance_entityId_fkey" FOREIGN KEY ("entityId") REFERENCES "Entity"("id") ON DELETE RESTRICT ON UPDATE CASCADE',
     'ALTER TABLE "Contact" ADD COLUMN "exposureLimitMinor" BIGINT',
     'ALTER TABLE "Contact" ADD COLUMN "exposureLimitMinor" BIGINT NOT NULL DEFAULT 0',
+    'ALTER TABLE "PreFinanceSetting" ENABLE ROW LEVEL SECURITY',
   ];
 
   for (const statement of safe) {
@@ -48,6 +49,8 @@ describe('what may run under a live deployment', () => {
     ['TRUNCATE "Cycle"', 'changes data'],
     ['ALTER TABLE "Contact" ADD COLUMN "mustHave" TEXT NOT NULL', 'NOT NULL column with no default'],
     ['GRANT ALL ON SCHEMA public TO postgres', 'does not recognise'],
+    ['ALTER TABLE "User" FORCE ROW LEVEL SECURITY', 'does not recognise'],
+    ['ALTER TABLE "User" DISABLE ROW LEVEL SECURITY', 'does not recognise'],
   ];
 
   for (const [statement, reason] of unsafe) {
@@ -128,5 +131,19 @@ describe('against the migrations this repository actually has', () => {
   it('and allows the plainly additive ones', () => {
     const sql = readFileSync(join(dir, '20260923050000_data_protection', 'migration.sql'), 'utf8');
     expect(classifyMigration(sql).additive).toBe(true);
+  });
+
+  // Supabase serves the public schema to anyone with the anon key unless RLS is
+  // on. A new CREATE TABLE needs a matching ENABLE in the same or a later migration.
+  it('every table has row level security', () => {
+    const created = new Set<string>();
+    const secured = new Set<string>();
+    for (const name of names) {
+      const sql = readFileSync(join(dir, name, 'migration.sql'), 'utf8');
+      for (const match of sql.matchAll(/^CREATE TABLE "([^"]+)"/gm)) created.add(match[1]);
+      for (const match of sql.matchAll(/^ALTER TABLE "([^"]+)" ENABLE ROW LEVEL SECURITY/gm)) secured.add(match[1]);
+    }
+    expect([...created].filter((table) => !secured.has(table))).toEqual([]);
+    expect(secured.has('_prisma_migrations')).toBe(true);
   });
 });

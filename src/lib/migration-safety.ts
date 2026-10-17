@@ -99,6 +99,11 @@ export function classifyStatement(statement: string): StatementVerdict {
     if (/\bADD\s+CONSTRAINT\b/i.test(statement)) {
       return safe('adds a constraint; it either holds for the data already there or the migration stops');
     }
+    // Shuts out Supabase's Data API. The app connects as the table owner, which
+    // RLS does not apply to unless FORCE is given, so FORCE is not waved through.
+    if (/^ALTER\s+TABLE\s+\S+\s+ENABLE\s+ROW\s+LEVEL\s+SECURITY$/i.test(statement)) {
+      return safe('turns on row level security, which does not apply to the owner the app connects as');
+    }
     return unsafe('alters a table in a way this guard does not recognise');
   }
 
