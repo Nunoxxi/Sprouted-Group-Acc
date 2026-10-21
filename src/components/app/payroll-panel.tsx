@@ -20,6 +20,7 @@ import { Money } from '@/components/ui/money';
 import {
   approvePayRun,
   createPayRun,
+  discardPayRun,
   downloadPayslip,
   emailPayslip,
   payRemittance,
@@ -68,8 +69,9 @@ const statusStyle: Record<PayRunRecord['status'], string> = {
   approved: 'bg-sky-100 text-sky-800',
   posted: 'bg-green-100 text-green-700',
   reversed: 'bg-rose-100 text-rose-700',
+  discarded: 'bg-slate-100 text-slate-500',
 };
-const statusWords: Record<PayRunRecord['status'], string> = { draft: 'Draft', approved: 'Approved', posted: 'Posted', reversed: 'Reversed' };
+const statusWords: Record<PayRunRecord['status'], string> = { draft: 'Draft', approved: 'Approved', posted: 'Posted', reversed: 'Reversed', discarded: 'Discarded' };
 
 function StatusBadge({ status }: { status: PayRunRecord['status'] }) {
   return <span className={['inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em]', statusStyle[status]].join(' ')}>{statusWords[status]}</span>;
@@ -126,11 +128,13 @@ function PayRuns({ entity, settings, employees, runs, loans, factsByEntity, allo
   const [period, setPeriod] = useState(todayIso().slice(0, 7));
   const [selectedId, setSelectedId] = useState<string | null>(runs[0]?.id ?? null);
   const [reason, setReason] = useState('');
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [openLine, setOpenLine] = useState<string | null>(null);
   const [slipLine, setSlipLine] = useState<string | null>(null);
   const [inputs, setInputs] = useState<Record<string, { bonus: string; overtime: string }>>({});
 
-  const run = runs.find((r) => r.id === selectedId) ?? null;
+  // Falls back to the latest run when the selected one has gone from the list (a discarded draft).
+  const run = runs.find((r) => r.id === selectedId) ?? runs[0] ?? null;
   const employeeById = useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
 
   function act(okText: string, action: () => Promise<{ ok: true; value?: unknown } | { ok: false; error: string }>, after?: (value: unknown) => void) {
@@ -179,7 +183,7 @@ function PayRuns({ entity, settings, employees, runs, loans, factsByEntity, allo
             <ul className="divide-y divide-slate-100">
               {runs.map((r) => (
                 <li key={r.id}>
-                  <button type="button" onClick={() => setSelectedId(r.id)} className={['w-full px-4 py-3 text-left', r.id === selectedId ? 'bg-brand-50' : 'hover:bg-slate-50'].join(' ')}>
+                  <button type="button" onClick={() => { setSelectedId(r.id); setConfirmDiscard(false); }} className={['w-full px-4 py-3 text-left', r.id === run?.id ? 'bg-brand-50' : 'hover:bg-slate-50'].join(' ')}>
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-medium text-slate-900">{periodLabel(r.period)}{r.sequence > 1 ? ` (${r.sequence})` : ''}</span>
                       <StatusBadge status={r.status} />
@@ -214,6 +218,11 @@ function PayRuns({ entity, settings, employees, runs, loans, factsByEntity, allo
                         Recalculate
                       </Button>
                     ) : null}
+                    {run.status === 'draft' && allowed('payroll:prepare') ? (
+                      <Button size="sm" variant="secondary" disabled={pending} onClick={() => setConfirmDiscard(true)}>
+                        Discard draft
+                      </Button>
+                    ) : null}
                     {run.status === 'draft' && allowed('payroll:approve') ? (
                       <Button size="sm" disabled={pending || problems.length > 0} onClick={() => act('Approved. The figures are locked.', () => approvePayRun(entity.id, run.id))}>
                         Approve
@@ -231,6 +240,20 @@ function PayRuns({ entity, settings, employees, runs, loans, factsByEntity, allo
                     ) : null}
                   </div>
                 </div>
+
+                {confirmDiscard && run.status === 'draft' ? (
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-800">
+                    <p>Discard the {periodLabel(run.period)} draft? Nothing from it is in the books. The month can be opened again afterwards.</p>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="ghost" disabled={pending} onClick={() => setConfirmDiscard(false)}>
+                        Keep it
+                      </Button>
+                      <Button size="sm" disabled={pending} onClick={() => act(`The ${periodLabel(run.period)} draft is discarded.`, () => discardPayRun(entity.id, run.id), () => { setConfirmDiscard(false); setSelectedId(null); })}>
+                        Discard it
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
 
                 {problems.length ? (
                   <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">

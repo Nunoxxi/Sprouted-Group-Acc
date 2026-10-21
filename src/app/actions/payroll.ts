@@ -11,6 +11,8 @@
  *             has moved since, so what is approved is what was looked at
  *   posted    the journal is written, the remittances are due. Undone only by
  *             a reversal, itself recorded, after which the period can run again
+ *   discarded a draft set aside before approval: kept, hidden, and the period
+ *             can run again
  *
  * Same contract as every other actions module: authorize first through
  * src/lib/dal.ts, scope every query by entity, write each change with its
@@ -490,11 +492,11 @@ export async function createPayRun(entityId: string, period: string) {
         const settings = await settingsOf(tx, entityId);
         if (!settings.payrollEnabled) return fail('Payroll is switched off for this entity. Switch it on in the payroll settings first.');
         const runs = await tx.payRun.findMany({ where: { entityId, period }, orderBy: { sequence: 'desc' } });
-        const live = runs.find((run) => run.status !== 'REVERSED');
+        const live = runs.find((run) => run.status !== 'REVERSED' && run.status !== 'DISCARDED');
         if (live) return fail(`${periodLabel(period)} already has a pay run (${live.status.toLowerCase()}).`);
         const run = await tx.payRun.create({ data: { entityId, period, sequence: (runs[0]?.sequence ?? 0) + 1, payDate: day(payDateFor(period, settings.payDay)), createdById: principal.userId } });
         const lines = await calculateInto(tx, entityId, run.id, period);
-        await audit(tx, entityId, principal, 'EDIT', 'pay-run', run.id, `Opened the ${periodLabel(period)} pay run${run.sequence > 1 ? ` (run ${run.sequence}, after a reversal)` : ''}: ${lines.length} people`);
+        await audit(tx, entityId, principal, 'EDIT', 'pay-run', run.id, `Opened the ${periodLabel(period)} pay run${run.sequence > 1 ? ` (run ${run.sequence}, after a reversal or discard)` : ''}: ${lines.length} people`);
         refresh();
         return { ok: true as const, value: await runResult(tx, run.id) };
       },
@@ -594,6 +596,24 @@ export async function approvePayRun(entityId: string, runId: string) {
       },
       { timeout: 60_000 },
     );
+  });
+}
+
+/**
+ * Set a draft aside. It never reached the ledger, so there is nothing to
+ * reverse: the run is kept, marked discarded and hidden, and the period can
+ * be opened again. An approved run goes back to draft first.
+ */
+export async function discardPayRun(entityId: string, runId: string) {
+  return withEntityAccess(entityId, 'payroll:prepare', async (principal) => {
+    return prisma.$transaction(async (tx: Tx) => {
+      const claimed = await tx.payRun.updateMany({ where: { id: runId, entityId, status: 'DRAFT' }, data: { status: 'DISCARDED', discardedById: principal.userId, discardedAt: new Date() } });
+      if (claimed.count !== 1) return fail('Only a draft is discarded. Send an approved run back to draft first.');
+      const run = await tx.payRun.findUniqueOrThrow({ where: { id: runId } });
+      await audit(tx, entityId, principal, 'VOID', 'pay-run', runId, `Discarded the draft ${periodLabel(run.period)} pay run`);
+      refresh();
+      return { ok: true as const, value: await runResult(tx, runId) };
+    });
   });
 }
 

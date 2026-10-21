@@ -356,6 +356,7 @@ const payrollCalls: Record<Exclude<keyof typeof payrollActions, 'exportGroupPayr
   recalculatePayRun: () => payrollActions.recalculatePayRun(FORBIDDEN_ENTITY, 'r'),
   setPayLineInputs: () => payrollActions.setPayLineInputs(FORBIDDEN_ENTITY, 'l', { bonusMinor: 0, overtimeMinor: 0 }),
   approvePayRun: () => payrollActions.approvePayRun(FORBIDDEN_ENTITY, 'r'),
+  discardPayRun: () => payrollActions.discardPayRun(FORBIDDEN_ENTITY, 'r'),
   reopenPayRun: () => payrollActions.reopenPayRun(FORBIDDEN_ENTITY, 'r'),
   postPayRun: () => payrollActions.postPayRun(FORBIDDEN_ENTITY, 'r'),
   reversePayRun: () => payrollActions.reversePayRun(FORBIDDEN_ENTITY, 'r', 'Wrong'),

@@ -156,7 +156,7 @@ export type PayRunLineRecord = {
   result: PayResult | null;
 };
 
-export type PayRunStatus = 'draft' | 'approved' | 'posted' | 'reversed';
+export type PayRunStatus = 'draft' | 'approved' | 'posted' | 'reversed' | 'discarded';
 
 export type PayRunRecord = {
   id: string;
@@ -179,7 +179,7 @@ export type PayRunRecord = {
   reversalJournal: PostedJournal | null;
 };
 
-const statusOf: Record<PayRun['status'], PayRunStatus> = { DRAFT: 'draft', APPROVED: 'approved', POSTED: 'posted', REVERSED: 'reversed' };
+const statusOf: Record<PayRun['status'], PayRunStatus> = { DRAFT: 'draft', APPROVED: 'approved', POSTED: 'posted', REVERSED: 'reversed', DISCARDED: 'discarded' };
 
 const journalInclude = { lines: { include: { account: { select: { code: true, name: true } } } } } as const;
 type JournalRow = JournalEntry & { lines: (JournalLine & { account: Pick<Account, 'code' | 'name'> })[] };
@@ -346,7 +346,8 @@ export async function loadPayrollData(scope: { entityId?: { in: string[] } }, en
   if (!canView) return emptyPayrollData(entityIds);
   const [employees, runs, loans, remittances, labour, ledger] = await Promise.all([
     prisma.employee.findMany({ where: scope, include: employeeInclude, orderBy: { staffNumber: 'asc' } }),
-    prisma.payRun.findMany({ where: scope, include: payRunInclude, orderBy: [{ period: 'desc' }, { sequence: 'desc' }], take: 120 }),
+    // A discarded draft never reached the ledger; it is kept, not shown.
+    prisma.payRun.findMany({ where: { ...scope, status: { not: 'DISCARDED' } }, include: payRunInclude, orderBy: [{ period: 'desc' }, { sequence: 'desc' }], take: 120 }),
     prisma.staffLoan.findMany({ where: scope, include: loanInclude, orderBy: { issuedOn: 'desc' } }),
     prisma.payrollRemittance.findMany({ where: scope, include: remittanceInclude, orderBy: { dueDate: 'asc' } }),
     prisma.floatLabourPayment.findMany({ where: scope, orderBy: { date: 'desc' } }),

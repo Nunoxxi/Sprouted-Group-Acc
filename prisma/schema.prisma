@@ -2926,6 +2926,9 @@ enum PayRunStatus {
   POSTED
   /// Posted, then undone by a recorded reversing entry. The period can run again.
   REVERSED
+  /// A draft set aside before it was approved. Never reached the ledger; kept,
+  /// not deleted, and hidden. The period can run again.
+  DISCARDED
 }
 
 /// One pay period for one entity: draft, approved, posted.
@@ -2934,7 +2937,7 @@ model PayRun {
   entityId               String
   /// YYYY-MM.
   period                 String
-  /// 1 for the first run of a period; a period whose run was reversed runs again as 2.
+  /// 1 for the first run of a period; a period whose run was reversed or discarded runs again as 2.
   sequence               Int          @default(1)
   status                 PayRunStatus @default(DRAFT)
   payDate                DateTime     @db.Date
@@ -2948,6 +2951,8 @@ model PayRun {
   reversedById           String?
   reversedAt             DateTime?
   reversalReason         String?
+  discardedById          String?
+  discardedAt            DateTime?
   createdById            String?
   createdAt              DateTime     @default(now())
   updatedAt              DateTime     @updatedAt
