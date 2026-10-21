@@ -289,6 +289,24 @@ async function loadEverything(principal: Principal): Promise<InitialData> {
 
   const periodsByEntity = groupBy(filings, (filing) => filing.entityId);
 
+  // The section loaders are independent reads, so they run together: awaited
+  // one after another, each paid its own database round trips in turn.
+  const [inventory, trading, contracts, opening, momo, grants, cashflow, assets, attachments, privacy, settings, prefinance, payroll] = await Promise.all([
+    loadInventoryData(entityScope, entityIds),
+    loadTradingData(entityScope, entityIds),
+    loadContractData(entityScope, entityIds),
+    loadOpeningData(entityIds),
+    loadMomoData(entityScope, entityIds),
+    loadGrantData(entityScope, entityIds),
+    loadCashflowData(entityScope, entityIds, entities),
+    loadAssetData(entityScope, entityIds),
+    loadAttachmentData(entityScope, entityIds),
+    loadPrivacyData(entityScope, entityIds),
+    loadSettingsData(entityScope, entityIds),
+    loadPreFinanceData(entityScope, entityIds),
+    loadPayrollData(entityScope, entityIds, can(principal, 'payroll:view')),
+  ]);
+
   return {
     currentUser: {
       id: principal.userId,
@@ -313,18 +331,18 @@ async function loadEverything(principal: Principal): Promise<InitialData> {
     ratesByEntity: withAllEntities(groupBy(rates.map((row) => ({ entityId: row.entityId, ...exchangeRateRow(row) })), (row) => row.entityId)),
     bankAccountsByEntity: withAllEntities(groupBy(bankAccounts.map(bankAccountRecord), (account) => account.entityId)),
     revaluationsByEntity: withAllEntities(groupBy(revaluations.map((row) => ({ entityId: row.entityId, ...revaluationRecord(row) })), (row) => row.entityId)),
-    ...(await loadInventoryData(entityScope, entityIds)),
-    ...(await loadTradingData(entityScope, entityIds)),
-    ...(await loadContractData(entityScope, entityIds)),
-    ...(await loadOpeningData(entityIds)),
-    ...(await loadMomoData(entityScope, entityIds)),
-    ...(await loadGrantData(entityScope, entityIds)),
-    ...(await loadCashflowData(entityScope, entityIds, entities)),
-    ...(await loadAssetData(entityScope, entityIds)),
-    ...(await loadAttachmentData(entityScope, entityIds)),
-    ...(await loadPrivacyData(entityScope, entityIds)),
-    ...(await loadSettingsData(entityScope, entityIds)),
-    ...(await loadPreFinanceData(entityScope, entityIds)),
-    ...(await loadPayrollData(entityScope, entityIds, can(principal, 'payroll:view'))),
+    ...inventory,
+    ...trading,
+    ...contracts,
+    ...opening,
+    ...momo,
+    ...grants,
+    ...cashflow,
+    ...assets,
+    ...attachments,
+    ...privacy,
+    ...settings,
+    ...prefinance,
+    ...payroll,
   };
 }
