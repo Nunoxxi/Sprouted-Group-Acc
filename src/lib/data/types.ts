@@ -18,6 +18,7 @@ import type { AttachmentTarget } from '../attachments';
 import type { SubjectKind } from '../privacy';
 import type { DepreciationMethod as SettingsDepreciationMethod, ProjectKind, TaxRates } from '../settings';
 import type { StatutoryRateRow } from '../payroll-rates';
+import type { Screen } from '../screens';
 import type { PayrollData } from './payroll';
 import type { PayrollSettingRecord } from './payroll-rates';
 import type { DayCountBasis, MoistureMethod, OutturnMethod } from '../prefinance';
@@ -958,6 +959,8 @@ export type AttachmentRuleRecord = {
 };
 
 export type InitialData = {
+  /** The screen this data was loaded for; only its sections are filled (src/lib/screens.ts). */
+  screen: Screen;
   currentUser: CurrentUser;
   /** Only the entities the signed-in user may see. */
   entities: EntityRecord[];

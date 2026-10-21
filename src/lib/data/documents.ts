@@ -1,5 +1,5 @@
-/**
- * Document readers: Prisma → DocumentRecord, and the one-shot loader the
+﻿/**
+ * Document readers: Prisma â†’ DocumentRecord, and the one-shot loader the
  * page uses. Every amount passes through toMinor() here.
  */
 
@@ -50,6 +50,7 @@ import { loadSettingsData } from './settings';
 import { loadGrantData } from './grants';
 import { bankAccountKindOf, loadMomoData } from './momo';
 import { loadOpeningData } from './opening';
+import { sections, sectionsByScreen, type Screen, type Section } from '../screens';
 
 // --- enum translations -------------------------------------------------------
 
@@ -83,7 +84,7 @@ export const vatToPrisma: Record<VatTreatment, PrismaVatTreatment> = {
 const saleTypeToRecord: Record<PrismaSaleType, SaleType> = { DOMESTIC: 'domestic', EXPORT: 'export' };
 export const saleTypeToPrisma: Record<SaleType, PrismaSaleType> = { domestic: 'DOMESTIC', export: 'EXPORT' };
 
-// --- row → record --------------------------------------------------------------
+// --- row â†’ record --------------------------------------------------------------
 
 type JournalRow = JournalEntry & { lines: (JournalLine & { account: Pick<Account, 'code' | 'name'> })[] };
 
@@ -245,12 +246,12 @@ function groupBy<T>(items: T[], keyOf: (item: T) => string): Record<string, T[]>
 
 /**
  * Everything the shell needs, in one round of queries. Three entities and a
- * few dozen documents — no pagination at this scale.
+ * few dozen documents â€” no pagination at this scale.
  */
 /**
  * Everything the shell needs, restricted to the entities the principal may
- * see. The restriction is in the queries themselves — `where: { entityId: in
- * ... }` — not applied afterwards, so nothing from another entity is ever
+ * see. The restriction is in the queries themselves â€” `where: { entityId: in
+ * ... }` â€” not applied afterwards, so nothing from another entity is ever
  * read. Contacts are group-wide by design; their balances are filtered.
  */
 /**
@@ -258,11 +259,67 @@ function groupBy<T>(items: T[], keyOf: (item: T) => string): Record<string, T[]>
  * are held back here, on the server, for a role that has no reason for them:
  * hiding them in the interface would leave them in the page source.
  */
-export async function loadInitialData(principal: Principal): Promise<InitialData> {
-  return redactInitialData(await loadEverything(principal), principal.role);
+export async function loadInitialData(principal: Principal, screen: Screen = 'Dashboard'): Promise<InitialData> {
+  return redactInitialData(await loadEverything(principal, screen), principal.role);
 }
 
-async function loadEverything(principal: Principal): Promise<InitialData> {
+type Scope = { entityId?: { in: string[] } };
+
+/** Each section's loader, by name. */
+function sectionLoaders(scope: Scope, entityIds: string[], entities: { id: string; name: string; functionalCurrency: string }[], principal: Principal) {
+  return {
+    inventory: () => loadInventoryData(scope, entityIds),
+    trading: () => loadTradingData(scope, entityIds),
+    contracts: () => loadContractData(scope, entityIds),
+    opening: () => loadOpeningData(entityIds),
+    momo: () => loadMomoData(scope, entityIds),
+    grants: () => loadGrantData(scope, entityIds),
+    cashflow: () => loadCashflowData(scope, entityIds, entities),
+    assets: () => loadAssetData(scope, entityIds),
+    attachments: () => loadAttachmentData(scope, entityIds),
+    privacy: () => loadPrivacyData(scope, entityIds),
+    settings: () => loadSettingsData(scope, entityIds),
+    prefinance: () => loadPreFinanceData(scope, entityIds),
+    payroll: () => loadPayrollData(scope, entityIds, can(principal, 'payroll:view')),
+  } satisfies Record<Section, () => Promise<object>>;
+}
+
+type SectionData = { [S in Section]: Awaited<ReturnType<ReturnType<typeof sectionLoaders>[S]>> };
+
+/**
+ * Each section's fields, so a section the screen does not read is sent empty
+ * rather than missing: code outside the screen may look a value up, and an
+ * empty map answers with nothing rather than throwing.
+ */
+export const sectionFields = {
+  inventory: ['itemsByEntity', 'locationsByEntity', 'stockBalancesByEntity', 'stockMovementsByEntity', 'stockCountsByEntity', 'nrvPricesByEntity', 'inventoryLedgerByEntity'],
+  trading: ['agentsByEntity', 'floatsByEntity', 'agentPurchasesByEntity', 'commoditiesByEntity', 'lotsByEntity'],
+  contracts: ['contractsByEntity', 'seedFundsByEntity'],
+  opening: ['openingByEntity'],
+  momo: ['farmersByEntity', 'farmerAdvancesByEntity', 'paymentBatchesByEntity', 'statementMappingsByEntity', 'statementImportsByEntity'],
+  grants: ['grantsByEntity', 'grantActualsByEntity', 'inKindByEntity', 'staffTimeByEntity'],
+  cashflow: ['seasonsByEntity', 'recurringByEntity', 'scenariosByEntity', 'cashSourcesByEntity'],
+  assets: ['assetsByEntity', 'depreciationRunsByEntity', 'allowanceClassesByEntity', 'taxYearsByEntity'],
+  attachments: ['attachmentsByEntity', 'attachmentRulesByEntity'],
+  privacy: ['dataRequestsByEntity', 'piiAccessByEntity', 'personalDataCountsByEntity'],
+  settings: ['assetCategoriesByEntity', 'budgetLinesByEntity', 'payrollSettingsByEntity', 'taxRatesByEntity', 'statutoryRates'],
+  prefinance: ['preFinanceSettingsByEntity', 'facilitiesByEntity', 'tranchesByEntity', 'advancesByEntity', 'advanceDeliveriesByEntity', 'preFinanceCyclesByEntity'],
+  payroll: ['employeesByEntity', 'payRunsByEntity', 'staffLoansByEntity', 'remittancesByEntity', 'payFactsByEntity', 'casualLabourByEntity', 'payrollLedgerByEntity'],
+} as const satisfies { [S in Section]: readonly (keyof SectionData[S])[] };
+
+// Fails to compile when a loader returns a field the list above leaves out.
+type Unlisted = { [S in Section]: Exclude<keyof SectionData[S], (typeof sectionFields)[S][number]> };
+const everyFieldListed: { [S in Section]: never } = null as unknown as Unlisted;
+void everyFieldListed;
+
+function emptySection<S extends Section>(section: S): SectionData[S] {
+  return Object.fromEntries(sectionFields[section].map((field) => [field, field === 'statutoryRates' ? [] : {}])) as SectionData[S];
+}
+
+type UnionToIntersection<U> = (U extends unknown ? (value: U) => void : never) extends (value: infer I) => void ? I : never;
+type AllSections = UnionToIntersection<SectionData[Section]>;
+
+async function loadEverything(principal: Principal, screen: Screen): Promise<InitialData> {
   const entityScope = principal.entityIds === 'all' ? {} : { entityId: { in: [...principal.entityIds] } };
   const entityFilter = principal.entityIds === 'all' ? {} : { id: { in: [...principal.entityIds] } };
 
@@ -289,25 +346,14 @@ async function loadEverything(principal: Principal): Promise<InitialData> {
 
   const periodsByEntity = groupBy(filings, (filing) => filing.entityId);
 
-  // The section loaders are independent reads, so they run together: awaited
-  // one after another, each paid its own database round trips in turn.
-  const [inventory, trading, contracts, opening, momo, grants, cashflow, assets, attachments, privacy, settings, prefinance, payroll] = await Promise.all([
-    loadInventoryData(entityScope, entityIds),
-    loadTradingData(entityScope, entityIds),
-    loadContractData(entityScope, entityIds),
-    loadOpeningData(entityIds),
-    loadMomoData(entityScope, entityIds),
-    loadGrantData(entityScope, entityIds),
-    loadCashflowData(entityScope, entityIds, entities),
-    loadAssetData(entityScope, entityIds),
-    loadAttachmentData(entityScope, entityIds),
-    loadPrivacyData(entityScope, entityIds),
-    loadSettingsData(entityScope, entityIds),
-    loadPreFinanceData(entityScope, entityIds),
-    loadPayrollData(entityScope, entityIds, can(principal, 'payroll:view')),
-  ]);
+  // Only the sections this screen reads, run together; the rest go empty.
+  const wanted = new Set(sectionsByScreen[screen]);
+  const loaders = sectionLoaders(entityScope, entityIds, entities, principal);
+  const loaded = await Promise.all(sections.map((section) => (wanted.has(section) ? loaders[section]() : emptySection(section))));
+  const sectionData = Object.assign({}, ...loaded) as AllSections;
 
   return {
+    screen,
     currentUser: {
       id: principal.userId,
       name: principal.name,
@@ -331,18 +377,6 @@ async function loadEverything(principal: Principal): Promise<InitialData> {
     ratesByEntity: withAllEntities(groupBy(rates.map((row) => ({ entityId: row.entityId, ...exchangeRateRow(row) })), (row) => row.entityId)),
     bankAccountsByEntity: withAllEntities(groupBy(bankAccounts.map(bankAccountRecord), (account) => account.entityId)),
     revaluationsByEntity: withAllEntities(groupBy(revaluations.map((row) => ({ entityId: row.entityId, ...revaluationRecord(row) })), (row) => row.entityId)),
-    ...inventory,
-    ...trading,
-    ...contracts,
-    ...opening,
-    ...momo,
-    ...grants,
-    ...cashflow,
-    ...assets,
-    ...attachments,
-    ...privacy,
-    ...settings,
-    ...prefinance,
-    ...payroll,
+    ...sectionData,
   };
 }

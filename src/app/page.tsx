@@ -5,12 +5,13 @@ import { SignOutButton } from '@/components/auth/sign-out-button';
 import { mustSetUpTwoFactor } from '@/lib/authz';
 import { getPrincipal } from '@/lib/dal';
 import { loadInitialData } from '@/lib/data/documents';
+import { screenOf } from '@/lib/screens';
 
 // Everything on this page is per-user and per-request. No caching, no
 // prerendering — and no build-time database access.
 export const dynamic = 'force-dynamic';
 
-export default async function HomePage() {
+export default async function HomePage({ searchParams }: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
   const principal = await getPrincipal();
   if (!principal) {
     redirect('/sign-in');
@@ -20,7 +21,8 @@ export default async function HomePage() {
     redirect('/two-factor/setup');
   }
 
-  const initialData = await loadInitialData(principal);
+  // Only the screen being shown has its own data loaded (src/lib/screens.ts).
+  const initialData = await loadInitialData(principal, screenOf((await searchParams).screen));
   if (initialData.entities.length === 0) {
     return <NoEntityAccess name={principal.name} />;
   }

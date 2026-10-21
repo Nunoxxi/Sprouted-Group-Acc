@@ -33,7 +33,9 @@ import {
   saveDocumentDraft,
   voidDocument,
 } from '@/app/actions/documents';
+import { useRouter } from 'next/navigation';
 import { SignOutButton } from '@/components/auth/sign-out-button';
+import { screens, type Screen } from '@/lib/screens';
 import { InventoryPanel } from '@/components/app/inventory-panel';
 import { formatKg, inventoryAccountCategory, unitLabels } from '@/lib/inventory';
 import { BuyingPanel } from '@/components/app/buying-panel';
@@ -86,28 +88,7 @@ import {
   type WithholdingTaxStatus,
 } from '@/lib/ghana-tax';
 
-const navigationItems = [
-  'Dashboard',
-  'Sales',
-  'Purchases',
-  'Bank',
-  'Payments',
-  'Inbox',
-  'Cash flow',
-  'Assets',
-  'Payroll',
-  'Grants',
-  'Intercompany',
-  'Tax',
-  'Inventory',
-  'Buying',
-  'Pre-finance',
-  'Contracts',
-  'Reports',
-  'Personal data',
-  'Go-live',
-  'Settings',
-] as const;
+const navigationItems = screens;
 
 /** The Settings area, grouped by topic. Owner only. */
 const settingsTopics = ['Company', 'Chart of accounts', 'Projects', 'Funds', 'Contacts', 'Asset classes', 'Tax rates', 'Payroll rates', 'Backups & audit'] as const;
@@ -470,7 +451,28 @@ const statusLabels: Record<DocumentStatus, string> = {
 export function AppShell({ initialData }: { initialData: InitialData }) {
   const [entities, setEntities] = useState<EntityRecord[]>(initialData.entities);
   const [selectedEntityId, setSelectedEntityId] = useState(initialData.entities[0]?.id ?? '');
-  const [activeNav, setActiveNav] = useState<(typeof navigationItems)[number]>('Dashboard');
+  // The screen shown is always the one the server loaded data for. Choosing
+  // another changes the address and waits for that screen's data; until it
+  // arrives the current screen stays up, so none is ever shown without its data.
+  const activeNav = initialData.screen;
+  const router = useRouter();
+  const [pendingNav, setPendingNav] = useState<Screen | null>(null);
+  const [navigating, startNavigation] = useTransition();
+  // State that must change with the screen (switching to a company the current
+  // screen does not apply to, say) goes in alongWith: set in the same
+  // transition, it lands together with the new screen, never before it.
+  const setActiveNav = (screen: Screen, alongWith?: () => void) => {
+    if (screen === activeNav && !navigating) {
+      alongWith?.();
+      return;
+    }
+    setPendingNav(screen);
+    startNavigation(() => {
+      alongWith?.();
+      router.push(`/?screen=${encodeURIComponent(screen)}`);
+    });
+  };
+  const loadingNav = navigating ? pendingNav : null;
   const [entityMenuOpen, setEntityMenuOpen] = useState(false);
   const [showAddEntityForm, setShowAddEntityForm] = useState(false);
   const [showAddContactForm, setShowAddContactForm] = useState(false);
@@ -1487,8 +1489,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
       }
       setEntities((previous) => [...previous, result.value.entity]);
       setContacts((previous) => [...previous.map((contact) => ({ ...contact, balances: { ...contact.balances, [result.value.entity.id]: 0 } })), result.value.contact]);
-      setSelectedEntityId(result.value.entity.id);
-      setActiveNav('Dashboard');
+      setActiveNav('Dashboard', () => setSelectedEntityId(result.value.entity.id));
       setShowAddEntityForm(false);
       setFormValues(defaultFormValues);
       setEntityMenuOpen(false);
@@ -1673,8 +1674,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
     cancelAutosave();
     setDocumentError(null);
     const setter = record.kind === 'invoice' ? setSalesDocument : setPurchaseDocument;
-    setter(formFrom(record));
-    setActiveNav(record.kind === 'invoice' ? 'Sales' : 'Purchases');
+    setActiveNav(record.kind === 'invoice' ? 'Sales' : 'Purchases', () => setter(formFrom(record)));
   }
 
   function updateLine(lineId: string, patch: Partial<DocumentLine>) {
@@ -2463,9 +2463,10 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                     key={entity.id}
                     type="button"
                     onClick={() => {
-                      setSelectedEntityId(entity.id);
                       if ((activeNav === 'Tax' && !entity.vatRegistered) || ((activeNav === 'Inventory' || activeNav === 'Buying' || activeNav === 'Contracts' || activeNav === 'Pre-finance') && !holdsStock(entity.type)) || (activeNav === 'Grants' && !runsGrants(entity.type))) {
-                        setActiveNav('Dashboard');
+                        setActiveNav('Dashboard', () => setSelectedEntityId(entity.id));
+                      } else {
+                        setSelectedEntityId(entity.id);
                       }
                       setEntityMenuOpen(false);
                     }}
@@ -2519,7 +2520,11 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                 ].join(' ')}
               >
                 <span>{item}</span>
-                {active ? <span className="h-2 w-2 rounded-full bg-brand-700" /> : null}
+                {item === loadingNav ? (
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-slate-400" aria-label="Loading" />
+                ) : active ? (
+                  <span className="h-2 w-2 rounded-full bg-brand-700" />
+                ) : null}
               </button>
             );
           })}
@@ -2551,7 +2556,10 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Workspace</p>
-              <h1 className="mt-1 text-2xl font-semibold text-slate-900">{activeNav}</h1>
+              <h1 className="mt-1 text-2xl font-semibold text-slate-900">
+                {activeNav}
+                {loadingNav ? <span className="ml-3 text-sm font-normal text-slate-500">Opening {loadingNav}…</span> : null}
+              </h1>
             </div>
             {/* There were an Export and an Add transaction button here. Neither
                 ever had anything behind it: they sat on every screen and did

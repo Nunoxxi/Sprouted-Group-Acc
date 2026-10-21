@@ -133,6 +133,7 @@ import * as backupsRoute from '@/app/api/backups/route';
 import { roleHas, roles } from '@/lib/authz';
 import { getPrincipal } from '@/lib/dal';
 import { loadInitialData } from '@/lib/data/documents';
+import { screens } from '@/lib/screens';
 
 const FORBIDDEN_ENTITY = 'oikazi';
 const GRANTED_ENTITY = 'sprouted-roots';
@@ -666,13 +667,16 @@ describe('an Accountant on Sprouted Roots asking for Oikazi', () => {
     signIn({ id: 'scope-probe', role: 'accountant' }, [GRANTED_ENTITY]);
     const principal = await getPrincipal();
     expect(principal).not.toBeNull();
-    await loadInitialData(principal!);
+    // Each screen loads its own sections; together they read everything.
+    for (const screen of screens) await loadInitialData(principal!, screen);
 
     // The statutory payroll rates are national law, held once for every
     // entity, and say nothing about any of them: the one read that is not
     // scoped, by design (CLAUDE.md). It must stay the only one.
     const national = new Set(['statutoryRate.findMany']);
-    expect(scopeProbe.filter((probe) => national.has(probe.call)).map((probe) => (probe.args as { where: object }).where)).toEqual([{ withdrawnAt: null }]);
+    const nationalReads = scopeProbe.filter((probe) => national.has(probe.call)).map((probe) => (probe.args as { where: object }).where);
+    expect(nationalReads.length).toBeGreaterThan(0);
+    for (const where of nationalReads) expect(where).toEqual({ withdrawnAt: null });
     const entityScoped = scopeProbe.filter((probe) => probe.call !== 'contact.findMany' && !national.has(probe.call));
     expect(entityScoped.length).toBeGreaterThanOrEqual(6);
     for (const probe of entityScoped) {
