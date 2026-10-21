@@ -47,13 +47,17 @@ export function batchRecord(row: OpeningBatch & { createdBy: Pick<User, 'name'> 
 
 export const batchInclude = { createdBy: { select: { name: true } }, journalEntry: { select: { id: true } } } as const;
 
-/** Balance of one account from the journal lines: money in less money out. */
-async function balanceOf(entityId: string, codes: string[]): Promise<number> {
-  if (codes.length === 0) return 0;
-  const accounts = await prisma.account.findMany({ where: { entityId, code: { in: codes } }, select: { id: true } });
-  if (accounts.length === 0) return 0;
-  const sums = await prisma.journalLine.groupBy({ by: ['direction'], where: { accountId: { in: accounts.map((a) => a.id) } }, _sum: { amountMinor: true } });
-  return sums.reduce((total, row) => total + (row.direction === 'MONEY_IN' ? 1 : -1) * toMinor(row._sum.amountMinor ?? 0n), 0);
+/** Each account's balance from the journal lines, by code: money in less money out. One query. */
+async function balancesByCode(accounts: { id: string; code: string }[]): Promise<Map<string, number>> {
+  const balances = new Map<string, number>();
+  if (accounts.length === 0) return balances;
+  const codeOf = new Map(accounts.map((a) => [a.id, a.code]));
+  const sums = await prisma.journalLine.groupBy({ by: ['accountId', 'direction'], where: { accountId: { in: accounts.map((a) => a.id) } }, _sum: { amountMinor: true } });
+  for (const row of sums) {
+    const code = codeOf.get(row.accountId)!;
+    balances.set(code, (balances.get(code) ?? 0) + (row.direction === 'MONEY_IN' ? 1 : -1) * toMinor(row._sum.amountMinor ?? 0n));
+  }
+  return balances;
 }
 
 /**
@@ -63,13 +67,21 @@ async function balanceOf(entityId: string, codes: string[]): Promise<number> {
  * means the two postings cancelled exactly.
  */
 export async function openingStatus(entityId: string): Promise<OpeningStatusRecord> {
-  const entity = await prisma.entity.findUniqueOrThrow({ where: { id: entityId } });
-  const batches = await prisma.openingBatch.findMany({ where: { entityId }, include: batchInclude, orderBy: { createdAt: 'desc' } });
+  // Two rounds of queries in all: everything that does not depend on anything
+  // else together, then one sum across every control account.
+  const fixedCodes = [openingAccounts.receivables, openingAccounts.payables, openingAccounts.agentFloats, openingAccounts.farmerAdvances, openingAccounts.suspense];
+  const [entity, batches, accounts, contracts] = await Promise.all([
+    prisma.entity.findUniqueOrThrow({ where: { id: entityId } }),
+    prisma.openingBatch.findMany({ where: { entityId }, include: batchInclude, orderBy: { createdAt: 'desc' } }),
+    prisma.account.findMany({ where: { entityId, OR: [{ code: { in: fixedCodes } }, { category: inventoryAccountCategory }] }, select: { id: true, code: true, category: true } }),
+    prisma.salesContract.count({ where: { entityId } }),
+  ]);
   const posted = batches.filter((b) => b.status === 'POSTED');
   const tbBatch = posted.find((b) => b.section === 'TRIAL_BALANCE');
 
-  const inventoryAccounts = await prisma.account.findMany({ where: { entityId, category: inventoryAccountCategory }, select: { code: true } });
-  const inventoryCodes = inventoryAccounts.map((a) => a.code);
+  const inventoryCodes = accounts.filter((a) => a.category === inventoryAccountCategory).map((a) => a.code);
+  const balances = await balancesByCode(accounts);
+  const balanceOf = (codes: string[]) => codes.reduce((total, code) => total + (balances.get(code) ?? 0), 0);
 
   // The trial-balance figure for a control is what its rows said; the detail is what the control account now holds.
   const tbRows = tbBatch ? (JSON.parse(tbBatch.rowsJson) as { accountCode: string; functionalMinor: number }[]) : [];
@@ -85,20 +97,19 @@ export async function openingStatus(entityId: string): Promise<OpeningStatusReco
   const controls: ControlReconciliation[] = [];
   for (const spec of controlSpecs) {
     const trialBalanceMinor = tbFigure(spec.codes);
-    const detailMinor = await balanceOf(entityId, spec.codes);
+    const detailMinor = balanceOf(spec.codes);
     if (trialBalanceMinor === 0 && detailMinor === 0) continue;
     const differenceMinor = trialBalanceMinor - detailMinor;
     controls.push({ label: spec.label, trialBalanceMinor, detailMinor, differenceMinor, reconciles: differenceMinor === 0 });
   }
 
-  const contracts = await prisma.salesContract.count({ where: { entityId } });
   return {
     cutOverDate: entity.cutOverDate ? entity.cutOverDate.toISOString().slice(0, 10) : null,
     liveAt: entity.liveAt ? entity.liveAt.toISOString() : null,
     batches: batches.map(batchRecord),
     controls,
     trialBalancePosted: !!tbBatch,
-    suspenseMinor: await balanceOf(entityId, [openingAccounts.suspense]),
+    suspenseMinor: balanceOf([openingAccounts.suspense]),
     contractsPosted: posted.some((b) => b.section === 'CONTRACTS'),
     contractsCount: contracts,
   };
