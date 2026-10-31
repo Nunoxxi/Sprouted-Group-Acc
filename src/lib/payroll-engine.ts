@@ -223,25 +223,22 @@ export const reliefLabels: Record<ReliefKind, string> = {
 
 /**
  * The published SSNIT totals have to agree with the rates that are used.
- * Tier 2 comes out of the employee's contribution; the employer's is all tier 1.
+ * The employee pays tier 1 and all of tier 2; the employer's is all tier 1.
  */
-function checkSsnitTotals(rates: RateBook): { employee: number; employer: number; tier2: number } {
-  const employee = rates.rate('ssnit.employee');
+function checkSsnitTotals(rates: RateBook): { employeeTier1: number; employer: number; tier2: number } {
+  const employeeTier1 = rates.rate('ssnit.employee-tier1');
   const employer = rates.rate('ssnit.employer-total');
   const tier2 = rates.rate('ssnit.tier2');
-  if (tier2 > employee) {
-    throw new PayrollRefusal(`The SSNIT rates in force on ${rates.date} do not add up: tier 2 (${pct(tier2)}) comes out of the employee's ${pct(employee)}, so it cannot be more. Correct them under Settings → Payroll rates.`);
-  }
   const checks: [string, number, number][] = [
-    ['ssnit.tier1-total', rates.rate('ssnit.tier1-total'), employee - tier2 + employer],
-    ['ssnit.combined-total', rates.rate('ssnit.combined-total'), employee + employer],
+    ['ssnit.tier1-total', rates.rate('ssnit.tier1-total'), employeeTier1 + employer],
+    ['ssnit.combined-total', rates.rate('ssnit.combined-total'), employeeTier1 + tier2 + employer],
   ];
   for (const [key, published, sum] of checks) {
     if (published !== sum) {
       throw new PayrollRefusal(`The SSNIT rates in force on ${rates.date} do not add up: ${rateDefinition(key).label} is ${pct(published)} but the rates come to ${pct(sum)}. Correct them under Settings → Payroll rates.`);
     }
   }
-  return { employee, employer, tier2 };
+  return { employeeTier1, employer, tier2 };
 }
 
 // --- the calculation -------------------------------------------------------------------------
@@ -257,10 +254,11 @@ function checkSsnitTotals(rates: RateBook): { employee: number; employer: number
  *  1. Gross pay = basic salary + every cash allowance, taxable and not,
  *     + bonus + overtime. Benefits in kind are not cash and are not in gross.
  *
- *  2. Employee SSNIT = the employee rate × the pensionable base. The base is
- *     basic salary (always) plus any allowance flagged pensionable, capped at
- *     maximum insurable earnings when the rates table holds one. The published
- *     tier 1, employer and combined totals must agree with the rates.
+ *  2. Employee SSNIT = the employee's tier 1 and tier 2 rates, each × the
+ *     pensionable base. The base is basic salary (always) plus any allowance
+ *     flagged pensionable, capped at maximum insurable earnings when the rates
+ *     table holds one. The published tier 1 and combined totals must agree
+ *     with the rates.
  *
  *  3. Tier 3, where the entity offers it. Taken from pay in full; deductible
  *     for tax only up to the statutory cap (a share of basic salary).
@@ -286,9 +284,9 @@ function checkSsnitTotals(rates: RateBook): { employee: number; employer: number
  *  6. Net pay = gross − employee SSNIT − tier 3 − PAYE − other deductions
  *     (loan and advance instalments). A net below nil is refused.
  *
- *  7. Employer contributions — employer SSNIT and tier 2, each its rate × the
- *     same base as step 2 — are an employer cost on top of gross, never a
- *     deduction from the employee.
+ *  7. Employer SSNIT — its rate × the same base as step 2, all tier 1 — is an
+ *     employer cost on top of gross, never a deduction from the employee.
+ *     Tier 2 is the employee's, taken out of their SSNIT in step 2.
  *
  * Casual workers are not handled: the SSNIT and tax treatment is awaiting
  * confirmation, so a casual employee is refused rather than guessed at.
@@ -367,23 +365,24 @@ export function calculatePay(input: PayInput, rates: RateBook): PayResult {
   if (pensionableAllowances) line({ step: 'Pensionable base', label: 'Allowances marked pensionable', amountMinor: pensionableAllowances });
   if (ssnitBase < pensionablePay) line({ step: 'Pensionable base', label: 'Capped at maximum insurable earnings', amountMinor: ssnitBase - pensionablePay, detail: `ceiling ${cedis(maxInsurable!)}` });
   line({ step: 'Pensionable base', label: 'Pensionable base', amountMinor: ssnitBase, total: true });
-  const employeeSsnit = applyRate(ssnitBase, ssnit.employee);
+  const employeeTier1 = applyRate(ssnitBase, ssnit.employeeTier1);
   line({
     step: 'Employee SSNIT',
-    label: 'Employee SSNIT',
-    amountMinor: employeeSsnit,
-    detail: `${pct(ssnit.employee)} of ${cedis(ssnitBase)}`,
-    calc: { baseMinor: ssnitBase, rateBasisPoints: ssnit.employee, exact: exactPesewas(product(ssnitBase, ssnit.employee)) },
+    label: 'Employee SSNIT (tier 1)',
+    amountMinor: employeeTier1,
+    detail: `${pct(ssnit.employeeTier1)} of ${cedis(ssnitBase)}`,
+    calc: { baseMinor: ssnitBase, rateBasisPoints: ssnit.employeeTier1, exact: exactPesewas(product(ssnitBase, ssnit.employeeTier1)) },
   });
   const tier2 = applyRate(ssnitBase, ssnit.tier2);
   line({
     step: 'Employee SSNIT',
-    label: 'of which tier 2',
+    label: 'Employee SSNIT (tier 2)',
     amountMinor: tier2,
     detail: `${pct(ssnit.tier2)} of ${cedis(ssnitBase)}`,
     calc: { baseMinor: ssnitBase, rateBasisPoints: ssnit.tier2, exact: exactPesewas(product(ssnitBase, ssnit.tier2)) },
   });
-  line({ step: 'Employee SSNIT', label: 'of which tier 1', amountMinor: employeeSsnit - tier2, detail: 'the rest' });
+  const employeeSsnit = employeeTier1 + tier2;
+  line({ step: 'Employee SSNIT', label: 'Employee SSNIT', amountMinor: employeeSsnit, total: true });
 
   // 3. Tier 3 --------------------------------------------------------------------------------
   const tier3 = input.tier3Minor ?? 0;

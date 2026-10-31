@@ -378,11 +378,11 @@ const payrollSettingsCalls: Record<keyof typeof payrollSettingsActions, Call> = 
  * tied to any entity: refused to anyone but an Owner, like user management.
  */
 const payrollRatesCalls: Record<keyof typeof payrollRatesActions, Call> = {
-  addRateVersion: () => payrollRatesActions.addRateVersion({ key: 'ssnit.employee', effectiveFrom: '2026-07-01', rows: [{ rateBasisPoints: 550, amountMinor: null, maxCount: null }], verified: false }),
-  correctPlaceholderRates: () => payrollRatesActions.correctPlaceholderRates({ key: 'ssnit.employee', effectiveFrom: '2026-01-01', rows: [{ rateBasisPoints: 550, amountMinor: null, maxCount: null }], verified: false }),
-  verifyRates: () => payrollRatesActions.verifyRates('ssnit.employee', '2026-01-01', 'GRA notice'),
-  unverifyRates: () => payrollRatesActions.unverifyRates('ssnit.employee', '2026-01-01'),
-  endRates: () => payrollRatesActions.endRates('ssnit.employee', '2026-01-01', '2026-06-30'),
+  addRateVersion: () => payrollRatesActions.addRateVersion({ key: 'ssnit.employee-tier1', effectiveFrom: '2026-07-01', rows: [{ rateBasisPoints: 550, amountMinor: null, maxCount: null }], verified: false }),
+  correctPlaceholderRates: () => payrollRatesActions.correctPlaceholderRates({ key: 'ssnit.employee-tier1', effectiveFrom: '2026-01-01', rows: [{ rateBasisPoints: 550, amountMinor: null, maxCount: null }], verified: false }),
+  verifyRates: () => payrollRatesActions.verifyRates('ssnit.employee-tier1', '2026-01-01', 'GRA notice'),
+  unverifyRates: () => payrollRatesActions.unverifyRates('ssnit.employee-tier1', '2026-01-01'),
+  endRates: () => payrollRatesActions.endRates('ssnit.employee-tier1', '2026-01-01', '2026-06-30'),
 };
 
 /** Every attachment Server Function. */

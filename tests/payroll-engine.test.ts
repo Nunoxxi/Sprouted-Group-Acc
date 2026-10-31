@@ -56,7 +56,7 @@ function rateSet(from: string, to: string | null, options: SetOptions = {}): Sta
     ...bands.map(([width, rate], sequence) => row('paye.band', from, to, { sequence, rate, amount: width ?? undefined })),
     row('paye.non-resident-basis', from, to, { choice: options.nonResident ?? 'progressive' }),
     row('paye.non-resident', from, to, { rate: 25 }),
-    row('ssnit.employee', from, to, { rate: employee }),
+    row('ssnit.employee-tier1', from, to, { rate: employee - 5 }),
     row('ssnit.tier2', from, to, { rate: 5 }),
     row('ssnit.tier1-total', from, to, { rate: options.tier1Total ?? employee + employer }),
     row('ssnit.employer-total', from, to, { rate: employer + 5 }),
@@ -144,7 +144,7 @@ describe('the worked example', () => {
   it('names every rate it used, with its dates', () => {
     expect(result.ratesUsed.map((used) => used.key)).toEqual([
       'paye.band', 'paye.band', 'paye.band', 'paye.band', 'paye.band', 'paye.band', 'paye.band',
-      'ssnit.employee', 'ssnit.tier2', 'ssnit.employer-total', 'ssnit.tier1-total', 'ssnit.combined-total',
+      'ssnit.employee-tier1', 'ssnit.employer-total', 'ssnit.tier2', 'ssnit.tier1-total', 'ssnit.combined-total',
       'ssnit.max-insurable', 'tier3.deductible-cap', 'relief.marriage',
     ]);
     expect(result.ratesUsed.every((used) => used.effectiveFrom === '2026-01-01')).toBe(true);
@@ -450,11 +450,11 @@ describe('a rate change part way through the year', () => {
 
   it('applies a rate that starts mid-month to the whole of that month, and says so', () => {
     const midMonth = [
-      ...rateSet('2026-01-01', null).filter((r) => r.key !== 'ssnit.employee' && r.key !== 'ssnit.tier1-total' && r.key !== 'ssnit.combined-total'),
-      row('ssnit.employee', '2026-01-01', '2026-07-14', { rate: 5.5 }),
+      ...rateSet('2026-01-01', null).filter((r) => r.key !== 'ssnit.employee-tier1' && r.key !== 'ssnit.tier1-total' && r.key !== 'ssnit.combined-total'),
+      row('ssnit.employee-tier1', '2026-01-01', '2026-07-14', { rate: 0.5 }),
       row('ssnit.tier1-total', '2026-01-01', '2026-07-14', { rate: 13.5 }),
       row('ssnit.combined-total', '2026-01-01', '2026-07-14', { rate: 18.5 }),
-      row('ssnit.employee', '2026-07-15', null, { rate: 6 }),
+      row('ssnit.employee-tier1', '2026-07-15', null, { rate: 1 }),
       row('ssnit.tier1-total', '2026-07-15', null, { rate: 14 }),
       row('ssnit.combined-total', '2026-07-15', null, { rate: 19 }),
     ];
@@ -464,7 +464,7 @@ describe('a rate change part way through the year', () => {
     expect(june.ratesChangedWithin).toEqual([]);
     expect(july.employeeSsnitMinor).toBe(ghs(240)); // in force on 31 July
     expect(july.ratesChangedWithin.map((change) => [change.key, change.from])).toEqual([
-      ['ssnit.employee', '2026-07-15'],
+      ['ssnit.employee-tier1', '2026-07-15'],
       ['ssnit.tier1-total', '2026-07-15'],
       ['ssnit.combined-total', '2026-07-15'],
     ]);
@@ -473,7 +473,7 @@ describe('a rate change part way through the year', () => {
 
 describe('the rates table', () => {
   it('refuses, by name, a rate that is not in force', () => {
-    const noSsnit = rates2026.filter((r) => r.key !== 'ssnit.employee');
+    const noSsnit = rates2026.filter((r) => r.key !== 'ssnit.employee-tier1');
     expect(() => pay({ basicMinor: ghs(1000) }, noSsnit)).toThrow(/Employee SSNIT/);
     expect(() => pay({ period: '2025-12', basicMinor: ghs(1000) })).toThrow(/is in force on 2025-12-31/);
   });
@@ -490,8 +490,8 @@ describe('the rates table', () => {
   });
 
   it('lets a rate start on any real date', () => {
-    expect(validateRateVersion({ key: 'ssnit.employee', effectiveFrom: '2026-07-15', rows: [{ rateBasisPoints: 550, amountMinor: null, maxCount: null }] })).toEqual([]);
-    expect(validateRateVersion({ key: 'ssnit.employee', effectiveFrom: '2026-02-30', rows: [{ rateBasisPoints: 550, amountMinor: null, maxCount: null }] })).toContain('Give the date the figures take effect.');
+    expect(validateRateVersion({ key: 'ssnit.employee-tier1', effectiveFrom: '2026-07-15', rows: [{ rateBasisPoints: 550, amountMinor: null, maxCount: null }] })).toEqual([]);
+    expect(validateRateVersion({ key: 'ssnit.employee-tier1', effectiveFrom: '2026-02-30', rows: [{ rateBasisPoints: 550, amountMinor: null, maxCount: null }] })).toContain('Give the date the figures take effect.');
   });
 
   it('holds the non-resident basis as a choice between the two options', () => {
@@ -500,9 +500,9 @@ describe('the rates table', () => {
   });
 
   it('adds a new version after the last and closes the one before', () => {
-    const placed = placeVersion(rates2026, 'ssnit.employee', '2026-07-15');
-    expect(placed).toEqual({ closeIds: [rates2026.find((r) => r.key === 'ssnit.employee')!.id], closeOn: '2026-07-14' });
-    expect(placeVersion(rates2026, 'ssnit.employee', '2026-01-01')).toHaveProperty('problem');
+    const placed = placeVersion(rates2026, 'ssnit.employee-tier1', '2026-07-15');
+    expect(placed).toEqual({ closeIds: [rates2026.find((r) => r.key === 'ssnit.employee-tier1')!.id], closeOn: '2026-07-14' });
+    expect(placeVersion(rates2026, 'ssnit.employee-tier1', '2026-01-01')).toHaveProperty('problem');
   });
 
   it('reads a percentage typed by a person into basis points exactly', () => {

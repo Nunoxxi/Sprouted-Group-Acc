@@ -59,7 +59,7 @@ export function rateSet(from: string, to: string | null, options: RateSetOptions
     ...bands.map(([width, rate], sequence) => rateRow('paye.band', from, to, { sequence, rate, amount: width ?? undefined })),
     rateRow('paye.non-resident-basis', from, to, { choice: 'progressive' }),
     rateRow('paye.non-resident', from, to, { rate: 25 }),
-    rateRow('ssnit.employee', from, to, { rate: employee }),
+    rateRow('ssnit.employee-tier1', from, to, { rate: employee - 5 }),
     rateRow('ssnit.tier2', from, to, { rate: 5 }),
     rateRow('ssnit.tier1-total', from, to, { rate: employee + employer }),
     rateRow('ssnit.employer-total', from, to, { rate: employer + 5 }),

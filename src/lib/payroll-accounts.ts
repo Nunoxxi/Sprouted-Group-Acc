@@ -17,7 +17,7 @@ export const payrollAccounts = {
   tier3: '2049',
   /** Loans and advances to staff, repaid from pay: a receivable. */
   staffLoans: '1080',
-  /** Employer SSNIT and tier 2: a cost to the company. */
+  /** Employer SSNIT: a cost to the company. */
   employerContributions: '6065',
   /** Casual and seasonal labour paid by a buying agent out of their float. Not payroll. */
   casualLabour: '6070',

@@ -8,11 +8,12 @@
  *   money out of the company (debits)
  *     gross pay to each employee's expense account, split by project where
  *       they are allocated
- *     employer SSNIT and tier 2 to the employer contributions account, split
- *       the same way, so a project carries the whole cost of its people
+ *     employer SSNIT to the employer contributions account, split the same
+ *       way, so a project carries the whole cost of its people
  *   money owed (credits)
- *     PAYE, employee SSNIT, employer SSNIT (tier 1), tier 2, tier 3 and net
- *       pay, each its own liability line; loan instalments back to staff loans
+ *     PAYE, employee SSNIT (tier 1), employer SSNIT (tier 1), employee tier 2,
+ *       tier 3 and net pay, each its own liability line; loan instalments back
+ *       to staff loans
  *
  * It balances by construction — gross = net + SSNIT + tier 3 + PAYE +
  * deductions, which calculatePay guarantees — and payRunJournal checks it

@@ -63,7 +63,7 @@ function costTable(title: string, notes: string[], first: string, rows: CostRow[
   return {
     title,
     notes,
-    columns: [text(first, 'label'), number('Staff', 'headcount'), money('Gross pay', 'grossMinor'), money('Employer SSNIT and tier 2', 'employerContributionsMinor'), money('Total cost', 'totalCostMinor')],
+    columns: [text(first, 'label'), number('Staff', 'headcount'), money('Gross pay', 'grossMinor'), money('Employer SSNIT', 'employerContributionsMinor'), money('Total cost', 'totalCostMinor')],
     rows,
     totals: { grossMinor: rows.reduce((s, r) => s + r.grossMinor, 0), employerContributionsMinor: rows.reduce((s, r) => s + r.employerContributionsMinor, 0), totalCostMinor: rows.reduce((s, r) => s + r.totalCostMinor, 0) },
     warnings: [],

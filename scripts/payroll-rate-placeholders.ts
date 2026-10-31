@@ -38,10 +38,10 @@ export const placeholderRates: PlaceholderRate[] = [
   { key: 'paye.non-resident-basis', choice: 'progressive' },
   { key: 'paye.non-resident', rate: bp(25) },
 
-  // SSNIT: employee 5.5%, of which 5% to tier 2; employer 13%, all tier 1 (tier 1 13.5%).
-  { key: 'ssnit.employee', rate: bp(5.5) },
-  { key: 'ssnit.tier2', rate: bp(5) },
+  // SSNIT: employee 0.5% tier 1 + 5% tier 2; employer 13%, all tier 1 (tier 1 13.5%).
+  { key: 'ssnit.employee-tier1', rate: bp(0.5) },
   { key: 'ssnit.employer-total', rate: bp(13) },
+  { key: 'ssnit.tier2', rate: bp(5) },
   { key: 'ssnit.tier1-total', rate: bp(13.5) },
   { key: 'ssnit.combined-total', rate: bp(18.5) },
   { key: 'ssnit.max-insurable', amount: ghs(61000) },
