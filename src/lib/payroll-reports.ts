@@ -199,8 +199,9 @@ export function ssnitSchedule(lines: PayLineFact[]) {
       staffNumber: line.staffNumber,
       basicMinor: line.basicMinor,
       contributionBaseMinor: line.ssnitBaseMinor,
-      employeeTier1Minor: line.employeeSsnitMinor,
-      employerTier1Minor: line.employerSsnitMinor,
+      // Tier 2 comes out of the employee's contribution; the employer's is all tier 1.
+      employeeTier1Minor: line.employeeSsnitMinor - line.employerTier2Minor,
+      employerTier1Minor: line.employerSsnitMinor + line.employerTier2Minor,
       tier1Minor: line.employeeSsnitMinor + line.employerSsnitMinor,
       tier2Minor: line.employerTier2Minor,
     }));
@@ -295,8 +296,7 @@ export function employerCostPerEmployee(lines: PayLineFact[]) {
       name: line.name,
       department: line.department ?? '',
       grossMinor: line.grossMinor,
-      employerSsnitMinor: line.employerSsnitMinor,
-      employerTier2Minor: line.employerTier2Minor,
+      employerSsnitMinor: line.employerSsnitMinor + line.employerTier2Minor,
       totalCostMinor: employerCost(line),
     }));
 }
@@ -365,8 +365,10 @@ export type YearToDateRow = {
   chargeableMinor: number;
   payeMinor: number;
   netMinor: number;
+  /** The employer's whole contribution, all tier 1. */
   employerSsnitMinor: number;
-  employerTier2Minor: number;
+  /** Out of employeeSsnitMinor. */
+  tier2Minor: number;
 };
 
 /** Per employee, everything posted in the year to date: what the annual employer return needs. */
@@ -395,8 +397,8 @@ export function yearToDate(lines: PayLineFact[], year: string, throughPeriod: st
         chargeableMinor: sum(rows, (r) => r.chargeableMinor),
         payeMinor: sum(rows, (r) => r.payeMinor),
         netMinor: sum(rows, (r) => r.netMinor),
-        employerSsnitMinor: sum(rows, (r) => r.employerSsnitMinor),
-        employerTier2Minor: sum(rows, (r) => r.employerTier2Minor),
+        employerSsnitMinor: sum(rows, (r) => r.employerSsnitMinor + r.employerTier2Minor),
+        tier2Minor: sum(rows, (r) => r.employerTier2Minor),
       };
     })
     .sort((a, b) => a.staffNumber.localeCompare(b.staffNumber));

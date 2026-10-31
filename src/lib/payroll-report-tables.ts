@@ -126,7 +126,7 @@ export function entityReportTable(kind: EntityReport, input: EntityReportInput):
       const s = ssnitSchedule(inPeriod);
       return {
         title: `SSNIT contributions — ${when}`,
-        notes: [posted, 'Tier 1 is the employee’s and the employer’s contributions together; tier 2 goes to the trustee. The contribution base is basic salary plus any allowance marked pensionable, capped at maximum insurable earnings.'],
+        notes: [posted, 'Tier 2 comes out of the employee’s contribution and goes to the trustee; the rest of the employee’s and all of the employer’s go to SSNIT as tier 1. The contribution base is basic salary plus any allowance marked pensionable, capped at maximum insurable earnings.'],
         columns: [
           text('SSNIT number', 'ssnitNumber'),
           text('Name', 'name'),
@@ -163,9 +163,9 @@ export function entityReportTable(kind: EntityReport, input: EntityReportInput):
       return {
         title: `Employer cost per employee — ${when}`,
         notes: [posted, 'Gross pay plus everything the employer pays on top of it.'],
-        columns: [text('Staff number', 'staffNumber'), text('Name', 'name'), text('Department', 'department'), money('Gross pay', 'grossMinor'), money('Employer SSNIT', 'employerSsnitMinor'), money('Tier 2', 'employerTier2Minor'), money('Total cost', 'totalCostMinor')],
+        columns: [text('Staff number', 'staffNumber'), text('Name', 'name'), text('Department', 'department'), money('Gross pay', 'grossMinor'), money('Employer SSNIT', 'employerSsnitMinor'), money('Total cost', 'totalCostMinor')],
         rows,
-        totals: { grossMinor: rows.reduce((s, r) => s + r.grossMinor, 0), employerSsnitMinor: rows.reduce((s, r) => s + r.employerSsnitMinor, 0), employerTier2Minor: rows.reduce((s, r) => s + r.employerTier2Minor, 0), totalCostMinor: rows.reduce((s, r) => s + r.totalCostMinor, 0) },
+        totals: { grossMinor: rows.reduce((s, r) => s + r.grossMinor, 0), employerSsnitMinor: rows.reduce((s, r) => s + r.employerSsnitMinor, 0), totalCostMinor: rows.reduce((s, r) => s + r.totalCostMinor, 0) },
         warnings: [],
       };
     }
@@ -199,7 +199,7 @@ export function entityReportTable(kind: EntityReport, input: EntityReportInput):
     case 'year-to-date': {
       const year = input.period.slice(0, 4);
       const rows = yearToDate(input.facts, year, input.period);
-      const fields = ['basicMinor', 'allowancesMinor', 'bonusMinor', 'overtimeMinor', 'benefitsMinor', 'grossMinor', 'employeeSsnitMinor', 'tier3Minor', 'reliefsMinor', 'chargeableMinor', 'payeMinor', 'netMinor', 'employerSsnitMinor', 'employerTier2Minor'] as const;
+      const fields = ['basicMinor', 'allowancesMinor', 'bonusMinor', 'overtimeMinor', 'benefitsMinor', 'grossMinor', 'employeeSsnitMinor', 'tier3Minor', 'reliefsMinor', 'chargeableMinor', 'payeMinor', 'netMinor', 'employerSsnitMinor', 'tier2Minor'] as const;
       return {
         title: `Year to date per employee — ${input.entityName} — January to ${periodLabel(input.period)}`,
         notes: [posted, 'For the annual employer return: every posted month of the year, per employee.'],
@@ -222,7 +222,7 @@ export function entityReportTable(kind: EntityReport, input: EntityReportInput):
           money('PAYE', 'payeMinor'),
           money('Net pay', 'netMinor'),
           money('Employer SSNIT', 'employerSsnitMinor'),
-          money('Tier 2', 'employerTier2Minor'),
+          money('Tier 2 (out of employee SSNIT)', 'tier2Minor'),
         ],
         rows,
         totals: Object.fromEntries(fields.map((f) => [f, rows.reduce((s, r) => s + r[f], 0)])),

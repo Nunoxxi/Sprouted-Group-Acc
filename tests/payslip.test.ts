@@ -53,8 +53,7 @@ describe('the payslip', () => {
 
   it('shows the employer’s contributions apart from the deductions', () => {
     expect(slip.employer).toEqual([
-      { label: 'Employer SSNIT (tier 1)', amountMinor: ghs(320) },
-      { label: 'Tier 2', amountMinor: ghs(200) },
+      { label: 'Employer SSNIT (tier 1)', amountMinor: ghs(520) }, // 13% of 4,000
     ]);
     expect(slip.deductions.map((d) => d.label)).not.toContain('Tier 2');
   });

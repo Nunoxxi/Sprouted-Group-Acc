@@ -77,19 +77,19 @@ describe('an employee in each PAYE band, and one below the threshold', () => {
 
   it('posts one balanced journal for all of them', () => {
     // Gross 103,700. Employee SSNIT 5,703.50. PAYE 25,234.50. Net 72,762.
-    // Employer SSNIT 8% = 8,296; tier 2 5% = 5,185.
+    // Employer SSNIT 13% = 13,481. Tier 2 is 5% = 5,185, out of the employee's 5,703.50.
     expect(on(journal, '6001', 'debit')).toBe(ghs(103700));
-    expect(on(journal, '6065', 'debit')).toBe(ghs(8296 + 5185));
+    expect(on(journal, '6065', 'debit')).toBe(ghs(13481));
     expect(on(journal, '2040', 'credit')).toBe(ghs(25234.5));
-    expect(on(journal, '2045', 'credit', 'Employee SSNIT (tier 1)')).toBe(ghs(5703.5));
-    expect(on(journal, '2045', 'credit', 'Employer SSNIT (tier 1)')).toBe(ghs(8296));
+    expect(on(journal, '2045', 'credit', 'Employee SSNIT (tier 1)')).toBe(ghs(518.5));
+    expect(on(journal, '2045', 'credit', 'Employer SSNIT (tier 1)')).toBe(ghs(13481));
     expect(on(journal, '2046', 'credit')).toBe(ghs(5185));
     expect(on(journal, '2047', 'credit')).toBe(ghs(72762));
     expect(isBalanced(journal)).toBe(true);
   });
 
   it('keeps PAYE, employee SSNIT, employer SSNIT, tier 2 and net pay as separate liability lines', () => {
-    expect(journal.filter((l) => l.type === 'credit').map((l) => l.memo)).toEqual(['PAYE', 'Employee SSNIT (tier 1)', 'Employer SSNIT (tier 1)', 'Tier 2', 'Net pay']);
+    expect(journal.filter((l) => l.type === 'credit').map((l) => l.memo)).toEqual(['PAYE', 'Employee SSNIT (tier 1)', 'Employer SSNIT (tier 1)', 'Employee tier 2', 'Net pay']);
   });
 
   it('leaves out a line with nothing on it: no tier 3, no loans', () => {
@@ -276,7 +276,7 @@ describe('approval', () => {
 
   it('is refused while any figure used is a placeholder, naming them', () => {
     const { lines } = run('2026-03', [employee({ basicMinor: ghs(1000) })], { rows: rateSet('2026-01-01', null, { placeholder: true }) });
-    expect(approvalProblems(lines)[0]).toMatch(/still placeholders.*Employee SSNIT \(tier 1\)/);
+    expect(approvalProblems(lines)[0]).toMatch(/still placeholders.*Employee SSNIT/);
   });
 
   it('is refused for an empty run', () => {

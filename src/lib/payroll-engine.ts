@@ -111,6 +111,7 @@ export type PayResult = {
   pensionablePayMinor: number;
   /** What SSNIT and tier 2 are charged on: pensionable pay, capped at maximum insurable earnings. */
   ssnitBaseMinor: number;
+  /** Everything taken from the employee's pay for SSNIT, tier 2 included. */
   employeeSsnitMinor: number;
   tier3Minor: number;
   tier3DeductibleMinor: number;
@@ -137,7 +138,15 @@ export type PayResult = {
   deductionsMinor: number;
   netMinor: number;
 
+  /**
+   * The employer's contribution less the tier 2 share. Tier 2 comes out of
+   * the employee's contribution, so this and employeeSsnitMinor together are
+   * what goes to SSNIT for tier 1, and this and employerTier2Minor together are
+   * the employer's contribution. Stored under these names since before tier 2
+   * was shown as the employee's.
+   */
   employerSsnitMinor: number;
+  /** Tier 2, out of the employee's contribution. */
   employerTier2Minor: number;
   /** Gross plus the employer's contributions: what the person cost. */
   employerCostMinor: number;
@@ -212,15 +221,20 @@ export const reliefLabels: Record<ReliefKind, string> = {
   'old-age': 'Old age',
 };
 
-/** The published SSNIT totals have to agree with the rates that are used. */
+/**
+ * The published SSNIT totals have to agree with the rates that are used.
+ * Tier 2 comes out of the employee's contribution; the employer's is all tier 1.
+ */
 function checkSsnitTotals(rates: RateBook): { employee: number; employer: number; tier2: number } {
   const employee = rates.rate('ssnit.employee');
-  const employer = rates.rate('ssnit.employer');
+  const employer = rates.rate('ssnit.employer-total');
   const tier2 = rates.rate('ssnit.tier2');
+  if (tier2 > employee) {
+    throw new PayrollRefusal(`The SSNIT rates in force on ${rates.date} do not add up: tier 2 (${pct(tier2)}) comes out of the employee's ${pct(employee)}, so it cannot be more. Correct them under Settings → Payroll rates.`);
+  }
   const checks: [string, number, number][] = [
-    ['ssnit.tier1-total', rates.rate('ssnit.tier1-total'), employee + employer],
-    ['ssnit.employer-total', rates.rate('ssnit.employer-total'), employer + tier2],
-    ['ssnit.combined-total', rates.rate('ssnit.combined-total'), employee + employer + tier2],
+    ['ssnit.tier1-total', rates.rate('ssnit.tier1-total'), employee - tier2 + employer],
+    ['ssnit.combined-total', rates.rate('ssnit.combined-total'), employee + employer],
   ];
   for (const [key, published, sum] of checks) {
     if (published !== sum) {
@@ -361,6 +375,15 @@ export function calculatePay(input: PayInput, rates: RateBook): PayResult {
     detail: `${pct(ssnit.employee)} of ${cedis(ssnitBase)}`,
     calc: { baseMinor: ssnitBase, rateBasisPoints: ssnit.employee, exact: exactPesewas(product(ssnitBase, ssnit.employee)) },
   });
+  const tier2 = applyRate(ssnitBase, ssnit.tier2);
+  line({
+    step: 'Employee SSNIT',
+    label: 'of which tier 2',
+    amountMinor: tier2,
+    detail: `${pct(ssnit.tier2)} of ${cedis(ssnitBase)}`,
+    calc: { baseMinor: ssnitBase, rateBasisPoints: ssnit.tier2, exact: exactPesewas(product(ssnitBase, ssnit.tier2)) },
+  });
+  line({ step: 'Employee SSNIT', label: 'of which tier 1', amountMinor: employeeSsnit - tier2, detail: 'the rest' });
 
   // 3. Tier 3 --------------------------------------------------------------------------------
   const tier3 = input.tier3Minor ?? 0;
@@ -544,11 +567,12 @@ export function calculatePay(input: PayInput, rates: RateBook): PayResult {
   line({ step: 'Net pay', label: 'Net pay', amountMinor: net, total: true });
 
   // 7. Employer contributions ---------------------------------------------------------------
-  const employerSsnit = applyRate(ssnitBase, ssnit.employer);
-  const employerTier2 = applyRate(ssnitBase, ssnit.tier2);
-  line({ step: 'Employer', label: 'Employer SSNIT (tier 1)', amountMinor: employerSsnit, detail: `${pct(ssnit.employer)} of ${cedis(ssnitBase)}`, calc: { baseMinor: ssnitBase, rateBasisPoints: ssnit.employer, exact: exactPesewas(product(ssnitBase, ssnit.employer)) } });
-  line({ step: 'Employer', label: 'Tier 2', amountMinor: employerTier2, detail: `${pct(ssnit.tier2)} of ${cedis(ssnitBase)}`, calc: { baseMinor: ssnitBase, rateBasisPoints: ssnit.tier2, exact: exactPesewas(product(ssnitBase, ssnit.tier2)) } });
-  line({ step: 'Employer', label: 'Cost to the employer', amountMinor: gross + employerSsnit + employerTier2, total: true, detail: 'gross pay plus employer contributions' });
+  const employerContribution = applyRate(ssnitBase, ssnit.employer);
+  line({ step: 'Employer', label: 'Employer SSNIT (tier 1)', amountMinor: employerContribution, detail: `${pct(ssnit.employer)} of ${cedis(ssnitBase)}`, calc: { baseMinor: ssnitBase, rateBasisPoints: ssnit.employer, exact: exactPesewas(product(ssnitBase, ssnit.employer)) } });
+  line({ step: 'Employer', label: 'Cost to the employer', amountMinor: gross + employerContribution, total: true, detail: 'gross pay plus employer SSNIT' });
+  // Held as before: the employer's share less tier 2, and tier 2 — see PayResult.
+  const employerSsnit = employerContribution - tier2;
+  const employerTier2 = tier2;
 
   return {
     period: input.period,

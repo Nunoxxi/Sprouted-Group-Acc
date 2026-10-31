@@ -56,7 +56,7 @@ export function buildPayslip(args: {
   const earnings: PayslipRow[] = grossLines.map((line) => ({ label: line.label, amountMinor: line.amountMinor, note: line.detail && line.detail !== 'taxable' ? line.detail : undefined }));
 
   const deductions: PayslipRow[] = [
-    { label: 'Employee SSNIT (tier 1)', amountMinor: r.employeeSsnitMinor },
+    { label: 'Employee SSNIT (tier 1 and tier 2)', amountMinor: r.employeeSsnitMinor },
     ...(r.tier3Minor ? [{ label: 'Tier 3 pension', amountMinor: r.tier3Minor }] : []),
     { label: 'PAYE income tax', amountMinor: r.payeMinor },
     ...args.deductions.map((d) => ({ label: d.name, amountMinor: d.amountMinor })),
@@ -82,8 +82,7 @@ export function buildPayslip(args: {
     totalDeductionsMinor: deductions.reduce((sum, d) => sum + d.amountMinor, 0),
     netMinor: r.netMinor,
     employer: [
-      { label: 'Employer SSNIT (tier 1)', amountMinor: r.employerSsnitMinor },
-      { label: 'Tier 2', amountMinor: r.employerTier2Minor },
+      { label: 'Employer SSNIT (tier 1)', amountMinor: r.employerSsnitMinor + r.employerTier2Minor },
     ],
     yearToDate: [
       { label: 'Gross pay', amountMinor: total((row) => row.grossMinor) },

@@ -57,7 +57,6 @@ function rateSet(from: string, to: string | null, options: SetOptions = {}): Sta
     row('paye.non-resident-basis', from, to, { choice: options.nonResident ?? 'progressive' }),
     row('paye.non-resident', from, to, { rate: 25 }),
     row('ssnit.employee', from, to, { rate: employee }),
-    row('ssnit.employer', from, to, { rate: employer }),
     row('ssnit.tier2', from, to, { rate: 5 }),
     row('ssnit.tier1-total', from, to, { rate: options.tier1Total ?? employee + employer }),
     row('ssnit.employer-total', from, to, { rate: employer + 5 }),
@@ -145,7 +144,7 @@ describe('the worked example', () => {
   it('names every rate it used, with its dates', () => {
     expect(result.ratesUsed.map((used) => used.key)).toEqual([
       'paye.band', 'paye.band', 'paye.band', 'paye.band', 'paye.band', 'paye.band', 'paye.band',
-      'ssnit.employee', 'ssnit.employer', 'ssnit.tier2', 'ssnit.tier1-total', 'ssnit.employer-total', 'ssnit.combined-total',
+      'ssnit.employee', 'ssnit.tier2', 'ssnit.employer-total', 'ssnit.tier1-total', 'ssnit.combined-total',
       'ssnit.max-insurable', 'tier3.deductible-cap', 'relief.marriage',
     ]);
     expect(result.ratesUsed.every((used) => used.effectiveFrom === '2026-01-01')).toBe(true);

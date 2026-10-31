@@ -252,15 +252,16 @@ export function payRunJournal(lines: { expenseAccountCode: string; allocations: 
   const raw: PayJournalLine[] = [];
   for (const line of lines) {
     raw.push(...costLines(line.expenseAccountCode, line.result.grossMinor, line.allocations, 'Gross pay'));
-    raw.push(...costLines(payrollAccounts.employerContributions, line.result.employerSsnitMinor + line.result.employerTier2Minor, line.allocations, 'Employer SSNIT and tier 2'));
+    raw.push(...costLines(payrollAccounts.employerContributions, line.result.employerSsnitMinor + line.result.employerTier2Minor, line.allocations, 'Employer SSNIT'));
   }
   const totals = runTotals(lines.map((line) => line.result));
   const credit = (accountCode: string, amount: number, memo: string): PayJournalLine => ({ accountCode, projectId: null, fundId: null, amount, type: 'credit', memo });
   raw.push(
     credit(payrollAccounts.paye, totals.payeMinor, 'PAYE'),
-    credit(payrollAccounts.ssnitTier1, totals.employeeSsnitMinor, 'Employee SSNIT (tier 1)'),
-    credit(payrollAccounts.ssnitTier1, totals.employerSsnitMinor, 'Employer SSNIT (tier 1)'),
-    credit(payrollAccounts.ssnitTier2, totals.employerTier2Minor, 'Tier 2'),
+    // Tier 2 comes out of the employee's SSNIT; the employer's is all tier 1.
+    credit(payrollAccounts.ssnitTier1, totals.employeeSsnitMinor - totals.employerTier2Minor, 'Employee SSNIT (tier 1)'),
+    credit(payrollAccounts.ssnitTier1, totals.employerSsnitMinor + totals.employerTier2Minor, 'Employer SSNIT (tier 1)'),
+    credit(payrollAccounts.ssnitTier2, totals.employerTier2Minor, 'Employee tier 2'),
     credit(payrollAccounts.tier3, totals.tier3Minor, 'Tier 3'),
     credit(payrollAccounts.staffLoans, totals.deductionsMinor, 'Loan and advance instalments'),
     credit(payrollAccounts.netPay, totals.netMinor, 'Net pay'),

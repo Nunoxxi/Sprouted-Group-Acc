@@ -127,7 +127,7 @@ describe('cost', () => {
   it('per employee, with every employer contribution', () => {
     const row = employerCostPerEmployee(october.facts)[0];
     expect(row.name).toBe('Kwame Asante');
-    expect(row.totalCostMinor).toBe(row.grossMinor + row.employerSsnitMinor + row.employerTier2Minor);
+    expect(row.totalCostMinor).toBe(row.grossMinor + row.employerSsnitMinor);
   });
 });
 
