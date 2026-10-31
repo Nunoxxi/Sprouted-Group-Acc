@@ -13,6 +13,9 @@
  * day before — so a payroll for an earlier month still finds exactly the
  * figures it was calculated with.
  *
+ * A set verified by mistake can be taken back to a placeholder, until any
+ * payroll has been approved with it.
+ *
  * The one exception is a placeholder. A placeholder has never been verified,
  * so no payroll can have been approved with it. Correcting one withdraws it
  * (kept, never deleted, never read again) and puts the corrected figures in
@@ -28,7 +31,7 @@ import type { Principal } from '@/lib/authz';
 import { authorizationFailure, requirePermission } from '@/lib/dal';
 import { fromMinor } from '@/lib/data/money';
 import { statutoryRateRecord } from '@/lib/data/payroll-rates';
-import { isDate, placeVersion, rateDefinition, validateRateVersion, type RateVersionInput } from '@/lib/payroll-rates';
+import { isDate, lastDayOf, placeVersion, rateDefinition, validateRateVersion, type RateVersionInput } from '@/lib/payroll-rates';
 import { prisma } from '@/lib/prisma';
 
 import type { ActionResult } from './documents';
@@ -177,6 +180,36 @@ export async function verifyRates(key: string, effectiveFrom: string, source: st
       if (current.every((row) => !row.isPlaceholder)) return fail('Those figures are already verified.');
       await tx.statutoryRate.updateMany({ where: { id: { in: current.map((row) => row.id) } }, data: { isPlaceholder: false, source: trimmed, updatedById: principal.userId } });
       await audit(tx, principal, `Verified ${rateDefinition(key).label} from ${effectiveFrom} against ${trimmed}`, key, current.map(statutoryRateRecord), { source: trimmed });
+      refresh();
+      return { ok: true, value: { ok: true } };
+    });
+  });
+}
+
+/**
+ * Take a verified set back to a placeholder, so a figure verified by mistake
+ * can be corrected in place. Refused once any payroll has been approved with
+ * it: from then on it is history, and a change is a new set. The rates belong
+ * to the whole group, so every entity's pay runs are checked.
+ */
+export async function unverifyRates(key: string, effectiveFrom: string): Promise<ActionResult<{ ok: true }>> {
+  return asRatesOwner(async (principal) => {
+    return prisma.$transaction(async (tx: Tx): Promise<ActionResult<{ ok: true }>> => {
+      const current = await versionRows(tx, key, effectiveFrom);
+      if (current.length === 0) return fail('Those figures are no longer there. Reload the page.');
+      if (current.some((row) => row.isPlaceholder)) return fail('Those figures are not verified.');
+      const effectiveTo = current[0].effectiveTo?.toISOString().slice(0, 10) ?? null;
+      // A run uses the figures in force on the last day of its period.
+      const approved = await tx.payRun.findMany({ where: { approvedAt: { not: null }, period: { gte: effectiveFrom.slice(0, 7) } }, select: { period: true } });
+      const used = approved.filter((run) => {
+        const date = lastDayOf(run.period);
+        return date >= effectiveFrom && (effectiveTo === null || date <= effectiveTo);
+      });
+      if (used.length) {
+        return fail(`A payroll for ${used[0].period} has been approved with these figures, so they stay verified. Enter new figures from the date the change takes effect.`);
+      }
+      await tx.statutoryRate.updateMany({ where: { id: { in: current.map((row) => row.id) } }, data: { isPlaceholder: true, updatedById: principal.userId } });
+      await audit(tx, principal, `Took ${rateDefinition(key).label} from ${effectiveFrom} back to a placeholder`, key, current.map(statutoryRateRecord), { isPlaceholder: true });
       refresh();
       return { ok: true, value: { ok: true } };
     });

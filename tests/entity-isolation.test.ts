@@ -381,6 +381,7 @@ const payrollRatesCalls: Record<keyof typeof payrollRatesActions, Call> = {
   addRateVersion: () => payrollRatesActions.addRateVersion({ key: 'ssnit.employee', effectiveFrom: '2026-07-01', rows: [{ rateBasisPoints: 550, amountMinor: null, maxCount: null }], verified: false }),
   correctPlaceholderRates: () => payrollRatesActions.correctPlaceholderRates({ key: 'ssnit.employee', effectiveFrom: '2026-01-01', rows: [{ rateBasisPoints: 550, amountMinor: null, maxCount: null }], verified: false }),
   verifyRates: () => payrollRatesActions.verifyRates('ssnit.employee', '2026-01-01', 'GRA notice'),
+  unverifyRates: () => payrollRatesActions.unverifyRates('ssnit.employee', '2026-01-01'),
   endRates: () => payrollRatesActions.endRates('ssnit.employee', '2026-01-01', '2026-06-30'),
 };
 

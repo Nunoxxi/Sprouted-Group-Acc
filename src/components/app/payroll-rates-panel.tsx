@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Money } from '@/components/ui/money';
-import { addRateVersion, correctPlaceholderRates, endRates, verifyRates, type RateVersionSave } from '@/app/actions/payroll-rates';
+import { addRateVersion, correctPlaceholderRates, endRates, unverifyRates, verifyRates, type RateVersionSave } from '@/app/actions/payroll-rates';
 import type { Permission } from '@/lib/authz';
 import { calculatePay, reliefLabels, type EmploymentType, type PayResult, type Residency } from '@/lib/payroll-engine';
 import {
@@ -198,7 +198,13 @@ export function PayrollRatesSettings({ rows, allowed }: Props) {
     );
   }
 
-  const setRow = (index: number, change: Partial<DraftRow>) => draft && setDraft({ ...draft, rows: draft.rows.map((r, i) => (i === index ? { ...r, ...change } : r)) });
+  function unverify(definition: RateDefinition, version: StatutoryRateRow[]) {
+    const from = version[0].effectiveFrom;
+    if (!window.confirm(`Take ${definition.label} from ${from} back to a placeholder? No payroll can be approved with it until it is verified again.`)) return;
+    act(`${definition.label} from ${from} is a placeholder again — correct it, then mark it verified.`, () => unverifyRates(definition.key, from));
+  }
+
+  const setRow =(index: number, change: Partial<DraftRow>) => draft && setDraft({ ...draft, rows: draft.rows.map((r, i) => (i === index ? { ...r, ...change } : r)) });
 
   return (
     <div className="space-y-6">
@@ -291,6 +297,8 @@ export function PayrollRatesSettings({ rows, allowed }: Props) {
                                   Mark verified
                                 </Button>
                               </>
+                            ) : version ? (
+                              <Button size="sm" variant="ghost" disabled={pending} onClick={() => unverify(definition, version)}>Unverify</Button>
                             ) : null}
                             {version && !version[0].effectiveTo ? (
                               <Button size="sm" variant="ghost" disabled={pending} onClick={() => { setDraft(null); setVerifying(null); setEnding({ key: definition.key, effectiveFrom: version[0].effectiveFrom, lastDay: date }); }}>
@@ -324,7 +332,12 @@ export function PayrollRatesSettings({ rows, allowed }: Props) {
                                 <td className="py-1.5 pr-3 tabular-nums">{v[0].effectiveFrom}</td>
                                 <td className="py-1.5 pr-3 tabular-nums">{v[0].effectiveTo ?? '—'}</td>
                                 <td className="py-1.5 pr-3"><Figures definition={definition} version={v} /></td>
-                                <td className="py-1.5"><Status version={v} /></td>
+                                <td className="py-1.5">
+                                  <Status version={v} />
+                                  {may && !v.some((row) => row.isPlaceholder) ? (
+                                    <button type="button" className="ml-2 text-xs font-medium text-brand-700 underline" disabled={pending} onClick={() => unverify(definition, v)}>Unverify</button>
+                                  ) : null}
+                                </td>
                               </tr>
                             ))}
                           </tbody>
