@@ -364,6 +364,7 @@ const payrollCalls: Record<Exclude<keyof typeof payrollActions, 'exportGroupPayr
   payRemittance: () => payrollActions.payRemittance(FORBIDDEN_ENTITY, 'x', { paidOn: '2026-11-14', reference: 'R1', bankAccountId: 'b' }),
   downloadPayslip: () => payrollActions.downloadPayslip(FORBIDDEN_ENTITY, 'l'),
   emailPayslip: () => payrollActions.emailPayslip(FORBIDDEN_ENTITY, 'l'),
+  emailPayslips: () => payrollActions.emailPayslips(FORBIDDEN_ENTITY, 'r'),
   exportPayrollReport: () => payrollActions.exportPayrollReport(FORBIDDEN_ENTITY, 'paye', '2026-10'),
 };
 const groupPayrollCalls = { exportGroupPayrollReport: () => payrollActions.exportGroupPayrollReport('labour-cost', '2026-01', '2026-10') };

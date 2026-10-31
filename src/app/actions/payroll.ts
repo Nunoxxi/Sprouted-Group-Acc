@@ -798,6 +798,21 @@ export async function downloadPayslip(entityId: string, lineId: string): Promise
   });
 }
 
+/** Send one posted payslip, the PDF attached, and note when. The caller has checked the address. */
+async function sendPayslip(found: NonNullable<Awaited<ReturnType<typeof payslipFor>>>, to: string, from: string | null) {
+  const pdf = await payslipPdf(found.slip);
+  await sendEmail({
+    to,
+    from,
+    subject: `Your payslip for ${periodLabel(found.slip.period)} — ${found.slip.entityName}`,
+    text: payslipText(found.slip),
+    attachments: [{ filename: `payslip-${found.slip.period}.pdf`, content: pdf.toString('base64') }],
+  });
+  await prisma.payRunLine.update({ where: { id: found.line.id }, data: { payslipEmailedAt: new Date() } });
+}
+
+const maskEmail = (to: string) => to.replace(/^(.).*(@.*)$/, '$1•••$2');
+
 /** Email a payslip to the employee, the PDF attached. Only once the run is posted: nobody is sent figures that may change. */
 export async function emailPayslip(entityId: string, lineId: string): Promise<ActionResult<{ to: string }>> {
   return withEntityAccess(entityId, 'payroll:prepare', async (principal) => {
@@ -807,16 +822,54 @@ export async function emailPayslip(entityId: string, lineId: string): Promise<Ac
     const to = decryptField('Employee.email', found.line.employee.email);
     if (!to) return fail(`No email address is held for ${found.slip.employee.name}.`);
     const entity = await prisma.entity.findUniqueOrThrow({ where: { id: entityId }, select: { emailFrom: true } });
-    const pdf = await payslipPdf(found.slip);
-    await sendEmail({
-      to,
-      from: entity.emailFrom,
-      subject: `Your payslip for ${periodLabel(found.slip.period)} — ${found.slip.entityName}`,
-      text: payslipText(found.slip),
-      attachments: [{ filename: `payslip-${found.slip.period}.pdf`, content: pdf.toString('base64') }],
-    });
+    await sendPayslip(found, to, entity.emailFrom);
     await prisma.$transaction((tx) => audit(tx, entityId, principal, 'EDIT', 'payslip', found.line.id, `Emailed ${found.slip.employee.name}'s payslip for ${periodLabel(found.slip.period)}`));
-    return { ok: true, value: { to: to.replace(/^(.).*(@.*)$/, '$1•••$2') } };
+    refresh();
+    return { ok: true, value: { to: maskEmail(to) } };
+  });
+}
+
+export type PayslipBatchResult = { sent: number; noEmail: string[]; failed: string[] };
+
+/**
+ * Email every payslip of a posted run that has not been emailed yet, so
+ * sending again after adding a missing address reaches only those people.
+ * Each line is claimed before it is sent, so two people pressing the button at
+ * once do not send anyone theirs twice; a send that fails is released again.
+ */
+export async function emailPayslips(entityId: string, runId: string): Promise<ActionResult<PayslipBatchResult>> {
+  return withEntityAccess(entityId, 'payroll:prepare', async (principal) => {
+    const run = await prisma.payRun.findFirst({ where: { id: runId, entityId }, include: { lines: { where: { resultJson: { not: null }, payslipEmailedAt: null }, select: { id: true } } } });
+    if (!run) return fail('That pay run is not in this entity.');
+    if (run.status !== 'POSTED') return fail('Payslips are emailed once the run is posted.');
+    const entity = await prisma.entity.findUniqueOrThrow({ where: { id: entityId }, select: { emailFrom: true } });
+    const outcome: PayslipBatchResult = { sent: 0, noEmail: [], failed: [] };
+    for (const { id } of run.lines) {
+      const found = await payslipFor(entityId, id);
+      if (!found) continue;
+      const to = decryptField('Employee.email', found.line.employee.email);
+      if (!to) {
+        outcome.noEmail.push(found.slip.employee.name);
+        continue;
+      }
+      const claimed = await prisma.payRunLine.updateMany({ where: { id, payslipEmailedAt: null }, data: { payslipEmailedAt: new Date() } });
+      if (claimed.count !== 1) continue;
+      try {
+        await sendPayslip(found, to, entity.emailFrom);
+        outcome.sent += 1;
+      } catch (error) {
+        console.error(`Payslip email to line ${id} failed`, error);
+        await prisma.payRunLine.update({ where: { id }, data: { payslipEmailedAt: null } });
+        outcome.failed.push(found.slip.employee.name);
+      }
+    }
+    if (outcome.sent) {
+      await prisma.$transaction((tx) =>
+        audit(tx, entityId, principal, 'EDIT', 'payslip', run.id, `Emailed ${outcome.sent} payslip${outcome.sent === 1 ? '' : 's'} for ${periodLabel(run.period)}`, { noEmail: outcome.noEmail.length, failed: outcome.failed.length }),
+      );
+    }
+    refresh();
+    return { ok: true, value: outcome };
   });
 }
 

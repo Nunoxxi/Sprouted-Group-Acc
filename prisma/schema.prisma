@@ -3003,6 +3003,8 @@ model PayRunLine {
   netMinor             BigInt  @default(0)
   employerSsnitMinor   BigInt  @default(0)
   employerTier2Minor   BigInt  @default(0)
+  /// When the payslip was last emailed to the employee. Null until it is.
+  payslipEmailedAt     DateTime?
 
   entity     Entity            @relation(fields: [entityId], references: [id])
   run        PayRun            @relation(fields: [runId], references: [id])

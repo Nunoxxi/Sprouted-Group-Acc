@@ -23,12 +23,14 @@ import {
   discardPayRun,
   downloadPayslip,
   emailPayslip,
+  emailPayslips,
   payRemittance,
   postPayRun,
   recalculatePayRun,
   reopenPayRun,
   reversePayRun,
   setPayLineInputs,
+  type PayslipBatchResult,
 } from '@/app/actions/payroll';
 import { savePayrollSettings } from '@/app/actions/payroll-settings';
 import { PayrollPeople } from '@/components/app/payroll-people';
@@ -154,6 +156,19 @@ function PayRuns({ entity, settings, employees, runs, loans, factsByEntity, allo
   const preview: PayJournalLine[] | null = previewLines.length
     ? payRunJournal(previewLines.map((l) => ({ expenseAccountCode: l.inputs!.expenseAccountCode, allocations: l.inputs!.allocations, result: l.result! })))
     : null;
+  const unsent = run ? run.lines.filter((line) => line.result && !line.payslipEmailedAt).length : 0;
+
+  function sendPayslips() {
+    if (!run) return;
+    if (!window.confirm(`Email ${unsent} payslip${unsent === 1 ? '' : 's'} for ${periodLabel(run.period)} to the employees? Anyone already sent theirs is not sent it again.`)) return;
+    act('', () => emailPayslips(entity.id, run.id), (value) => {
+      const { sent, noEmail, failed } = value as PayslipBatchResult;
+      const parts = [`${sent} payslip${sent === 1 ? '' : 's'} emailed.`];
+      if (noEmail.length) parts.push(`No email address held for ${noEmail.join(', ')} — add one under People, then send again.`);
+      if (failed.length) parts.push(`Could not be sent to ${failed.join(', ')} — try again.`);
+      setMessage({ tone: noEmail.length || failed.length ? 'error' : 'ok', text: parts.join(' ') });
+    });
+  }
 
   return (
     <div className="space-y-5">
@@ -234,8 +249,13 @@ function PayRuns({ entity, settings, employees, runs, loans, factsByEntity, allo
                       </Button>
                     ) : null}
                     {run.status === 'approved' && allowed('payroll:post') ? (
-                      <Button size="sm" disabled={pending} onClick={() => act('Posted. What it leaves owing is under “What payroll owes”.', () => postPayRun(entity.id, run.id))}>
+                      <Button size="sm" disabled={pending} onClick={() => act('Posted. What it leaves owing is under “What payroll owes”, and the payslips can now be emailed.',() => postPayRun(entity.id, run.id))}>
                         Post the journal
+                      </Button>
+                    ) : null}
+                    {run.status === 'posted' && allowed('payroll:prepare') && unsent > 0 ? (
+                      <Button size="sm" disabled={pending} onClick={sendPayslips}>
+                        {unsent === run.lines.filter((line) => line.result).length ? 'Email payslips' : `Email the ${unsent} payslip${unsent === 1 ? '' : 's'} not yet sent`}
                       </Button>
                     ) : null}
                   </div>
@@ -308,7 +328,11 @@ function PayRuns({ entity, settings, employees, runs, loans, factsByEntity, allo
                             <tr className={line.error ? 'bg-rose-50' : ''}>
                               <td className="py-2 pr-3">
                                 <p className="font-medium text-slate-900">{person?.name ?? 'Unknown'}</p>
-                                <p className="text-xs text-slate-500">{person?.staffNumber}{r && r.daysEmployed < r.daysInPeriod ? ` · ${r.daysEmployed} of ${r.daysInPeriod} days` : ''}</p>
+                                <p className="text-xs text-slate-500">
+                                  {person?.staffNumber}
+                                  {r && r.daysEmployed < r.daysInPeriod ? ` · ${r.daysEmployed} of ${r.daysInPeriod} days` : ''}
+                                  {line.payslipEmailedAt ? ` · payslip emailed ${line.payslipEmailedAt.slice(0, 10)}` : ''}
+                                </p>
                               </td>
                               {r ? (
                                 <>

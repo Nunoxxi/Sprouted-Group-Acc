@@ -154,6 +154,7 @@ export type PayRunLineRecord = {
   error: string | null;
   inputs: StoredLineInputs | null;
   result: PayResult | null;
+  payslipEmailedAt: string | null;
 };
 
 export type PayRunStatus = 'draft' | 'approved' | 'posted' | 'reversed' | 'discarded';
@@ -206,6 +207,7 @@ export function payRunRecord(row: PayRunRow, userNames: Record<string, string>):
     error: line.error,
     inputs: parse<StoredLineInputs>(line.inputsJson),
     result: parse<PayResult>(line.resultJson),
+    payslipEmailedAt: line.payslipEmailedAt ? line.payslipEmailedAt.toISOString() : null,
   }));
   const name = (id: string | null) => (id ? (userNames[id] ?? '') : '');
   return {
