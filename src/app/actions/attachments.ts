@@ -15,12 +15,14 @@
 
 import { createHash } from 'node:crypto';
 
+import { Prisma } from '@prisma/client';
 import { refresh } from 'next/cache';
 
 import { recordAuditEvent } from '@/lib/audit';
 import type { Permission, Principal } from '@/lib/authz';
 import { authorizationFailure, requireEntityAccess } from '@/lib/dal';
-import { attachmentInclude, attachmentRecord, ruleRecord, targetOf, targetToPrisma } from '@/lib/data/attachments';
+import { captureKindLabels, checkCapture } from '@/lib/capture';
+import { attachmentInclude, attachmentRecord, captureToPrisma, ruleRecord, targetOf, targetToPrisma } from '@/lib/data/attachments';
 import { fromMinor } from '@/lib/data/money';
 import { StockRefusal } from '@/lib/data/stock';
 import type { AttachmentRecord, AttachmentRuleRecord } from '@/lib/data/types';
@@ -205,6 +207,110 @@ export async function uploadAttachment(entityId: string, input: UploadInput): Pr
       });
       refresh();
       return { ok: true, value: attachmentRecord(row) };
+    }),
+  );
+}
+
+// --- sent from a phone ----------------------------------------------------------------------------
+
+export type CaptureInput = {
+  /** Made on the phone when the capture is saved, so a resend is recognised. */
+  clientRef: string;
+  kind: string;
+  amountMinor: number | null;
+  /** YYYY-MM-DD, or null. */
+  date: string | null;
+  note?: string;
+  fileName: string;
+  contentType: string;
+  base64: string;
+};
+
+/**
+ * A document sent from the phone capture page. It goes to the entity's inbox
+ * with what the sender said about it; someone in finance matches or enters
+ * it from there. Nothing posts.
+ *
+ * The phone may send the same capture twice — the signal can drop after the
+ * file arrived but before the answer got back. The clientRef is unique, so
+ * the second arrival is answered "already here" and nothing is doubled.
+ */
+export async function captureDocument(entityId: string, input: CaptureInput): Promise<ActionResult<{ alreadySent: boolean }>> {
+  return withEntityAccess(entityId, 'document:capture', (principal) =>
+    refusable(async () => {
+      if (!storageConfigured()) return fail('File storage is not configured on this server, so nothing can be sent yet.');
+      const checkedCapture = checkCapture(input, new Date().toISOString().slice(0, 10));
+      if (!checkedCapture.ok) return fail(checkedCapture.error);
+      const capture = checkedCapture.value;
+
+      const earlier = await prisma.attachment.findUnique({ where: { clientRef: capture.clientRef }, select: { entityId: true } });
+      if (earlier) {
+        return earlier.entityId === entityId ? { ok: true, value: { alreadySent: true } } : fail('This was already sent to another company.');
+      }
+
+      let bytes: Buffer;
+      try {
+        bytes = Buffer.from(input.base64, 'base64');
+      } catch {
+        return fail('That file did not arrive properly. Try again.');
+      }
+      const checked = checkFile(input.contentType, bytes.byteLength);
+      if (!checked.ok) return fail(checked.error);
+
+      const uploadedAt = new Date();
+      const id = createHash('sha256').update(`${entityId}:${uploadedAt.toISOString()}:${capture.clientRef}`).digest('hex').slice(0, 24);
+      const key = storageKey(entityId, uploadedAt.toISOString(), id, checked.extension);
+      const checksum = createHash('sha256').update(bytes).digest('hex');
+      const label = captureKindLabels[capture.kind];
+
+      // Storage first, as for any upload: a row that points at nothing is worse than no row.
+      await putObject(key, new Uint8Array(bytes), input.contentType);
+
+      try {
+        await prisma.$transaction(async (tx) => {
+          const saved = await tx.attachment.create({
+            data: {
+              entityId,
+              targetKind: 'INBOX',
+              targetId: null,
+              storageKey: key,
+              fileName: safeFileName(input.fileName, checked.extension),
+              contentType: input.contentType,
+              byteSize: bytes.byteLength,
+              checksum,
+              note: capture.note || null,
+              uploadedById: principal.userId,
+              uploadedAt,
+              capturedAs: captureToPrisma[capture.kind],
+              amountMinor: capture.amountMinor === null ? null : BigInt(capture.amountMinor),
+              documentDate: capture.date ? new Date(`${capture.date}T00:00:00Z`) : null,
+              clientRef: capture.clientRef,
+            },
+          });
+          await recordAuditEvent(
+            {
+              entityId,
+              userId: principal.userId,
+              userName: principal.name,
+              action: 'EDIT',
+              resourceType: 'attachment',
+              resourceRef: saved.fileName,
+              summary: `${label} sent from a phone to the inbox${capture.amountMinor === null ? '' : `, GHS ${(capture.amountMinor / 100).toFixed(2)}`}`,
+              metadata: { storageKey: key, checksum, byteSize: bytes.byteLength, capturedAs: capture.kind, clientRef: capture.clientRef },
+            },
+            tx,
+          );
+        });
+      } catch (error) {
+        // The same capture arrived twice at once and the other got in first.
+        // Its file is the one on the record; this copy goes.
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+          await removeObject(key).catch(() => undefined);
+          return { ok: true, value: { alreadySent: true } };
+        }
+        throw error;
+      }
+      return { ok: true, value: { alreadySent: false } };
     }),
   );
 }

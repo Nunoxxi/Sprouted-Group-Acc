@@ -39,8 +39,10 @@ export default function TwoFactorPage() {
 
     // One navigation, not a push followed by a refresh: the page is rendered
     // per request anyway, and the refresh only loaded it a second time.
+    // Back to where they were going (a page of this app only), else home.
+    const next = new URLSearchParams(window.location.search).get('next');
     setOpening(true);
-    router.replace('/');
+    router.replace(next && next.startsWith('/') && !next.startsWith('//') ? next : '/');
   }
 
   return (

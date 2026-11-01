@@ -6,9 +6,10 @@
  * file itself comes from src/lib/storage.ts behind a link that expires.
  */
 
-import type { Attachment, AttachmentRule, AttachmentTargetKind, User } from '@prisma/client';
+import type { Attachment, AttachmentRule, AttachmentTargetKind, CaptureKind as PrismaCaptureKind, User } from '@prisma/client';
 
 import type { AttachmentTarget } from '../attachments';
+import type { CaptureKind } from '../capture';
 import { prisma } from '../prisma';
 import { toMinor } from './money';
 import type { AttachmentRecord, AttachmentRuleRecord } from './types';
@@ -37,6 +38,19 @@ export const targetToPrisma: Record<AttachmentTarget, AttachmentTargetKind> = {
 };
 export const targetOf = (value: AttachmentTargetKind): AttachmentTarget => targetToRecord[value];
 
+const captureToRecord: Record<PrismaCaptureKind, CaptureKind> = {
+  BILL: 'bill',
+  INVOICE: 'invoice',
+  EXPENSE_CLAIM: 'expense-claim',
+  RECEIPT: 'receipt',
+};
+export const captureToPrisma: Record<CaptureKind, PrismaCaptureKind> = {
+  bill: 'BILL',
+  invoice: 'INVOICE',
+  'expense-claim': 'EXPENSE_CLAIM',
+  receipt: 'RECEIPT',
+};
+
 // --- row → record ---------------------------------------------------------------------
 
 export const attachmentInclude = { uploadedBy: { select: { name: true } } } as const;
@@ -56,6 +70,9 @@ export function attachmentRecord(row: Attachment & { uploadedBy: Pick<User, 'nam
     uploadedAt: row.uploadedAt.toISOString(),
     uploadedById: row.uploadedById,
     uploadedByName: row.uploadedBy?.name ?? '',
+    capturedAs: row.capturedAs ? captureToRecord[row.capturedAs] : null,
+    amountMinor: row.amountMinor === null ? null : toMinor(row.amountMinor),
+    documentDate: row.documentDate ? row.documentDate.toISOString().slice(0, 10) : null,
   };
 }
 

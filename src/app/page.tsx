@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 
 import { AppShell } from '@/components/app/app-shell';
 import { SignOutButton } from '@/components/auth/sign-out-button';
-import { mustSetUpTwoFactor } from '@/lib/authz';
+import { can, mustSetUpTwoFactor } from '@/lib/authz';
 import { getPrincipal } from '@/lib/dal';
 import { loadInitialData } from '@/lib/data/documents';
 import { screenOf } from '@/lib/screens';
@@ -19,6 +19,10 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   // Roles that can post transactions do nothing else until TOTP is set up.
   if (mustSetUpTwoFactor(principal)) {
     redirect('/two-factor/setup');
+  }
+  // Staff can only send documents from a phone; the books are not theirs to see.
+  if (!can(principal, 'reports:view') && can(principal, 'document:capture')) {
+    redirect('/capture');
   }
 
   // Only the screen being shown has its own data loaded (src/lib/screens.ts).

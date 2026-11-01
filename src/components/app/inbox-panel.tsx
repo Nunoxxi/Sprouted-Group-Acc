@@ -17,6 +17,7 @@ import { prepareFile } from '@/components/app/attachments';
 import type { Permission } from '@/lib/authz';
 import type { AttachmentRecord, AttachmentRuleRecord, DocumentRecord, EntityRecord } from '@/lib/data/types';
 import { acceptedTypes, attachmentTargetLabels, ruleTargets, type AttachmentTarget } from '@/lib/attachments';
+import { captureKindLabels } from '@/lib/capture';
 
 const accept = Object.keys(acceptedTypes).join(',');
 const label = 'mb-1.5 block text-sm font-medium text-slate-700';
@@ -86,6 +87,10 @@ export function InboxPanel({ entity, attachments, rules, documents, allowed, cur
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{entity.name}</p>
           <h2 className="mt-1 text-2xl font-semibold text-slate-900">Attachment inbox</h2>
           <p className="mt-1 text-sm text-slate-600">Upload receipts as they come in and match them to transactions later. Files are kept in cloud storage, not in the database.</p>
+          <p className="mt-1 text-sm text-slate-600">
+            Staff can send bills, invoices, expense claims and receipts from their phones at{' '}
+            <a className="font-medium text-brand-800 underline-offset-2 hover:underline" href="/capture">/capture</a>; they arrive here.
+          </p>
         </div>
         {allowed('document:draft') ? (
           <div className="flex flex-wrap gap-2">
@@ -139,12 +144,21 @@ export function InboxPanel({ entity, attachments, rules, documents, allowed, cur
                 <li key={row.id} className="py-3">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
+                      {row.capturedAs ? (
+                        <p className="text-sm text-slate-900">
+                          <span className="mr-2 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-800 ring-1 ring-brand-100">{captureKindLabels[row.capturedAs]}</span>
+                          {row.amountMinor !== null ? <Money value={row.amountMinor} /> : null}
+                          {row.documentDate ? <span className="text-slate-500"> · dated {row.documentDate}</span> : null}
+                          {row.note ? <span className="text-slate-600"> · {row.note}</span> : null}
+                        </p>
+                      ) : null}
                       <button type="button" className="truncate text-left font-medium text-brand-700 underline-offset-2 hover:underline" onClick={() => open(row.id)}>
                         {row.fileName}
                       </button>
                       <p className="text-xs text-slate-500">
                         {sizeText(row.byteSize)} · uploaded {row.uploadedAt.slice(0, 10)}
                         {row.uploadedByName ? ` by ${row.uploadedByName}` : ''}
+                        {row.capturedAs ? ' from a phone' : ''}
                       </p>
                     </div>
                     {allowed('document:draft') ? (

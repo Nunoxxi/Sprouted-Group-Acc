@@ -8,7 +8,7 @@
  * post there and cannot see Oikazi at all. Owners hold every entity.
  */
 
-export const roles = ['owner', 'accountant', 'bookkeeper', 'data-entry', 'viewer'] as const;
+export const roles = ['owner', 'accountant', 'bookkeeper', 'data-entry', 'staff', 'viewer'] as const;
 export type Role = (typeof roles)[number];
 
 export const roleLabels: Record<Role, string> = {
@@ -16,6 +16,7 @@ export const roleLabels: Record<Role, string> = {
   accountant: 'Accountant',
   bookkeeper: 'Bookkeeper',
   'data-entry': 'Data entry',
+  staff: 'Staff',
   viewer: 'Viewer',
 };
 
@@ -30,6 +31,7 @@ export const roleDescriptions: Record<Role, string> = {
   accountant: 'Post, reconcile, file returns, lock periods. Two-factor required.',
   bookkeeper: 'Enter and post invoices and bills, reconcile them, add accounts. Cannot void, close periods or manage people. Two-factor required.',
   'data-entry': 'Create and edit drafts and bills. Cannot post, void or unlock periods.',
+  staff: 'Send bills, invoices, expense claims and receipts from a phone. Sees nothing in the books.',
   viewer: 'Reports only. Nothing editable.',
 };
 
@@ -39,6 +41,9 @@ export function isRole(value: unknown): value is Role {
 
 export const permissions = [
   'document:draft', // create and edit drafts (invoices and bills)
+  // Send a document from the phone capture page into an entity's inbox. It
+  // reads nothing back and posts nothing, so Staff can hold it alone.
+  'document:capture',
   'document:post', // post a journal
   'document:mark-paid', // reconcile
   'document:void', // reversing entry
@@ -98,6 +103,7 @@ const matrix: Record<Role, ReadonlySet<Permission>> = {
   accountant: new Set<Permission>([
     'chart:edit',
     'document:draft',
+    'document:capture',
     'document:post',
     'document:mark-paid',
     'document:void',
@@ -128,6 +134,7 @@ const matrix: Record<Role, ReadonlySet<Permission>> = {
   bookkeeper: new Set<Permission>([
     'chart:edit',
     'document:draft',
+    'document:capture',
     'document:post',
     'document:mark-paid',
     'contact:create',
@@ -144,7 +151,9 @@ const matrix: Record<Role, ReadonlySet<Permission>> = {
   // Field staff need to be able to telephone a farmer and to pay them, so
   // they see contact details — but they cannot produce a report about a
   // person or erase one.
-  'data-entry': new Set<Permission>(['document:draft', 'contact:create', 'stock:enter', 'reports:view', 'pii:view']),
+  'data-entry': new Set<Permission>(['document:draft', 'document:capture', 'contact:create', 'stock:enter', 'reports:view', 'pii:view']),
+  // Staff on the move: send documents in from a phone, and nothing else.
+  staff: new Set<Permission>(['document:capture']),
   viewer: new Set<Permission>(['reports:view']),
 };
 

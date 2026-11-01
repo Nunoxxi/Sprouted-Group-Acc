@@ -36,8 +36,11 @@ export function SignInForm() {
 
     // With TOTP enabled the library answers with a redirect flag instead of a
     // session; the code is verified on /two-factor.
+    // Where they were going is passed along, so a phone that came from
+    // /capture goes back there after the code.
     if ((data as { twoFactorRedirect?: boolean } | null)?.twoFactorRedirect) {
-      router.push('/two-factor');
+      const next = params.get('next');
+      router.push(next && next.startsWith('/') && !next.startsWith('//') ? `/two-factor?next=${encodeURIComponent(next)}` : '/two-factor');
       return;
     }
 
@@ -45,7 +48,7 @@ export function SignInForm() {
     // per request anyway, and the refresh only loaded it a second time.
     const next = params.get('next');
     setOpening(true);
-    router.replace(next && next.startsWith('/') ? next : '/');
+    router.replace(next && next.startsWith('/') && !next.startsWith('//') ? next : '/');
   }
 
   return (

@@ -395,6 +395,8 @@ const attachmentCalls: Record<keyof typeof attachmentActions, Call> = {
   attachmentUrl: () => attachmentActions.attachmentUrl(FORBIDDEN_ENTITY, 'attachment'),
   saveAttachmentRule: () => attachmentActions.saveAttachmentRule(FORBIDDEN_ENTITY, { target: 'bill', thresholdMinor: 500_000, isActive: true }),
   inboxSuggestions: () => attachmentActions.inboxSuggestions(FORBIDDEN_ENTITY),
+  captureDocument: () =>
+    attachmentActions.captureDocument(FORBIDDEN_ENTITY, { clientRef: 'cap-12345678', kind: 'expense-claim', amountMinor: 5000, date: '2026-10-30', fileName: 'receipt.jpg', contentType: 'image/jpeg', base64: '/9j/' }),
 };
 /** The two attachment reads a Viewer may make on their own entity. */
 const attachmentReads = new Set(['attachmentUrl', 'inboxSuggestions']);

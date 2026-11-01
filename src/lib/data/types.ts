@@ -15,6 +15,7 @@ import type { GrantActual, InKindKind, IncomePolicy, ReportingFrequency } from '
 import type { Flow, RecurringFrequency } from '../cashflow';
 import type { AdjustmentKind, AllowanceMethod, DepreciationMethod, TaxStatus } from '../assets';
 import type { AttachmentTarget } from '../attachments';
+import type { CaptureKind } from '../capture';
 import type { SubjectKind } from '../privacy';
 import type { DepreciationMethod as SettingsDepreciationMethod, ProjectKind, TaxRates } from '../settings';
 import type { StatutoryRateRow } from '../payroll-rates';
@@ -947,6 +948,11 @@ export type AttachmentRecord = {
   uploadedAt: string;
   uploadedById: string | null;
   uploadedByName: string;
+  /** Set when it was sent from the phone capture page: what it was said to be. */
+  capturedAs: CaptureKind | null;
+  amountMinor: number | null;
+  /** YYYY-MM-DD, the date the sender gave the document. */
+  documentDate: string | null;
 };
 
 export type AttachmentRuleRecord = {

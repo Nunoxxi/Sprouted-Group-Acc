@@ -30,6 +30,7 @@ const expected: Record<Role, Permission[]> = {
   accountant: [
     'chart:edit',
     'document:draft',
+    'document:capture',
     'document:post',
     'document:mark-paid',
     'document:void',
@@ -57,6 +58,7 @@ const expected: Record<Role, Permission[]> = {
   bookkeeper: [
     'chart:edit',
     'document:draft',
+    'document:capture',
     'document:post',
     'document:mark-paid',
     'contact:create',
@@ -73,7 +75,9 @@ const expected: Record<Role, Permission[]> = {
   ],
   // Field staff telephone farmers and pay them, so they see contact details;
   // they cannot report on a person or erase one.
-  'data-entry': ['document:draft', 'contact:create', 'stock:enter', 'reports:view', 'pii:view'],
+  'data-entry': ['document:draft', 'document:capture', 'contact:create', 'stock:enter', 'reports:view', 'pii:view'],
+  // Staff send documents in from a phone and see nothing.
+  staff: ['document:capture'],
   viewer: ['reports:view'],
 };
 
@@ -93,6 +97,18 @@ describe('role matrix', () => {
     expect(roleHas('data-entry', 'stock:enter')).toBe(true);
     expect(roleHas('data-entry', 'stock:post')).toBe(false);
     expect(roleHas('data-entry', 'inventory:manage')).toBe(false);
+  });
+
+  it('Staff can send a document in from a phone and do nothing else', () => {
+    expect(roleHas('staff', 'document:capture')).toBe(true);
+    expect(permissions.filter((permission) => roleHas('staff', permission))).toEqual(['document:capture']);
+    expect(roleRequiresTwoFactor('staff')).toBe(false);
+  });
+
+  it('every role that can draft a bill can also send one from a phone', () => {
+    for (const role of roles) {
+      if (roleHas(role, 'document:draft')) expect(roleHas(role, 'document:capture')).toBe(true);
+    }
   });
 
   it('a Bookkeeper posts the day to day but does not correct or close', () => {
