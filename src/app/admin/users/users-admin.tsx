@@ -28,6 +28,12 @@ const statusLabels: Record<ManagedUser['status'], string> = {
 export function UsersAdmin({ users, entities }: { users: ManagedUser[]; entities: EntityOption[] }) {
   const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const [pending, startTransition] = useTransition();
+  // Deactivated accounts stay (the audit trail names them) but have a tab of
+  // their own, out of the way until someone needs to look one up or reactivate it.
+  const [tab, setTab] = useState<'current' | 'deactivated'>('current');
+  const current = users.filter((user) => user.status !== 'deactivated');
+  const deactivated = users.filter((user) => user.status === 'deactivated');
+  const shown = tab === 'current' ? current : deactivated;
 
   function run(label: string, action: () => Promise<{ ok: boolean; error?: string }>) {
     startTransition(async () => {
@@ -61,8 +67,34 @@ export function UsersAdmin({ users, entities }: { users: ManagedUser[]; entities
 
       <InviteForm entities={entities} pending={pending} onInvite={(input) => run(`Invitation sent to ${input.email}.`, () => inviteUser(input))} />
 
+      <div className="flex gap-1 border-b border-slate-200" role="tablist">
+        {(
+          [
+            ['current', `Users (${current.length})`],
+            ['deactivated', `Deactivated (${deactivated.length})`],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={tab === key}
+            onClick={() => setTab(key)}
+            className={[
+              '-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors duration-150 ease-out',
+              tab === key ? 'border-brand-700 text-brand-800' : 'border-transparent text-slate-500 hover:text-slate-900',
+            ].join(' ')}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       <div className="space-y-3">
-        {users.map((user) => (
+        {shown.length === 0 ? (
+          <p className="text-sm text-slate-500">{tab === 'current' ? 'No users yet.' : 'Nobody has been deactivated.'}</p>
+        ) : null}
+        {shown.map((user) => (
           <UserRow
             key={user.id}
             user={user}
