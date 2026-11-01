@@ -1,3 +1,4 @@
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
 import { AppShell } from '@/components/app/app-shell';
@@ -5,6 +6,7 @@ import { SignOutButton } from '@/components/auth/sign-out-button';
 import { can, mustSetUpTwoFactor } from '@/lib/authz';
 import { getPrincipal } from '@/lib/dal';
 import { loadInitialData } from '@/lib/data/documents';
+import { entityCookie } from '@/lib/entity-cookie';
 import { screenOf } from '@/lib/screens';
 
 // Everything on this page is per-user and per-request. No caching, no
@@ -31,7 +33,12 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     return <NoEntityAccess name={principal.name} />;
   }
 
-  return <AppShell initialData={initialData} />;
+  // The company last chosen, so a refresh stays on it. Only an entity this
+  // person may still see is honoured; anything else falls back to the first.
+  const remembered = (await cookies()).get(entityCookie)?.value;
+  const initialEntityId = initialData.entities.some((entity) => entity.id === remembered) ? remembered : undefined;
+
+  return <AppShell initialData={initialData} initialEntityId={initialEntityId} />;
 }
 
 function NoEntityAccess({ name }: { name: string }) {

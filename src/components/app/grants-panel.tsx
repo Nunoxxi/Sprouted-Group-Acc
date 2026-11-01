@@ -266,8 +266,8 @@ export function GrantsPanel({ entity, grants, actuals, inKind, staffTime, contac
 
       {grants.length > 1 || grant ? (
         <div className="flex flex-wrap items-center gap-2">
-          <label className="text-sm text-slate-600">Grant</label>
-          <select className="min-h-[40px] rounded-lg border border-slate-200 bg-white px-3 text-sm" value={grant?.id ?? ''} onChange={(event) => setSelectedId(event.target.value)}>
+          <label htmlFor="grant-picker" className="text-sm text-slate-600">Grant</label>
+          <select id="grant-picker" className="min-h-[40px] rounded-lg border border-slate-200 bg-white px-3 text-sm" value={grant?.id ?? ''} onChange={(event) => setSelectedId(event.target.value)}>
             {grants.map((row) => (
               <option key={row.id} value={row.id}>
                 {row.code} — {row.name} ({row.status})
@@ -296,15 +296,15 @@ export function GrantsPanel({ entity, grants, actuals, inKind, staffTime, contac
           <div className="mt-4 grid gap-4 md:grid-cols-3">
             <div>
               <label className={label}>Reference</label>
-              <Input value={grantForm.code} onChange={(e) => setGrantForm((f) => ({ ...f, code: e.target.value }))} placeholder="GRT-2026-01" />
+              <Input aria-label="Reference" value={grantForm.code} onChange={(e) => setGrantForm((f) => ({ ...f, code: e.target.value }))} placeholder="GRT-2026-01" />
             </div>
             <div className="md:col-span-2">
               <label className={label}>Name</label>
-              <Input value={grantForm.name} onChange={(e) => setGrantForm((f) => ({ ...f, name: e.target.value }))} placeholder="Cashew farmer livelihoods" />
+              <Input aria-label="Name" value={grantForm.name} onChange={(e) => setGrantForm((f) => ({ ...f, name: e.target.value }))} placeholder="Cashew farmer livelihoods" />
             </div>
             <div>
               <label className={label}>Donor</label>
-              <select className={selectClass} value={grantForm.donorContactId} onChange={(e) => setGrantForm((f) => ({ ...f, donorContactId: e.target.value }))}>
+              <select aria-label="Donor" className={selectClass} value={grantForm.donorContactId} onChange={(e) => setGrantForm((f) => ({ ...f, donorContactId: e.target.value }))}>
                 <option value="">Choose…</option>
                 {donors.map((contact) => (
                   <option key={contact.id} value={contact.id}>
@@ -315,7 +315,7 @@ export function GrantsPanel({ entity, grants, actuals, inKind, staffTime, contac
             </div>
             <div>
               <label className={label}>Fund</label>
-              <select className={selectClass} value={grantForm.fundId} onChange={(e) => setGrantForm((f) => ({ ...f, fundId: e.target.value }))}>
+              <select aria-label="Fund" className={selectClass} value={grantForm.fundId} onChange={(e) => setGrantForm((f) => ({ ...f, fundId: e.target.value }))}>
                 <option value="">None</option>
                 {funds.map((fund) => (
                   <option key={fund.id} value={fund.id}>
@@ -327,14 +327,14 @@ export function GrantsPanel({ entity, grants, actuals, inKind, staffTime, contac
             </div>
             <div>
               <label className={label}>Restricted?</label>
-              <select className={selectClass} value={grantForm.restricted ? 'yes' : 'no'} onChange={(e) => setGrantForm((f) => ({ ...f, restricted: e.target.value === 'yes' }))}>
+              <select aria-label="Restricted?" className={selectClass} value={grantForm.restricted ? 'yes' : 'no'} onChange={(e) => setGrantForm((f) => ({ ...f, restricted: e.target.value === 'yes' }))}>
                 <option value="yes">Restricted — for this purpose only</option>
                 <option value="no">Unrestricted</option>
               </select>
             </div>
             <div>
               <label className={label}>Donor currency</label>
-              <select className={selectClass} value={grantForm.currency} onChange={(e) => setGrantForm((f) => ({ ...f, currency: e.target.value as Currency }))}>
+              <select aria-label="Donor currency" className={selectClass} value={grantForm.currency} onChange={(e) => setGrantForm((f) => ({ ...f, currency: e.target.value as Currency }))}>
                 {currencies.map((currency) => (
                   <option key={currency} value={currency}>
                     {currency}
@@ -344,7 +344,7 @@ export function GrantsPanel({ entity, grants, actuals, inKind, staffTime, contac
             </div>
             <div>
               <label className={label}>Award</label>
-              <Input inputMode="decimal" value={grantForm.amount} onChange={(e) => setGrantForm((f) => ({ ...f, amount: e.target.value }))} placeholder="80000.00" />
+              <Input aria-label="Award" inputMode="decimal" value={grantForm.amount} onChange={(e) => setGrantForm((f) => ({ ...f, amount: e.target.value }))} placeholder="80000.00" />
             </div>
             <div>
               <label className={label}>Rate ({entity.functionalCurrency} per 1 {grantForm.currency})</label>
@@ -352,15 +352,15 @@ export function GrantsPanel({ entity, grants, actuals, inKind, staffTime, contac
             </div>
             <div>
               <label className={label}>Starts</label>
-              <Input type="date" value={grantForm.startDate} onChange={(e) => setGrantForm((f) => ({ ...f, startDate: e.target.value }))} />
+              <Input aria-label="Starts" type="date" value={grantForm.startDate} onChange={(e) => setGrantForm((f) => ({ ...f, startDate: e.target.value }))} />
             </div>
             <div>
               <label className={label}>Ends</label>
-              <Input type="date" value={grantForm.endDate} onChange={(e) => setGrantForm((f) => ({ ...f, endDate: e.target.value }))} />
+              <Input aria-label="Ends" type="date" value={grantForm.endDate} onChange={(e) => setGrantForm((f) => ({ ...f, endDate: e.target.value }))} />
             </div>
             <div>
               <label className={label}>Income recognition</label>
-              <select className={selectClass} value={grantForm.incomePolicy} onChange={(e) => setGrantForm((f) => ({ ...f, incomePolicy: e.target.value as IncomePolicy }))}>
+              <select aria-label="Income recognition" className={selectClass} value={grantForm.incomePolicy} onChange={(e) => setGrantForm((f) => ({ ...f, incomePolicy: e.target.value as IncomePolicy }))}>
                 {incomePolicies.map((policy) => (
                   <option key={policy} value={policy}>
                     {incomePolicyLabels[policy]}
@@ -371,7 +371,7 @@ export function GrantsPanel({ entity, grants, actuals, inKind, staffTime, contac
             </div>
             <div>
               <label className={label}>Reporting</label>
-              <select className={selectClass} value={grantForm.reportingFrequency} onChange={(e) => setGrantForm((f) => ({ ...f, reportingFrequency: e.target.value as ReportingFrequency }))}>
+              <select aria-label="Reporting" className={selectClass} value={grantForm.reportingFrequency} onChange={(e) => setGrantForm((f) => ({ ...f, reportingFrequency: e.target.value as ReportingFrequency }))}>
                 {reportingFrequencies.map((frequency) => (
                   <option key={frequency} value={frequency}>
                     {reportingFrequencyLabels[frequency]}
@@ -381,21 +381,21 @@ export function GrantsPanel({ entity, grants, actuals, inKind, staffTime, contac
             </div>
             <div>
               <label className={label}>Their periods start</label>
-              <Input type="date" value={grantForm.reportingStartDate} onChange={(e) => setGrantForm((f) => ({ ...f, reportingStartDate: e.target.value }))} />
+              <Input aria-label="Their periods start" type="date" value={grantForm.reportingStartDate} onChange={(e) => setGrantForm((f) => ({ ...f, reportingStartDate: e.target.value }))} />
               <p className="mt-1 text-xs text-slate-500">Leave blank to run from the grant start. Never our year end.</p>
             </div>
             <div>
               <label className={label}>Report due, days after</label>
-              <Input inputMode="numeric" value={grantForm.reportingDueDays} onChange={(e) => setGrantForm((f) => ({ ...f, reportingDueDays: e.target.value }))} />
+              <Input aria-label="Report due, days after" inputMode="numeric" value={grantForm.reportingDueDays} onChange={(e) => setGrantForm((f) => ({ ...f, reportingDueDays: e.target.value }))} />
             </div>
             <div>
               <label className={label}>Flag underspend below</label>
-              <Input inputMode="numeric" value={grantForm.underspendThresholdPct} onChange={(e) => setGrantForm((f) => ({ ...f, underspendThresholdPct: e.target.value }))} />
+              <Input aria-label="Flag underspend below" inputMode="numeric" value={grantForm.underspendThresholdPct} onChange={(e) => setGrantForm((f) => ({ ...f, underspendThresholdPct: e.target.value }))} />
               <p className="mt-1 text-xs text-slate-500">% of what the elapsed time suggests should have been spent.</p>
             </div>
             <div className="md:col-span-3">
               <label className={label}>Note</label>
-              <Input value={grantForm.note} onChange={(e) => setGrantForm((f) => ({ ...f, note: e.target.value }))} />
+              <Input aria-label="Note" value={grantForm.note} onChange={(e) => setGrantForm((f) => ({ ...f, note: e.target.value }))} />
             </div>
           </div>
           <div className="mt-4 flex gap-2">
@@ -409,9 +409,14 @@ export function GrantsPanel({ entity, grants, actuals, inKind, staffTime, contac
         </Card>
       ) : null}
 
-      {!grant ? (
+      {!grant && !editing ? (
         <Card className="rounded-2xl">
           <p className="text-sm text-slate-600">No grants yet. Add the first one to start tracking a donor&rsquo;s budget.</p>
+          {allowed('document:post') ? (
+            <Button className="mt-4" size="sm" onClick={() => { setGrantForm(emptyGrant); setEditing(true); }}>
+              New grant
+            </Button>
+          ) : null}
         </Card>
       ) : null}
 
@@ -509,11 +514,11 @@ export function GrantsPanel({ entity, grants, actuals, inKind, staffTime, contac
               <div className="flex flex-wrap items-end gap-2">
                 <div>
                   <label className={label}>From</label>
-                  <Input type="date" value={reportWindow.from} onChange={(e) => setReportWindow((w) => ({ ...w, from: e.target.value }))} />
+                  <Input aria-label="From" type="date" value={reportWindow.from} onChange={(e) => setReportWindow((w) => ({ ...w, from: e.target.value }))} />
                 </div>
                 <div>
                   <label className={label}>To</label>
-                  <Input type="date" value={reportWindow.to} onChange={(e) => setReportWindow((w) => ({ ...w, to: e.target.value }))} />
+                  <Input aria-label="To" type="date" value={reportWindow.to} onChange={(e) => setReportWindow((w) => ({ ...w, to: e.target.value }))} />
                 </div>
                 <Button
                   size="sm"
@@ -659,15 +664,15 @@ export function GrantsPanel({ entity, grants, actuals, inKind, staffTime, contac
               <div className="mt-4 grid gap-4 md:grid-cols-5">
                 <div>
                   <label className={label}>Reference</label>
-                  <Input value={budgetForm.code} onChange={(e) => setBudgetForm((f) => ({ ...f, code: e.target.value }))} placeholder="B1" />
+                  <Input aria-label="Reference" value={budgetForm.code} onChange={(e) => setBudgetForm((f) => ({ ...f, code: e.target.value }))} placeholder="B1" />
                 </div>
                 <div className="md:col-span-2">
                   <label className={label}>Description</label>
-                  <Input value={budgetForm.name} onChange={(e) => setBudgetForm((f) => ({ ...f, name: e.target.value }))} placeholder="Farmer training" />
+                  <Input aria-label="Description" value={budgetForm.name} onChange={(e) => setBudgetForm((f) => ({ ...f, name: e.target.value }))} placeholder="Farmer training" />
                 </div>
                 <div>
                   <label className={label}>Account</label>
-                  <select className={selectClass} value={budgetForm.accountCode} onChange={(e) => setBudgetForm((f) => ({ ...f, accountCode: e.target.value }))}>
+                  <select aria-label="Account" className={selectClass} value={budgetForm.accountCode} onChange={(e) => setBudgetForm((f) => ({ ...f, accountCode: e.target.value }))}>
                     <option value="">Choose…</option>
                     {expenseAccounts.map((account) => (
                       <option key={account.code} value={account.code}>
@@ -716,15 +721,15 @@ export function GrantsPanel({ entity, grants, actuals, inKind, staffTime, contac
               <div className="mt-4 grid gap-4 md:grid-cols-4">
                 <div>
                   <label className={label}>Date</label>
-                  <Input type="date" value={receiptForm.date} onChange={(e) => setReceiptForm((f) => ({ ...f, date: e.target.value }))} />
+                  <Input aria-label="Date" type="date" value={receiptForm.date} onChange={(e) => setReceiptForm((f) => ({ ...f, date: e.target.value }))} />
                 </div>
                 <div>
                   <label className={label}>Amount</label>
-                  <Input inputMode="decimal" value={receiptForm.amount} onChange={(e) => setReceiptForm((f) => ({ ...f, amount: e.target.value }))} />
+                  <Input aria-label="Amount" inputMode="decimal" value={receiptForm.amount} onChange={(e) => setReceiptForm((f) => ({ ...f, amount: e.target.value }))} />
                 </div>
                 <div>
                   <label className={label}>Into</label>
-                  <select className={selectClass} value={receiptForm.bankAccountId} onChange={(e) => setReceiptForm((f) => ({ ...f, bankAccountId: e.target.value }))}>
+                  <select aria-label="Into" className={selectClass} value={receiptForm.bankAccountId} onChange={(e) => setReceiptForm((f) => ({ ...f, bankAccountId: e.target.value }))}>
                     {bankAccounts.map((account) => (
                       <option key={account.id} value={account.id}>
                         {account.name} ({account.currency})
@@ -734,7 +739,7 @@ export function GrantsPanel({ entity, grants, actuals, inKind, staffTime, contac
                 </div>
                 <div>
                   <label className={label}>Reference</label>
-                  <Input value={receiptForm.reference} onChange={(e) => setReceiptForm((f) => ({ ...f, reference: e.target.value }))} />
+                  <Input aria-label="Reference" value={receiptForm.reference} onChange={(e) => setReceiptForm((f) => ({ ...f, reference: e.target.value }))} />
                 </div>
               </div>
               <p className="mt-2 text-xs text-slate-500">The amount is in the account&rsquo;s own currency; it converts at the grant&rsquo;s rate.</p>
@@ -774,11 +779,11 @@ export function GrantsPanel({ entity, grants, actuals, inKind, staffTime, contac
               <div className="mt-4 grid gap-4 md:grid-cols-4">
                 <div>
                   <label className={label}>Date</label>
-                  <Input type="date" value={releaseForm.date} onChange={(e) => setReleaseForm((f) => ({ ...f, date: e.target.value }))} />
+                  <Input aria-label="Date" type="date" value={releaseForm.date} onChange={(e) => setReleaseForm((f) => ({ ...f, date: e.target.value }))} />
                 </div>
                 <div>
                   <label className={label}>Because</label>
-                  <select className={selectClass} value={releaseForm.basis} onChange={(e) => setReleaseForm((f) => ({ ...f, basis: e.target.value as 'spending' | 'condition' }))}>
+                  <select aria-label="Because" className={selectClass} value={releaseForm.basis} onChange={(e) => setReleaseForm((f) => ({ ...f, basis: e.target.value as 'spending' | 'condition' }))}>
                     <option value="spending">Eligible spending happened</option>
                     <option value="condition">A condition was met</option>
                   </select>
@@ -787,7 +792,7 @@ export function GrantsPanel({ entity, grants, actuals, inKind, staffTime, contac
                   <>
                     <div>
                       <label className={label}>Condition</label>
-                      <select className={selectClass} value={releaseForm.conditionId} onChange={(e) => setReleaseForm((f) => ({ ...f, conditionId: e.target.value }))}>
+                      <select aria-label="Condition" className={selectClass} value={releaseForm.conditionId} onChange={(e) => setReleaseForm((f) => ({ ...f, conditionId: e.target.value }))}>
                         <option value="">Choose…</option>
                         {grant.conditions.filter((condition) => condition.metAt).map((condition) => (
                           <option key={condition.id} value={condition.id}>
@@ -940,15 +945,15 @@ export function GrantsPanel({ entity, grants, actuals, inKind, staffTime, contac
               <div className="mt-4 grid gap-4 md:grid-cols-4">
                 <div className="md:col-span-2">
                   <label className={label}>What the donor requires</label>
-                  <Input value={conditionForm.description} onChange={(e) => setConditionForm((f) => ({ ...f, description: e.target.value }))} placeholder="Baseline survey delivered" />
+                  <Input aria-label="What the donor requires" value={conditionForm.description} onChange={(e) => setConditionForm((f) => ({ ...f, description: e.target.value }))} placeholder="Baseline survey delivered" />
                 </div>
                 <div>
                   <label className={label}>Due</label>
-                  <Input type="date" value={conditionForm.dueDate} onChange={(e) => setConditionForm((f) => ({ ...f, dueDate: e.target.value }))} />
+                  <Input aria-label="Due" type="date" value={conditionForm.dueDate} onChange={(e) => setConditionForm((f) => ({ ...f, dueDate: e.target.value }))} />
                 </div>
                 <div>
                   <label className={label}>Note</label>
-                  <Input value={conditionForm.note} onChange={(e) => setConditionForm((f) => ({ ...f, note: e.target.value }))} />
+                  <Input aria-label="Note" value={conditionForm.note} onChange={(e) => setConditionForm((f) => ({ ...f, note: e.target.value }))} />
                 </div>
               </div>
               <div className="mt-4">
@@ -979,15 +984,15 @@ export function GrantsPanel({ entity, grants, actuals, inKind, staffTime, contac
               <div className="mt-4 grid gap-4 md:grid-cols-3">
                 <div>
                   <label className={label}>Date</label>
-                  <Input type="date" value={inKindForm.date} onChange={(e) => setInKindForm((f) => ({ ...f, date: e.target.value }))} />
+                  <Input aria-label="Date" type="date" value={inKindForm.date} onChange={(e) => setInKindForm((f) => ({ ...f, date: e.target.value }))} />
                 </div>
                 <div className="md:col-span-2">
                   <label className={label}>What was given</label>
-                  <Input value={inKindForm.description} onChange={(e) => setInKindForm((f) => ({ ...f, description: e.target.value }))} placeholder="200 seedling trays from the district assembly" />
+                  <Input aria-label="What was given" value={inKindForm.description} onChange={(e) => setInKindForm((f) => ({ ...f, description: e.target.value }))} placeholder="200 seedling trays from the district assembly" />
                 </div>
                 <div>
                   <label className={label}>Kind</label>
-                  <select className={selectClass} value={inKindForm.kind} onChange={(e) => setInKindForm((f) => ({ ...f, kind: e.target.value as InKindKind }))}>
+                  <select aria-label="Kind" className={selectClass} value={inKindForm.kind} onChange={(e) => setInKindForm((f) => ({ ...f, kind: e.target.value as InKindKind }))}>
                     {inKindKinds.map((kind) => (
                       <option key={kind} value={kind}>
                         {inKindKindLabels[kind]}
@@ -1001,7 +1006,7 @@ export function GrantsPanel({ entity, grants, actuals, inKind, staffTime, contac
                 </div>
                 <div>
                   <label className={label}>Budget line</label>
-                  <select className={selectClass} value={inKindForm.budgetLineId} onChange={(e) => setInKindForm((f) => ({ ...f, budgetLineId: e.target.value }))}>
+                  <select aria-label="Budget line" className={selectClass} value={inKindForm.budgetLineId} onChange={(e) => setInKindForm((f) => ({ ...f, budgetLineId: e.target.value }))}>
                     <option value="">None</option>
                     {grant.budgetLines.map((line) => (
                       <option key={line.id} value={line.id}>
@@ -1012,7 +1017,7 @@ export function GrantsPanel({ entity, grants, actuals, inKind, staffTime, contac
                 </div>
                 <div>
                   <label className={label}>Given by</label>
-                  <select className={selectClass} value={inKindForm.donorContactId} onChange={(e) => setInKindForm((f) => ({ ...f, donorContactId: e.target.value }))}>
+                  <select aria-label="Given by" className={selectClass} value={inKindForm.donorContactId} onChange={(e) => setInKindForm((f) => ({ ...f, donorContactId: e.target.value }))}>
                     <option value="">Not recorded</option>
                     {donors.map((contact) => (
                       <option key={contact.id} value={contact.id}>
@@ -1023,7 +1028,7 @@ export function GrantsPanel({ entity, grants, actuals, inKind, staffTime, contac
                 </div>
                 <div className="md:col-span-2">
                   <label className={label}>How it was valued</label>
-                  <Input value={inKindForm.basis} onChange={(e) => setInKindForm((f) => ({ ...f, basis: e.target.value }))} placeholder="Local market price, three quotes" />
+                  <Input aria-label="How it was valued" value={inKindForm.basis} onChange={(e) => setInKindForm((f) => ({ ...f, basis: e.target.value }))} placeholder="Local market price, three quotes" />
                 </div>
               </div>
               <div className="mt-4">
@@ -1081,23 +1086,23 @@ export function GrantsPanel({ entity, grants, actuals, inKind, staffTime, contac
               <div className="mt-4 grid gap-4 md:grid-cols-4">
                 <div>
                   <label className={label}>Person</label>
-                  <Input value={timeForm.personName} onChange={(e) => setTimeForm((f) => ({ ...f, personName: e.target.value }))} />
+                  <Input aria-label="Person" value={timeForm.personName} onChange={(e) => setTimeForm((f) => ({ ...f, personName: e.target.value }))} />
                 </div>
                 <div>
                   <label className={label}>Role</label>
-                  <Input value={timeForm.role} onChange={(e) => setTimeForm((f) => ({ ...f, role: e.target.value }))} />
+                  <Input aria-label="Role" value={timeForm.role} onChange={(e) => setTimeForm((f) => ({ ...f, role: e.target.value }))} />
                 </div>
                 <div>
                   <label className={label}>From</label>
-                  <Input type="date" value={timeForm.periodStart} onChange={(e) => setTimeForm((f) => ({ ...f, periodStart: e.target.value }))} />
+                  <Input aria-label="From" type="date" value={timeForm.periodStart} onChange={(e) => setTimeForm((f) => ({ ...f, periodStart: e.target.value }))} />
                 </div>
                 <div>
                   <label className={label}>To</label>
-                  <Input type="date" value={timeForm.periodEnd} onChange={(e) => setTimeForm((f) => ({ ...f, periodEnd: e.target.value }))} />
+                  <Input aria-label="To" type="date" value={timeForm.periodEnd} onChange={(e) => setTimeForm((f) => ({ ...f, periodEnd: e.target.value }))} />
                 </div>
                 <div>
                   <label className={label}>Hours</label>
-                  <Input inputMode="decimal" value={timeForm.hours} onChange={(e) => setTimeForm((f) => ({ ...f, hours: e.target.value }))} />
+                  <Input aria-label="Hours" inputMode="decimal" value={timeForm.hours} onChange={(e) => setTimeForm((f) => ({ ...f, hours: e.target.value }))} />
                 </div>
                 <div>
                   <label className={label}>Rate per hour ({entity.functionalCurrency})</label>
@@ -1105,7 +1110,7 @@ export function GrantsPanel({ entity, grants, actuals, inKind, staffTime, contac
                 </div>
                 <div>
                   <label className={label}>Salary account</label>
-                  <select className={selectClass} value={timeForm.accountCode} onChange={(e) => setTimeForm((f) => ({ ...f, accountCode: e.target.value }))}>
+                  <select aria-label="Salary account" className={selectClass} value={timeForm.accountCode} onChange={(e) => setTimeForm((f) => ({ ...f, accountCode: e.target.value }))}>
                     <option value="">Choose…</option>
                     {expenseAccounts.map((account) => (
                       <option key={account.code} value={account.code}>
@@ -1116,7 +1121,7 @@ export function GrantsPanel({ entity, grants, actuals, inKind, staffTime, contac
                 </div>
                 <div>
                   <label className={label}>Budget line</label>
-                  <select className={selectClass} value={timeForm.budgetLineId} onChange={(e) => setTimeForm((f) => ({ ...f, budgetLineId: e.target.value }))}>
+                  <select aria-label="Budget line" className={selectClass} value={timeForm.budgetLineId} onChange={(e) => setTimeForm((f) => ({ ...f, budgetLineId: e.target.value }))}>
                     <option value="">None</option>
                     {grant.budgetLines.map((line) => (
                       <option key={line.id} value={line.id}>
@@ -1127,7 +1132,7 @@ export function GrantsPanel({ entity, grants, actuals, inKind, staffTime, contac
                 </div>
                 <div>
                   <label className={label}>Put it in the accounts?</label>
-                  <select className={selectClass} value={timeForm.post ? 'yes' : 'no'} onChange={(e) => setTimeForm((f) => ({ ...f, post: e.target.value === 'yes' }))}>
+                  <select aria-label="Put it in the accounts?" className={selectClass} value={timeForm.post ? 'yes' : 'no'} onChange={(e) => setTimeForm((f) => ({ ...f, post: e.target.value === 'yes' }))}>
                     <option value="yes">Charge it to the grant</option>
                     <option value="no">Report it only</option>
                   </select>

@@ -311,7 +311,8 @@ model User {
   editedDocs             Document[]              @relation("DocumentEditedBy")
   filings                TaxPeriodFiling[]
   exchangeRates          ExchangeRate[]
-  payments               Payment[]
+  payments               Payment[]               @relation("PaymentRecordedBy")
+  reversedPayments       Payment[]               @relation("PaymentReversedBy")
   revaluations           Revaluation[]           @relation("RevaluationRunBy")
   reversedRevaluations   Revaluation[]           @relation("RevaluationReversedBy")
   stockMovements         StockMovement[]
@@ -523,7 +524,8 @@ model JournalEntry {
   reversedBy            JournalEntry?          @relation("Reversal")
   postedDocument        Document?              @relation("DocumentPosting")
   voidedDocument        Document?              @relation("DocumentVoid")
-  payment               Payment?
+  payment               Payment?               @relation("PaymentEntry")
+  paymentReversal       Payment?               @relation("PaymentReversal")
   revaluation           Revaluation?           @relation("RevaluationEntry")
   revaluationReversal   Revaluation?           @relation("RevaluationReversal")
   stockMovements        StockMovement[]
@@ -900,7 +902,7 @@ model BankAccount {
 }
 
 model Payment {
-  id                  String   @id @default(cuid())
+  id                  String    @id @default(cuid())
   entityId            String
   documentId          String
   bankAccountId       String
@@ -908,7 +910,7 @@ model Payment {
   /// Settled amount in the document's currency.
   txnAmountMinor      BigInt
   /// Settlement rate: functional per 1 unit of document currency.
-  rate                Decimal  @db.Decimal(20, 10)
+  rate                Decimal   @db.Decimal(20, 10)
   /// What hit the bank, in the bank's currency.
   bankAmountMinor     BigInt
   bankFunctionalMinor BigInt
@@ -916,15 +918,22 @@ model Payment {
   reliefMinor         BigInt
   /// Positive = realised gain, negative = loss, functional currency.
   gainLossMinor       BigInt
-  journalEntryId      String   @unique
+  journalEntryId      String    @unique
+  /// Set when the payment was reversed: a mirror-image journal dated the day
+  /// it was reversed. The payment row and its journal stay as the record.
+  reversalEntryId     String?   @unique
   recordedById        String?
-  createdAt           DateTime @default(now())
+  reversedById        String?
+  createdAt           DateTime  @default(now())
+  reversedAt          DateTime?
 
-  entity       Entity       @relation(fields: [entityId], references: [id])
-  document     Document     @relation(fields: [documentId], references: [id])
-  bankAccount  BankAccount  @relation(fields: [bankAccountId], references: [id])
-  journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id])
-  recordedBy   User?        @relation(fields: [recordedById], references: [id])
+  entity        Entity        @relation(fields: [entityId], references: [id])
+  document      Document      @relation(fields: [documentId], references: [id])
+  bankAccount   BankAccount   @relation(fields: [bankAccountId], references: [id])
+  journalEntry  JournalEntry  @relation("PaymentEntry", fields: [journalEntryId], references: [id])
+  reversalEntry JournalEntry? @relation("PaymentReversal", fields: [reversalEntryId], references: [id])
+  recordedBy    User?         @relation("PaymentRecordedBy", fields: [recordedById], references: [id])
+  reversedBy    User?         @relation("PaymentReversedBy", fields: [reversedById], references: [id])
 
   @@index([entityId, documentId])
   @@index([entityId, date])
@@ -2990,40 +2999,40 @@ model PayRun {
 
 /// One employee in one pay run: what went in, what came out, and the working.
 model PayRunLine {
-  id                   String  @id @default(cuid())
+  id                   String    @id @default(cuid())
   entityId             String
   runId                String
   employeeId           String
   /// Entered for this period only.
-  bonusInputMinor      BigInt  @default(0)
-  overtimeInputMinor   BigInt  @default(0)
+  bonusInputMinor      BigInt    @default(0)
+  overtimeInputMinor   BigInt    @default(0)
   /// Why this employee could not be calculated, e.g. a casual worker. Blocks approval.
   error                String?
   /// The PayInput and project split used, as JSON: what a re-run starts from.
   inputsJson           String?
   /// The full PayResult with its working and the rates used, as JSON.
   resultJson           String?
-  daysEmployed         Int     @default(0)
-  basicMinor           BigInt  @default(0)
-  allowancesMinor      BigInt  @default(0)
-  nonTaxableMinor      BigInt  @default(0)
-  bonusMinor           BigInt  @default(0)
-  overtimeMinor        BigInt  @default(0)
-  grossMinor           BigInt  @default(0)
-  ssnitBaseMinor       BigInt  @default(0)
-  employeeSsnitMinor   BigInt  @default(0)
-  tier3Minor           BigInt  @default(0)
-  benefitsMinor        BigInt  @default(0)
-  reliefsMinor         BigInt  @default(0)
-  chargeableMinor      BigInt  @default(0)
-  payeMinor            BigInt  @default(0)
-  bonusTaxMinor        BigInt  @default(0)
-  overtimeTaxMinor     BigInt  @default(0)
-  bonusConcessionMinor BigInt  @default(0)
-  deductionsMinor      BigInt  @default(0)
-  netMinor             BigInt  @default(0)
-  employerSsnitMinor   BigInt  @default(0)
-  employerTier2Minor   BigInt  @default(0)
+  daysEmployed         Int       @default(0)
+  basicMinor           BigInt    @default(0)
+  allowancesMinor      BigInt    @default(0)
+  nonTaxableMinor      BigInt    @default(0)
+  bonusMinor           BigInt    @default(0)
+  overtimeMinor        BigInt    @default(0)
+  grossMinor           BigInt    @default(0)
+  ssnitBaseMinor       BigInt    @default(0)
+  employeeSsnitMinor   BigInt    @default(0)
+  tier3Minor           BigInt    @default(0)
+  benefitsMinor        BigInt    @default(0)
+  reliefsMinor         BigInt    @default(0)
+  chargeableMinor      BigInt    @default(0)
+  payeMinor            BigInt    @default(0)
+  bonusTaxMinor        BigInt    @default(0)
+  overtimeTaxMinor     BigInt    @default(0)
+  bonusConcessionMinor BigInt    @default(0)
+  deductionsMinor      BigInt    @default(0)
+  netMinor             BigInt    @default(0)
+  employerSsnitMinor   BigInt    @default(0)
+  employerTier2Minor   BigInt    @default(0)
   /// When the payslip was last emailed to the employee. Null until it is.
   payslipEmailedAt     DateTime?
 

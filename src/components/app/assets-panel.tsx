@@ -357,15 +357,15 @@ export function AssetsPanel({ entity, assets, runs, classes, taxYears, contacts,
               <div className="mt-4 grid gap-4 md:grid-cols-4">
                 <div>
                   <label className={label}>Date</label>
-                  <Input type="date" value={disposalForm.date} onChange={(e) => setDisposalForm((f) => ({ ...f, date: e.target.value }))} />
+                  <Input aria-label="Date" type="date" value={disposalForm.date} onChange={(e) => setDisposalForm((f) => ({ ...f, date: e.target.value }))} />
                 </div>
                 <div>
                   <label className={label}>Proceeds</label>
-                  <Input inputMode="decimal" value={disposalForm.proceeds} onChange={(e) => setDisposalForm((f) => ({ ...f, proceeds: e.target.value }))} placeholder="0.00 if scrapped" />
+                  <Input aria-label="Proceeds" inputMode="decimal" value={disposalForm.proceeds} onChange={(e) => setDisposalForm((f) => ({ ...f, proceeds: e.target.value }))} placeholder="0.00 if scrapped" />
                 </div>
                 <div>
                   <label className={label}>Into</label>
-                  <select className={selectClass} value={disposalForm.bankAccountId} onChange={(e) => setDisposalForm((f) => ({ ...f, bankAccountId: e.target.value }))}>
+                  <select aria-label="Into" className={selectClass} value={disposalForm.bankAccountId} onChange={(e) => setDisposalForm((f) => ({ ...f, bankAccountId: e.target.value }))}>
                     {bankAccounts.map((account) => (
                       <option key={account.id} value={account.id}>
                         {account.name}
@@ -375,7 +375,7 @@ export function AssetsPanel({ entity, assets, runs, classes, taxYears, contacts,
                 </div>
                 <div>
                   <label className={label}>Note</label>
-                  <Input value={disposalForm.note} onChange={(e) => setDisposalForm((f) => ({ ...f, note: e.target.value }))} />
+                  <Input aria-label="Note" value={disposalForm.note} onChange={(e) => setDisposalForm((f) => ({ ...f, note: e.target.value }))} />
                 </div>
               </div>
               <div className="mt-4 flex gap-2">
@@ -412,32 +412,32 @@ export function AssetsPanel({ entity, assets, runs, classes, taxYears, contacts,
               <div className="mt-4 grid gap-4 md:grid-cols-4">
                 <div>
                   <label className={label}>Reference</label>
-                  <Input value={assetForm.code} onChange={(e) => setAssetForm((f) => ({ ...f, code: e.target.value }))} placeholder="VEH-001" />
+                  <Input aria-label="Reference" value={assetForm.code} onChange={(e) => setAssetForm((f) => ({ ...f, code: e.target.value }))} placeholder="VEH-001" />
                 </div>
                 <div className="md:col-span-2">
                   <label className={label}>What it is</label>
-                  <Input value={assetForm.description} onChange={(e) => setAssetForm((f) => ({ ...f, description: e.target.value }))} placeholder="Toyota Hilux, GR-1234-26" />
+                  <Input aria-label="What it is" value={assetForm.description} onChange={(e) => setAssetForm((f) => ({ ...f, description: e.target.value }))} placeholder="Toyota Hilux, GR-1234-26" />
                 </div>
                 <div>
                   <label className={label}>Category</label>
-                  <Input value={assetForm.category} onChange={(e) => setAssetForm((f) => ({ ...f, category: e.target.value }))} placeholder="Vehicles" />
+                  <Input aria-label="Category" value={assetForm.category} onChange={(e) => setAssetForm((f) => ({ ...f, category: e.target.value }))} placeholder="Vehicles" />
                 </div>
                 <div>
                   <label className={label}>Bought on</label>
-                  <Input type="date" value={assetForm.purchaseDate} onChange={(e) => setAssetForm((f) => ({ ...f, purchaseDate: e.target.value }))} />
+                  <Input aria-label="Bought on" type="date" value={assetForm.purchaseDate} onChange={(e) => setAssetForm((f) => ({ ...f, purchaseDate: e.target.value }))} />
                 </div>
                 <div>
                   <label className={label}>In service from</label>
-                  <Input type="date" value={assetForm.inServiceDate} onChange={(e) => setAssetForm((f) => ({ ...f, inServiceDate: e.target.value }))} />
+                  <Input aria-label="In service from" type="date" value={assetForm.inServiceDate} onChange={(e) => setAssetForm((f) => ({ ...f, inServiceDate: e.target.value }))} />
                   <p className="mt-1 text-xs text-slate-500">Blank means the day it was bought.</p>
                 </div>
                 <div>
                   <label className={label}>Cost</label>
-                  <Input inputMode="decimal" value={assetForm.cost} onChange={(e) => setAssetForm((f) => ({ ...f, cost: e.target.value }))} />
+                  <Input aria-label="Cost" inputMode="decimal" value={assetForm.cost} onChange={(e) => setAssetForm((f) => ({ ...f, cost: e.target.value }))} />
                 </div>
                 <div>
                   <label className={label}>Supplier</label>
-                  <select className={selectClass} value={assetForm.supplierContactId} onChange={(e) => setAssetForm((f) => ({ ...f, supplierContactId: e.target.value }))}>
+                  <select aria-label="Supplier" className={selectClass} value={assetForm.supplierContactId} onChange={(e) => setAssetForm((f) => ({ ...f, supplierContactId: e.target.value }))}>
                     <option value="">Not recorded</option>
                     {suppliers.map((contact) => (
                       <option key={contact.id} value={contact.id}>
@@ -448,7 +448,7 @@ export function AssetsPanel({ entity, assets, runs, classes, taxYears, contacts,
                 </div>
                 <div>
                   <label className={label}>How it is written down</label>
-                  <select className={selectClass} value={assetForm.method} onChange={(e) => setAssetForm((f) => ({ ...f, method: e.target.value as DepreciationMethod }))}>
+                  <select aria-label="How it is written down" className={selectClass} value={assetForm.method} onChange={(e) => setAssetForm((f) => ({ ...f, method: e.target.value as DepreciationMethod }))}>
                     {depreciationMethods.map((method) => (
                       <option key={method} value={method}>
                         {depreciationMethodLabels[method]}
@@ -458,29 +458,29 @@ export function AssetsPanel({ entity, assets, runs, classes, taxYears, contacts,
                 </div>
                 <div>
                   <label className={label}>Useful life, months</label>
-                  <Input inputMode="numeric" value={assetForm.usefulLifeMonths} onChange={(e) => setAssetForm((f) => ({ ...f, usefulLifeMonths: e.target.value }))} />
+                  <Input aria-label="Useful life, months" inputMode="numeric" value={assetForm.usefulLifeMonths} onChange={(e) => setAssetForm((f) => ({ ...f, usefulLifeMonths: e.target.value }))} />
                 </div>
                 <div>
                   <label className={label}>Residual value</label>
-                  <Input inputMode="decimal" value={assetForm.residual} onChange={(e) => setAssetForm((f) => ({ ...f, residual: e.target.value }))} placeholder="0.00" />
+                  <Input aria-label="Residual value" inputMode="decimal" value={assetForm.residual} onChange={(e) => setAssetForm((f) => ({ ...f, residual: e.target.value }))} placeholder="0.00" />
                   {assetForm.method === 'reducing-balance' ? <p className="mt-1 text-xs text-slate-500">Reducing balance needs one above zero.</p> : null}
                 </div>
                 <div>
                   <label className={label}>Where it is</label>
-                  <Input value={assetForm.location} onChange={(e) => setAssetForm((f) => ({ ...f, location: e.target.value }))} placeholder="Wenchi depot" />
+                  <Input aria-label="Where it is" value={assetForm.location} onChange={(e) => setAssetForm((f) => ({ ...f, location: e.target.value }))} placeholder="Wenchi depot" />
                 </div>
                 <div>
                   <label className={label}>Who has it</label>
-                  <Input value={assetForm.custodian} onChange={(e) => setAssetForm((f) => ({ ...f, custodian: e.target.value }))} placeholder="Kwesi Mensah" />
+                  <Input aria-label="Who has it" value={assetForm.custodian} onChange={(e) => setAssetForm((f) => ({ ...f, custodian: e.target.value }))} placeholder="Kwesi Mensah" />
                 </div>
                 <div>
                   <label className={label}>Serial or registration</label>
-                  <Input value={assetForm.serialNumber} onChange={(e) => setAssetForm((f) => ({ ...f, serialNumber: e.target.value }))} />
+                  <Input aria-label="Serial or registration" value={assetForm.serialNumber} onChange={(e) => setAssetForm((f) => ({ ...f, serialNumber: e.target.value }))} />
                 </div>
                 {taxed ? (
                   <div>
                     <label className={label}>Capital allowance class</label>
-                    <select className={selectClass} value={assetForm.allowanceClassId} onChange={(e) => setAssetForm((f) => ({ ...f, allowanceClassId: e.target.value }))}>
+                    <select aria-label="Capital allowance class" className={selectClass} value={assetForm.allowanceClassId} onChange={(e) => setAssetForm((f) => ({ ...f, allowanceClassId: e.target.value }))}>
                       <option value="">Not in a class</option>
                       {classes.filter((row) => row.isActive).map((row) => (
                         <option key={row.id} value={row.id}>
@@ -493,7 +493,7 @@ export function AssetsPanel({ entity, assets, runs, classes, taxYears, contacts,
                 {!assetForm.id ? (
                   <div>
                     <label className={label}>Already written off</label>
-                    <Input inputMode="decimal" value={assetForm.openingAccumulated} onChange={(e) => setAssetForm((f) => ({ ...f, openingAccumulated: e.target.value }))} placeholder="0.00" />
+                    <Input aria-label="Already written off" inputMode="decimal" value={assetForm.openingAccumulated} onChange={(e) => setAssetForm((f) => ({ ...f, openingAccumulated: e.target.value }))} placeholder="0.00" />
                     <p className="mt-1 text-xs text-slate-500">For an asset that came in with the opening balances.</p>
                   </div>
                 ) : null}
@@ -552,7 +552,7 @@ export function AssetsPanel({ entity, assets, runs, classes, taxYears, contacts,
               <div className="mt-4 flex flex-wrap items-end gap-3">
                 <div>
                   <label className={label}>Month</label>
-                  <Input value={period} onChange={(e) => setPeriod(e.target.value)} placeholder="2026-09" />
+                  <Input aria-label="Month" value={period} onChange={(e) => setPeriod(e.target.value)} placeholder="2026-09" />
                 </div>
                 <Button size="sm" disabled={pending} onClick={() => run(`Depreciation posted for ${period}.`, () => runDepreciation(entity.id, period))}>
                   Run and post
@@ -655,26 +655,26 @@ export function AssetsPanel({ entity, assets, runs, classes, taxYears, contacts,
               <div className="mt-4 grid gap-4 md:grid-cols-4">
                 <div>
                   <label className={label}>Class</label>
-                  <Input value={classForm.code} onChange={(e) => setClassForm((f) => ({ ...f, code: e.target.value }))} placeholder="1" />
+                  <Input aria-label="Class" value={classForm.code} onChange={(e) => setClassForm((f) => ({ ...f, code: e.target.value }))} placeholder="1" />
                 </div>
                 <div className="md:col-span-2">
                   <label className={label}>What it covers</label>
-                  <Input value={classForm.name} onChange={(e) => setClassForm((f) => ({ ...f, name: e.target.value }))} placeholder="Computers and data handling equipment" />
+                  <Input aria-label="What it covers" value={classForm.name} onChange={(e) => setClassForm((f) => ({ ...f, name: e.target.value }))} placeholder="Computers and data handling equipment" />
                 </div>
                 <div>
                   <label className={label}>Rate, % a year</label>
-                  <Input inputMode="decimal" value={classForm.ratePct} onChange={(e) => setClassForm((f) => ({ ...f, ratePct: e.target.value }))} placeholder="40" />
+                  <Input aria-label="Rate, % a year" inputMode="decimal" value={classForm.ratePct} onChange={(e) => setClassForm((f) => ({ ...f, ratePct: e.target.value }))} placeholder="40" />
                 </div>
                 <div className="md:col-span-2">
                   <label className={label}>How it is written down</label>
-                  <select className={selectClass} value={classForm.method} onChange={(e) => setClassForm((f) => ({ ...f, method: e.target.value as DepreciationMethod }))}>
+                  <select aria-label="How it is written down" className={selectClass} value={classForm.method} onChange={(e) => setClassForm((f) => ({ ...f, method: e.target.value as DepreciationMethod }))}>
                     <option value="reducing-balance">Reducing balance on the pool</option>
                     <option value="straight-line">Straight line on cost</option>
                   </select>
                 </div>
                 <div className="md:col-span-2">
                   <label className={label}>Note</label>
-                  <Input value={classForm.note} onChange={(e) => setClassForm((f) => ({ ...f, note: e.target.value }))} />
+                  <Input aria-label="Note" value={classForm.note} onChange={(e) => setClassForm((f) => ({ ...f, note: e.target.value }))} />
                 </div>
               </div>
               <div className="mt-4 flex gap-2">
@@ -886,7 +886,7 @@ export function AssetsPanel({ entity, assets, runs, classes, taxYears, contacts,
               <div className="mt-4 grid gap-4 md:grid-cols-4">
                 <div>
                   <label className={label}>What kind</label>
-                  <select className={selectClass} value={adjustmentForm.kind} onChange={(e) => setAdjustmentForm((f) => ({ ...f, kind: e.target.value as AdjustmentKind }))}>
+                  <select aria-label="What kind" className={selectClass} value={adjustmentForm.kind} onChange={(e) => setAdjustmentForm((f) => ({ ...f, kind: e.target.value as AdjustmentKind }))}>
                     {adjustmentKinds.map((kind) => (
                       <option key={kind} value={kind}>
                         {adjustmentKindLabels[kind]}
@@ -896,11 +896,11 @@ export function AssetsPanel({ entity, assets, runs, classes, taxYears, contacts,
                 </div>
                 <div className="md:col-span-2">
                   <label className={label}>What it is</label>
-                  <Input value={adjustmentForm.description} onChange={(e) => setAdjustmentForm((f) => ({ ...f, description: e.target.value }))} placeholder="Entertainment" />
+                  <Input aria-label="What it is" value={adjustmentForm.description} onChange={(e) => setAdjustmentForm((f) => ({ ...f, description: e.target.value }))} placeholder="Entertainment" />
                 </div>
                 <div>
                   <label className={label}>Amount</label>
-                  <Input inputMode="decimal" value={adjustmentForm.amount} onChange={(e) => setAdjustmentForm((f) => ({ ...f, amount: e.target.value }))} />
+                  <Input aria-label="Amount" inputMode="decimal" value={adjustmentForm.amount} onChange={(e) => setAdjustmentForm((f) => ({ ...f, amount: e.target.value }))} />
                 </div>
               </div>
               <div className="mt-4">
@@ -926,27 +926,27 @@ export function AssetsPanel({ entity, assets, runs, classes, taxYears, contacts,
               <div className="mt-4 grid gap-4 md:grid-cols-4">
                 <div>
                   <label className={label}>Year</label>
-                  <Input value={yearForm.label} onChange={(e) => setYearForm((f) => ({ ...f, label: e.target.value }))} placeholder="2026" />
+                  <Input aria-label="Year" value={yearForm.label} onChange={(e) => setYearForm((f) => ({ ...f, label: e.target.value }))} placeholder="2026" />
                 </div>
                 <div>
                   <label className={label}>From</label>
-                  <Input type="date" value={yearForm.startDate} onChange={(e) => setYearForm((f) => ({ ...f, startDate: e.target.value }))} />
+                  <Input aria-label="From" type="date" value={yearForm.startDate} onChange={(e) => setYearForm((f) => ({ ...f, startDate: e.target.value }))} />
                 </div>
                 <div>
                   <label className={label}>To</label>
-                  <Input type="date" value={yearForm.endDate} onChange={(e) => setYearForm((f) => ({ ...f, endDate: e.target.value }))} />
+                  <Input aria-label="To" type="date" value={yearForm.endDate} onChange={(e) => setYearForm((f) => ({ ...f, endDate: e.target.value }))} />
                 </div>
                 <div>
                   <label className={label}>Tax rate, %</label>
-                  <Input inputMode="decimal" value={yearForm.ratePct} onChange={(e) => setYearForm((f) => ({ ...f, ratePct: e.target.value }))} placeholder="25" />
+                  <Input aria-label="Tax rate, %" inputMode="decimal" value={yearForm.ratePct} onChange={(e) => setYearForm((f) => ({ ...f, ratePct: e.target.value }))} placeholder="25" />
                 </div>
                 <div>
                   <label className={label}>Losses brought forward</label>
-                  <Input inputMode="decimal" value={yearForm.lossBroughtForward} onChange={(e) => setYearForm((f) => ({ ...f, lossBroughtForward: e.target.value }))} />
+                  <Input aria-label="Losses brought forward" inputMode="decimal" value={yearForm.lossBroughtForward} onChange={(e) => setYearForm((f) => ({ ...f, lossBroughtForward: e.target.value }))} />
                 </div>
                 <div>
                   <label className={label}>Estimated liability</label>
-                  <Input inputMode="decimal" value={yearForm.estimatedLiability} onChange={(e) => setYearForm((f) => ({ ...f, estimatedLiability: e.target.value }))} />
+                  <Input aria-label="Estimated liability" inputMode="decimal" value={yearForm.estimatedLiability} onChange={(e) => setYearForm((f) => ({ ...f, estimatedLiability: e.target.value }))} />
                   <p className="mt-1 text-xs text-slate-500">What the provisional instalments are based on.</p>
                 </div>
               </div>
@@ -1080,7 +1080,7 @@ export function AssetsPanel({ entity, assets, runs, classes, taxYears, contacts,
               <div className="mt-4 grid gap-4 md:grid-cols-5">
                 <div>
                   <label className={label}>Quarter</label>
-                  <select className={selectClass} value={paymentForm.quarter} onChange={(e) => setPaymentForm((f) => ({ ...f, quarter: e.target.value }))}>
+                  <select aria-label="Quarter" className={selectClass} value={paymentForm.quarter} onChange={(e) => setPaymentForm((f) => ({ ...f, quarter: e.target.value }))}>
                     {['1', '2', '3', '4'].map((quarter) => (
                       <option key={quarter} value={quarter}>
                         Q{quarter}
@@ -1090,15 +1090,15 @@ export function AssetsPanel({ entity, assets, runs, classes, taxYears, contacts,
                 </div>
                 <div>
                   <label className={label}>Date</label>
-                  <Input type="date" value={paymentForm.date} onChange={(e) => setPaymentForm((f) => ({ ...f, date: e.target.value }))} />
+                  <Input aria-label="Date" type="date" value={paymentForm.date} onChange={(e) => setPaymentForm((f) => ({ ...f, date: e.target.value }))} />
                 </div>
                 <div>
                   <label className={label}>Amount</label>
-                  <Input inputMode="decimal" value={paymentForm.amount} onChange={(e) => setPaymentForm((f) => ({ ...f, amount: e.target.value }))} />
+                  <Input aria-label="Amount" inputMode="decimal" value={paymentForm.amount} onChange={(e) => setPaymentForm((f) => ({ ...f, amount: e.target.value }))} />
                 </div>
                 <div>
                   <label className={label}>From</label>
-                  <select className={selectClass} value={paymentForm.bankAccountId} onChange={(e) => setPaymentForm((f) => ({ ...f, bankAccountId: e.target.value }))}>
+                  <select aria-label="From" className={selectClass} value={paymentForm.bankAccountId} onChange={(e) => setPaymentForm((f) => ({ ...f, bankAccountId: e.target.value }))}>
                     {bankAccounts.map((account) => (
                       <option key={account.id} value={account.id}>
                         {account.name}
@@ -1108,7 +1108,7 @@ export function AssetsPanel({ entity, assets, runs, classes, taxYears, contacts,
                 </div>
                 <div>
                   <label className={label}>Reference</label>
-                  <Input value={paymentForm.reference} onChange={(e) => setPaymentForm((f) => ({ ...f, reference: e.target.value }))} />
+                  <Input aria-label="Reference" value={paymentForm.reference} onChange={(e) => setPaymentForm((f) => ({ ...f, reference: e.target.value }))} />
                 </div>
               </div>
               <div className="mt-4">

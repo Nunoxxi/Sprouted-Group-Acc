@@ -441,6 +441,9 @@ async function post(entityId: string, documentId: string, principal: Principal):
   // on the document with the journal.
   const tax = documentTaxFor(entity, form.date);
   const txnLines = journalLinesFor(form, isPurchase, contact, names, tax);
+  if (txnLines.every((line) => line.amount === 0)) {
+    return fail(`This ${isPurchase ? 'bill' : 'invoice'} comes to nothing. Enter a quantity and unit price on at least one line before posting.`);
+  }
 
   if (!journalEntriesBalance([{ entityId, lines: txnLines }])) {
     // Cannot happen if the builder is correct; refuse loudly rather than
@@ -781,12 +784,12 @@ async function settle(entityId: string, input: PaymentInput, principal: Principa
   }
 
   // Functional book value of this document's control-account balance still open:
-  // what was posted, less what earlier payments relieved.
+  // what was posted, less what earlier payments still standing relieved.
   const controlCode = kind === 'invoice' ? controlAccounts.receivables : controlAccounts.payables;
   const controlPosted = document.journalEntry.lines
     .filter((line) => line.account.code === controlCode)
     .reduce((sum, line) => sum + toMinor(line.amountMinor), 0);
-  const relievedSoFar = document.payments.reduce((sum, payment) => sum + toMinor(payment.reliefMinor), 0);
+  const relievedSoFar = document.payments.filter((payment) => !payment.reversalEntryId).reduce((sum, payment) => sum + toMinor(payment.reliefMinor), 0);
   const remainingBookMinor = controlPosted - relievedSoFar;
 
   const accounts = await prisma.account.findMany({ where: { entityId, isActive: true }, select: { id: true, code: true, name: true } });
@@ -939,7 +942,7 @@ async function voidPosted(entityId: string, documentId: string, principal: Princ
     return fail('A draft has nothing to reverse; delete its lines instead.');
   }
   if (document.paidTxnMinor > 0n) {
-    return fail('This document has payments recorded against it. Reverse those first.');
+    return fail('This document has payments recorded against it. Reverse each payment first, under Payments on the document.');
   }
 
   const kind = document.kind === 'BILL' ? 'bill' : 'invoice';
@@ -1046,6 +1049,113 @@ async function voidPosted(entityId: string, documentId: string, principal: Princ
 
   refresh();
   return { ok: true, value: documentRecord(row) };
+}
+
+// --- payment reversal --------------------------------------------------------------
+
+/**
+ * Reverse a recorded payment by writing its mirror-image journal dated today:
+ * the bank, the receivable or payable and any realised FX gain or loss all
+ * go back. The payment row and its journal stay as the record; the document
+ * owes again what the payment settled, so it can be paid afresh or voided.
+ */
+export async function reversePayment(entityId: string, paymentId: string): Promise<ActionResult<DocumentRecord>> {
+  return withEntityAccess(entityId, 'document:void', (principal) => unsettle(entityId, paymentId, principal));
+}
+
+async function unsettle(entityId: string, paymentId: string, principal: Principal): Promise<ActionResult<DocumentRecord>> {
+  await requireEntity(entityId);
+
+  const today = todayIso();
+  if (await prisma.taxPeriodFiling.findUnique({ where: { entityId_period: { entityId, period: periodOf(today) } } })) {
+    return fail(`Period ${periodOf(today)} has been filed, so a reversal cannot be dated today.`);
+  }
+
+  const payment = await prisma.payment.findFirst({
+    where: { id: paymentId, entityId },
+    include: { journalEntry: { include: { lines: true } }, document: { include: { contact: { select: { name: true } } } } },
+  });
+  if (!payment) return fail('Payment not found.');
+  if (payment.reversalEntryId) return fail('This payment has already been reversed.');
+  const document = payment.document;
+  if (document.status === 'VOIDED') return fail('The document this payment settled has been voided.');
+
+  const kind = document.kind === 'BILL' ? 'bill' : 'invoice';
+  const number = postedNumberOf(document);
+  const original = payment.journalEntry;
+
+  const row = await prisma.$transaction(async (tx) => {
+    // Both claims are guarded, so two people reversing the same payment, or
+    // a payment recorded meanwhile, cannot leave the amount paid wrong.
+    const claimedPayment = await tx.payment.updateMany({
+      where: { id: payment.id, entityId, reversalEntryId: null },
+      data: { reversedAt: new Date(), reversedById: principal.userId },
+    });
+    const claimedDocument = await tx.document.updateMany({
+      where: { id: document.id, entityId, status: { in: ['AWAITING_PAYMENT', 'PAID'] }, paidTxnMinor: document.paidTxnMinor },
+      data: { paidTxnMinor: { decrement: payment.txnAmountMinor }, status: 'AWAITING_PAYMENT' },
+    });
+    if (claimedPayment.count !== 1 || claimedDocument.count !== 1) throw new AlreadyPostedError();
+
+    const reversal = await tx.journalEntry.create({
+      data: {
+        entityId,
+        kind: 'REVERSAL',
+        reference: number,
+        description: `Reversal of payment ${kind === 'invoice' ? 'received for' : 'made for'} ${documentLabel(kind, number)} — ${document.contact.name}`,
+        postedAt: dateOf(today),
+        reversalOfId: original.id,
+        postedById: principal.userId,
+        lines: {
+          create: original.lines.map((line) => ({
+            entityId,
+            accountId: line.accountId,
+            fundId: line.fundId,
+            projectId: line.projectId,
+            contactId: line.contactId,
+            grantId: line.grantId,
+            budgetLineId: line.budgetLineId,
+            txnCurrency: line.txnCurrency,
+            txnAmountMinor: line.txnAmountMinor,
+            rate: line.rate,
+            amountMinor: line.amountMinor,
+            direction: line.direction === 'MONEY_IN' ? 'MONEY_OUT' : 'MONEY_IN',
+          })),
+        },
+      },
+      select: { id: true },
+    });
+    await tx.payment.update({ where: { id: payment.id }, data: { reversalEntryId: reversal.id } });
+
+    const amount = `${toMinor(payment.txnAmountMinor) / 100} ${document.currency}`;
+    await recordAuditEvent(
+      {
+        entityId,
+        userId: principal.userId,
+        userName: principal.name,
+        action: 'VOID',
+        resourceType: kind,
+        resourceRef: number,
+        summary: `${documentLabel(kind, number)}: payment of ${amount} dated ${isoDay(payment.date)} reversed; reversal dated ${today}`,
+        metadata: { paymentId: payment.id, reversalOf: original.id, reversalEntryId: reversal.id },
+      },
+      tx,
+    );
+
+    return tx.document.findUniqueOrThrow({ where: { id: document.id }, include: documentInclude });
+  }).catch((error) => {
+    if (error instanceof AlreadyPostedError) return null;
+    throw error;
+  });
+
+  if (!row) return fail('This document changed while you were reversing the payment. Reload and try again.');
+
+  refresh();
+  return { ok: true, value: documentRecord(row) };
+}
+
+function isoDay(date: Date): string {
+  return date.toISOString().slice(0, 10);
 }
 
 // --- periods -----------------------------------------------------------------------

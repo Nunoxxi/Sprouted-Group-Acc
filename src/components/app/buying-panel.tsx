@@ -136,10 +136,10 @@ export function BuyingPanel({ entity, agents, floats, purchases, items, commodit
                       </div>
                       {isPayingLabour ? (
                         <div className="mt-3 grid gap-3 md:grid-cols-[1.4fr_0.6fr_1fr_1fr_auto] md:items-end">
-                          <div><label className={label}>What the work was</label><Input value={labourForm.description} placeholder="e.g. loading, 3 days" onChange={(e) => setLabourForm({ ...labourForm, description: e.target.value })} /></div>
-                          <div><label className={label}>Workers</label><Input inputMode="numeric" value={labourForm.workers} onChange={(e) => setLabourForm({ ...labourForm, workers: e.target.value })} /></div>
-                          <div><label className={label}>Amount paid</label><Input type="number" inputMode="decimal" min={0} step="0.01" value={labourForm.amount} onChange={(e) => setLabourForm({ ...labourForm, amount: e.target.value })} /></div>
-                          <div><label className={label}>Date</label><Input type="date" value={labourForm.date} onChange={(e) => setLabourForm({ ...labourForm, date: e.target.value })} /></div>
+                          <div><label className={label}>What the work was</label><Input aria-label="What the work was" value={labourForm.description} placeholder="e.g. loading, 3 days" onChange={(e) => setLabourForm({ ...labourForm, description: e.target.value })} /></div>
+                          <div><label className={label}>Workers</label><Input aria-label="Workers" inputMode="numeric" value={labourForm.workers} onChange={(e) => setLabourForm({ ...labourForm, workers: e.target.value })} /></div>
+                          <div><label className={label}>Amount paid</label><Input aria-label="Amount paid" type="number" inputMode="decimal" min={0} step="0.01" value={labourForm.amount} onChange={(e) => setLabourForm({ ...labourForm, amount: e.target.value })} /></div>
+                          <div><label className={label}>Date</label><Input aria-label="Date" type="date" value={labourForm.date} onChange={(e) => setLabourForm({ ...labourForm, date: e.target.value })} /></div>
                           <Button
                             size="sm"
                             disabled={pending || !labourForm.amount || !labourForm.description.trim()}
@@ -160,9 +160,9 @@ export function BuyingPanel({ entity, agents, floats, purchases, items, commodit
                       ) : null}
                       {isReturning ? (
                         <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto] md:items-end">
-                          <div><label className={label}>Amount</label><Input type="number" inputMode="decimal" min={0} step="0.01" value={returnForm.amount} onChange={(e) => setReturnForm({ ...returnForm, amount: e.target.value })} /></div>
-                          <div><label className={label}>Date</label><Input type="date" value={returnForm.date} onChange={(e) => setReturnForm({ ...returnForm, date: e.target.value })} /></div>
-                          <div><label className={label}>Into</label><select value={returnForm.bankAccountId} className={selectClass} onChange={(e) => setReturnForm({ ...returnForm, bankAccountId: e.target.value })}>{bankAccounts.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></div>
+                          <div><label className={label}>Amount</label><Input aria-label="Amount" type="number" inputMode="decimal" min={0} step="0.01" value={returnForm.amount} onChange={(e) => setReturnForm({ ...returnForm, amount: e.target.value })} /></div>
+                          <div><label className={label}>Date</label><Input aria-label="Date" type="date" value={returnForm.date} onChange={(e) => setReturnForm({ ...returnForm, date: e.target.value })} /></div>
+                          <div><label className={label}>Into</label><select aria-label="Into" value={returnForm.bankAccountId} className={selectClass} onChange={(e) => setReturnForm({ ...returnForm, bankAccountId: e.target.value })}>{bankAccounts.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></div>
                           <Button size="sm" disabled={pending || !returnForm.amount} onClick={() => run('Cash return recorded.', () => returnFloatCash(entity.id, { floatId: float.id, date: returnForm.date, amountMinor: Math.round(Number(returnForm.amount) * 100), bankAccountId: returnForm.bankAccountId }), () => setReturnForm({ ...returnForm, floatId: '', amount: '' }))}>Record</Button>
                         </div>
                       ) : null}
@@ -179,11 +179,11 @@ export function BuyingPanel({ entity, agents, floats, purchases, items, commodit
               <Card className="rounded-2xl">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Advance a float</p>
                 <div className="mt-3 space-y-3">
-                  <div><label className={label}>Agent</label><select value={floatForm.agentId} className={selectClass} onChange={(e) => setFloatForm({ ...floatForm, agentId: e.target.value })}><option value="">Choose…</option>{agents.filter((a) => a.isActive).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
-                  <div><label className={label}>Amount</label><Input type="number" inputMode="decimal" min={0} step="0.01" value={floatForm.amount} onChange={(e) => setFloatForm({ ...floatForm, amount: e.target.value })} /></div>
-                  <div><label className={label}>Date</label><Input type="date" value={floatForm.date} onChange={(e) => setFloatForm({ ...floatForm, date: e.target.value })} /></div>
-                  <div><label className={label}>From</label><select value={floatForm.bankAccountId} className={selectClass} onChange={(e) => setFloatForm({ ...floatForm, bankAccountId: e.target.value })}>{bankAccounts.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></div>
-                  <div><label className={label}>Note</label><Input value={floatForm.note} onChange={(e) => setFloatForm({ ...floatForm, note: e.target.value })} /></div>
+                  <div><label className={label}>Agent</label><select aria-label="Agent" value={floatForm.agentId} className={selectClass} onChange={(e) => setFloatForm({ ...floatForm, agentId: e.target.value })}><option value="">Choose…</option>{agents.filter((a) => a.isActive).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
+                  <div><label className={label}>Amount</label><Input aria-label="Amount" type="number" inputMode="decimal" min={0} step="0.01" value={floatForm.amount} onChange={(e) => setFloatForm({ ...floatForm, amount: e.target.value })} /></div>
+                  <div><label className={label}>Date</label><Input aria-label="Date" type="date" value={floatForm.date} onChange={(e) => setFloatForm({ ...floatForm, date: e.target.value })} /></div>
+                  <div><label className={label}>From</label><select aria-label="From" value={floatForm.bankAccountId} className={selectClass} onChange={(e) => setFloatForm({ ...floatForm, bankAccountId: e.target.value })}>{bankAccounts.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></div>
+                  <div><label className={label}>Note</label><Input aria-label="Note" value={floatForm.note} onChange={(e) => setFloatForm({ ...floatForm, note: e.target.value })} /></div>
                   <p className="text-xs text-slate-500">Posts money out of the bank into 1060 Agent Float Advances — a receivable until produce or cash comes back.</p>
                   <div className="flex justify-end"><Button size="sm" disabled={pending || !floatForm.agentId || !floatForm.amount || !floatForm.bankAccountId} onClick={() => run('Float advanced.', () => advanceFloat(entity.id, { agentId: floatForm.agentId, date: floatForm.date, amountMinor: Math.round(Number(floatForm.amount) * 100), bankAccountId: floatForm.bankAccountId, note: floatForm.note }), () => setFloatForm({ ...floatForm, amount: '', note: '' }))}>Advance</Button></div>
                 </div>
@@ -193,7 +193,7 @@ export function BuyingPanel({ entity, agents, floats, purchases, items, commodit
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Age limit</p>
               <p className="mt-1 text-sm text-slate-600">An open float older than this is flagged red here and on the dashboard.</p>
               <div className="mt-3 flex items-end gap-2">
-                <div className="flex-1"><label className={label}>Days</label><Input type="number" inputMode="numeric" min={1} max={365} value={ageLimit} disabled={!allowed('inventory:manage')} onChange={(e) => setAgeLimit(e.target.value)} /></div>
+                <div className="flex-1"><label className={label}>Days</label><Input aria-label="Days" type="number" inputMode="numeric" min={1} max={365} value={ageLimit} disabled={!allowed('inventory:manage')} onChange={(e) => setAgeLimit(e.target.value)} /></div>
                 {allowed('inventory:manage') ? <Button size="sm" variant="secondary" disabled={pending || Number(ageLimit) === entity.floatAgeLimitDays} onClick={() => run('Age limit saved.', () => setFloatAgeLimit(entity.id, Number(ageLimit)))}>Save</Button> : null}
               </div>
             </Card>
@@ -292,9 +292,9 @@ export function BuyingPanel({ entity, agents, floats, purchases, items, commodit
             <Card className="rounded-2xl">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{agentForm.id ? 'Edit agent' : 'New agent'}</p>
               <div className="mt-3 space-y-3">
-                <div><label className={label}>Name</label><Input value={agentForm.name} onChange={(e) => setAgentForm({ ...agentForm, name: e.target.value })} /></div>
-                <div><label className={label}>Phone</label><Input value={agentForm.phone} inputMode="tel" onChange={(e) => setAgentForm({ ...agentForm, phone: e.target.value })} /></div>
-                <div><label className={label}>Receives purchases at</label><select value={agentForm.defaultLocationId} className={selectClass} onChange={(e) => setAgentForm({ ...agentForm, defaultLocationId: e.target.value })}><option value="">Choose…</option>{locations.filter((l) => l.isActive).map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></div>
+                <div><label className={label}>Name</label><Input aria-label="Name" value={agentForm.name} onChange={(e) => setAgentForm({ ...agentForm, name: e.target.value })} /></div>
+                <div><label className={label}>Phone</label><Input aria-label="Phone" value={agentForm.phone} inputMode="tel" onChange={(e) => setAgentForm({ ...agentForm, phone: e.target.value })} /></div>
+                <div><label className={label}>Receives purchases at</label><select aria-label="Receives purchases at" value={agentForm.defaultLocationId} className={selectClass} onChange={(e) => setAgentForm({ ...agentForm, defaultLocationId: e.target.value })}><option value="">Choose…</option>{locations.filter((l) => l.isActive).map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></div>
                 <p className="text-xs text-slate-500">The agent signs in to /field with their own account (role Data entry, access to {entity.name}).</p>
                 <div className="flex justify-end gap-2">
                   {agentForm.id ? <Button size="sm" variant="secondary" onClick={() => setAgentForm({ id: '', name: '', phone: '', defaultLocationId: '' })}>Cancel</Button> : null}

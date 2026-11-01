@@ -3,10 +3,11 @@
 import { ledgerLines, projects, reportAccounts, type AccountClass, type CashflowClass, type LedgerLine, type ReportFund } from '@/lib/report-data';
 import { useEffect, useMemo, useRef, useState, useTransition, type ChangeEvent, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
+import { entityCookie } from '@/lib/entity-cookie';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Money } from '@/components/ui/money';
-import type { ContactCategory, ContactRecord, ContactType, DocumentRecord, EntityRecord, EntityType, InitialData } from '@/lib/data/types';
+import type { ContactCategory, ContactRecord, ContactType, DocumentRecord, EntityRecord, EntityType, InitialData, PaymentRecord } from '@/lib/data/types';
 import {
   accountNameMap,
   buildJournalEntries,
@@ -63,7 +64,7 @@ import { runsGrants } from '@/lib/grants';
 import { agentFloatSummaries, floatPosition, holdsStock, landedCostKinds, landedCostLabels, qualityFieldsFor, type LandedCostKind } from '@/lib/trading';
 import { CurrencyProvider, ReportMoney, TranslationProvider } from '@/components/ui/money';
 import type { Permission } from '@/lib/authz';
-import { recordPayment as recordPaymentAction } from '@/app/actions/documents';
+import { recordPayment as recordPaymentAction, reversePayment as reversePaymentAction } from '@/app/actions/documents';
 import { createBankAccount, previewRevaluation, reverseRevaluation, runRevaluation, setFunctionalCurrency, upsertExchangeRate, type RevaluationPreview } from '@/app/actions/fx';
 import { setVatRegistration } from '@/app/actions/vat';
 import { setEntitySender } from '@/app/actions/entities';
@@ -449,9 +450,13 @@ const statusLabels: Record<DocumentStatus, string> = {
   voided: 'Voided',
 };
 
-export function AppShell({ initialData }: { initialData: InitialData }) {
+export function AppShell({ initialData, initialEntityId }: { initialData: InitialData; initialEntityId?: string }) {
   const [entities, setEntities] = useState<EntityRecord[]>(initialData.entities);
-  const [selectedEntityId, setSelectedEntityId] = useState(initialData.entities[0]?.id ?? '');
+  const [selectedEntityId, setSelectedEntityIdState] = useState(initialEntityId ?? initialData.entities[0]?.id ?? '');
+  const setSelectedEntityId = (entityId: string) => {
+    setSelectedEntityIdState(entityId);
+    document.cookie = `${entityCookie}=${encodeURIComponent(entityId)}; path=/; max-age=31536000; samesite=lax`;
+  };
   // The screen shown is always the one the server loaded data for. Choosing
   // another changes the address and waits for that screen's data; until it
   // arrives the current screen stays up, so none is ever shown without its data.
@@ -684,6 +689,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
   const accountNames = useMemo(() => accountNameMap(entityAccounts), [entityAccounts]);
   const entityDocuments = useMemo(() => initialData.documentsByEntity[selectedEntity.id] ?? [], [initialData, selectedEntity.id]);
   const activeRecord = activeDocument.id ? entityDocuments.find((document) => document.id === activeDocument.id) : undefined;
+  const standingPayments = !!activeRecord?.payments.some((payment) => !payment.reversedOn);
   // VAT applies to a document only if the entity is registered and the document
   // is dated on or after the registration date. A posted document keeps the
   // answer it was posted with; a draft takes the current one for its date.
@@ -1596,7 +1602,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
     if (!activeRecord?.journal || !activeRecord.rate || !paymentBank || !paymentRate || !Number.isInteger(paymentAmountMinor) || paymentAmountMinor <= 0 || paymentAmountMinor > outstandingTxn) return null;
     const controlCode = activeRecord.kind === 'invoice' ? controlAccounts.receivables : controlAccounts.payables;
     const controlPosted = activeRecord.journal.lines.filter((line) => line.accountCode === controlCode).reduce((sum, line) => sum + line.amount, 0);
-    const relieved = activeRecord.payments.reduce((sum, payment) => sum + payment.reliefAmount, 0);
+    const relieved = activeRecord.payments.filter((payment) => !payment.reversedOn).reduce((sum, payment) => sum + payment.reliefAmount, 0);
     try {
       return settlementFor({
         kind: activeRecord.kind,
@@ -1662,7 +1668,14 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
   }
 
   function voidCurrentDocument() {
+    if (!window.confirm('Void this document? A reversing entry dated today is posted; the original stays on record.')) return;
     runDocumentAction((documentId) => voidDocument(selectedEntity.id, documentId));
+  }
+
+  function reverseRecordedPayment(payment: PaymentRecord) {
+    if (!window.confirm(`Reverse the payment of ${(payment.txnAmount / 100).toFixed(2)} dated ${payment.date}? A reversing entry dated today is posted, and the document is owed again.`)) return;
+    setPaymentOpen(false);
+    runDocumentAction(() => reversePaymentAction(selectedEntity.id, payment.id));
   }
 
   function startNewDocument() {
@@ -3433,7 +3446,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                   <form className="mt-5 space-y-4" onSubmit={handleCreateIntercompanyTransaction}>
                     <div>
                       <label className="mb-1.5 block text-sm font-medium text-slate-700">Reference</label>
-                      <Input
+                      <Input aria-label="Reference"
                         value={intercompanyForm.reference}
                         onChange={(event) => setIntercompanyForm((current) => ({ ...current, reference: event.target.value }))}
                       />
@@ -3442,7 +3455,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                     <div className="grid gap-4 md:grid-cols-2">
                       <div>
                         <label className="mb-1.5 block text-sm font-medium text-slate-700">From entity</label>
-                        <select
+                        <select aria-label="From entity"
                           value={intercompanyForm.fromEntityId}
                           onChange={(event) => setIntercompanyForm((current) => ({ ...current, fromEntityId: event.target.value }))}
                           className="min-h-[44px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100"
@@ -3455,7 +3468,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
 
                       <div>
                         <label className="mb-1.5 block text-sm font-medium text-slate-700">To entity</label>
-                        <select
+                        <select aria-label="To entity"
                           value={intercompanyForm.toEntityId}
                           onChange={(event) => setIntercompanyForm((current) => ({ ...current, toEntityId: event.target.value }))}
                           className="min-h-[44px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100"
@@ -3470,7 +3483,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                     <div className="grid gap-4 md:grid-cols-2">
                       <div>
                         <label className="mb-1.5 block text-sm font-medium text-slate-700">Date</label>
-                        <Input
+                        <Input aria-label="Date"
                           type="date"
                           value={intercompanyForm.date}
                           onChange={(event) => setIntercompanyForm((current) => ({ ...current, date: event.target.value }))}
@@ -3479,7 +3492,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
 
                       <div>
                         <label className="mb-1.5 block text-sm font-medium text-slate-700">Amount (GHS)</label>
-                        <Input
+                        <Input aria-label="Amount (GHS)"
                           type="number"
                           min={0}
                           step="0.01"
@@ -3491,7 +3504,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
 
                     <div>
                       <label className="mb-1.5 block text-sm font-medium text-slate-700">Description</label>
-                      <Input
+                      <Input aria-label="Description"
                         value={intercompanyForm.description}
                         onChange={(event) => setIntercompanyForm((current) => ({ ...current, description: event.target.value }))}
                         placeholder="Raw cashew supply"
@@ -3658,7 +3671,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                 <div className="flex flex-wrap items-end gap-2">
                   <div>
                     <label className="mb-1.5 block text-xs font-medium text-slate-600">From</label>
-                    <Input
+                    <Input aria-label="From"
                       type="date"
                       value={reportStart}
                       onChange={(event) => {
@@ -3669,7 +3682,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                   </div>
                   <div>
                     <label className="mb-1.5 block text-xs font-medium text-slate-600">To</label>
-                    <Input
+                    <Input aria-label="To"
                       type="date"
                       value={reportEnd}
                       onChange={(event) => {
@@ -3680,7 +3693,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                   </div>
                   <div>
                     <label className="mb-1.5 block text-xs font-medium text-slate-600">Show in</label>
-                    <select
+                    <select aria-label="Show in"
                       value={reportCurrency}
                       onChange={(event) => { setReportCurrency(event.target.value as 'functional' | Currency); setTranslationRate(''); }}
                       className="min-h-[44px] rounded-lg border border-slate-200 bg-white px-3 text-sm"
@@ -4320,11 +4333,8 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                 <PayrollRatesSettings rows={initialData.statutoryRates} allowed={allowed} />
               ) : null}
               {settingsTopic === 'Company' ? (
-                <CompanySettings key={selectedEntity.id} entity={selectedEntity} allowed={allowed} />
-              ) : null}
-
-              {settingsTopic === 'Backups & audit' ? (
                 <div className="space-y-6">
+                <CompanySettings key={selectedEntity.id} entity={selectedEntity} allowed={allowed} />
 
                 {settingsMessage ? (
                   <p className={['rounded-lg border px-3 py-2 text-sm', settingsMessage.tone === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-red-200 bg-red-50 text-red-800'].join(' ')}>
@@ -4373,7 +4383,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                       <div className="mt-3 flex flex-wrap items-end gap-3">
                         <div>
                           <label className="mb-1.5 block text-sm font-medium text-slate-700">Registration effective from</label>
-                          <Input type="date" value={vatForm.registeredFrom} onChange={(event) => setVatForm({ registeredFrom: event.target.value })} />
+                          <Input aria-label="Registration effective from" type="date" value={vatForm.registeredFrom} onChange={(event) => setVatForm({ registeredFrom: event.target.value })} />
                         </div>
                         <Button
                           size="sm"
@@ -4400,7 +4410,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                     <div className="mt-3 flex flex-wrap items-end gap-3">
                       <div className="min-w-[320px] flex-1">
                         <label className="mb-1.5 block text-sm font-medium text-slate-700">Sender</label>
-                        <Input
+                        <Input aria-label="Sender"
                           value={senderValue}
                           placeholder={`${selectedEntity.name} <${selectedEntity.id.replace(/^sprouted-/, '')}@yourdomain.com>`}
                           onChange={(event) => setSenderForm({ entityId: selectedEntity.id, value: event.target.value })}
@@ -4437,27 +4447,27 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                     >
                       <div>
                         <label className="mb-1.5 block text-xs font-medium text-slate-600">1 unit of</label>
-                        <select value={rateForm.base} onChange={(event) => setRateForm((c) => ({ ...c, base: event.target.value as Currency }))} className="min-h-[44px] w-full rounded-lg border border-slate-200 bg-white px-3 text-sm">
+                        <select aria-label="1 unit of" value={rateForm.base} onChange={(event) => setRateForm((c) => ({ ...c, base: event.target.value as Currency }))} className="min-h-[44px] w-full rounded-lg border border-slate-200 bg-white px-3 text-sm">
                           {currencies.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
                         </select>
                       </div>
                       <div>
                         <label className="mb-1.5 block text-xs font-medium text-slate-600">equals (in)</label>
-                        <select value={rateForm.quote} onChange={(event) => setRateForm((c) => ({ ...c, quote: event.target.value as Currency }))} className="min-h-[44px] w-full rounded-lg border border-slate-200 bg-white px-3 text-sm">
+                        <select aria-label="equals (in)" value={rateForm.quote} onChange={(event) => setRateForm((c) => ({ ...c, quote: event.target.value as Currency }))} className="min-h-[44px] w-full rounded-lg border border-slate-200 bg-white px-3 text-sm">
                           {currencies.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
                         </select>
                       </div>
                       <div>
                         <label className="mb-1.5 block text-xs font-medium text-slate-600">Rate</label>
-                        <Input inputMode="decimal" required value={rateForm.rate} placeholder="12.5" onChange={(event) => setRateForm((c) => ({ ...c, rate: event.target.value }))} />
+                        <Input aria-label="Rate" inputMode="decimal" required value={rateForm.rate} placeholder="12.5" onChange={(event) => setRateForm((c) => ({ ...c, rate: event.target.value }))} />
                       </div>
                       <div>
                         <label className="mb-1.5 block text-xs font-medium text-slate-600">Date</label>
-                        <Input type="date" required value={rateForm.date} onChange={(event) => setRateForm((c) => ({ ...c, date: event.target.value }))} />
+                        <Input aria-label="Date" type="date" required value={rateForm.date} onChange={(event) => setRateForm((c) => ({ ...c, date: event.target.value }))} />
                       </div>
                       <div>
                         <label className="mb-1.5 block text-xs font-medium text-slate-600">Source</label>
-                        <Input value={rateForm.source} placeholder="BoG, bank advice…" onChange={(event) => setRateForm((c) => ({ ...c, source: event.target.value }))} />
+                        <Input aria-label="Source" value={rateForm.source} placeholder="BoG, bank advice…" onChange={(event) => setRateForm((c) => ({ ...c, source: event.target.value }))} />
                       </div>
                       <div className="flex items-end">
                         <Button type="submit" size="sm" disabled={settingsPending || rateForm.base === rateForm.quote}>Save rate</Button>
@@ -4499,11 +4509,11 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                     >
                       <div className="min-w-[220px]">
                         <label className="mb-1.5 block text-xs font-medium text-slate-600">Name</label>
-                        <Input required value={bankForm.name} placeholder="Stanbic USD account" onChange={(event) => setBankForm((c) => ({ ...c, name: event.target.value }))} />
+                        <Input aria-label="Name" required value={bankForm.name} placeholder="Stanbic USD account" onChange={(event) => setBankForm((c) => ({ ...c, name: event.target.value }))} />
                       </div>
                       <div>
                         <label className="mb-1.5 block text-xs font-medium text-slate-600">Currency</label>
-                        <select value={bankForm.currency} onChange={(event) => setBankForm((c) => ({ ...c, currency: event.target.value as Currency }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-white px-3 text-sm">
+                        <select aria-label="Currency" value={bankForm.currency} onChange={(event) => setBankForm((c) => ({ ...c, currency: event.target.value as Currency }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-white px-3 text-sm">
                           {currencies.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
                         </select>
                       </div>
@@ -4522,7 +4532,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                     <div className="mt-4 flex flex-wrap items-end gap-3">
                       <div>
                         <label className="mb-1.5 block text-xs font-medium text-slate-600">Period</label>
-                        <Input type="month" value={revalForm.period} onChange={(event) => { setRevalForm((c) => ({ ...c, period: event.target.value })); setRevalPreview(null); }} />
+                        <Input aria-label="Period" type="month" value={revalForm.period} onChange={(event) => { setRevalForm((c) => ({ ...c, period: event.target.value })); setRevalPreview(null); }} />
                       </div>
                       {currencies.filter((currency) => currency !== functionalCurrency).map((currency) => {
                         const closing = selectRate(entityRates, currency, functionalCurrency, `${revalForm.period}-${new Date(Date.UTC(Number(revalForm.period.slice(0, 4)), Number(revalForm.period.slice(5, 7)), 0)).getUTCDate()}`);
@@ -4576,7 +4586,11 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                     ) : null}
                   </Card>
                 ) : null}
+                </div>
+              ) : null}
 
+              {settingsTopic === 'Backups & audit' ? (
+                <div className="space-y-6">
                 <Card className="rounded-2xl">
                   <div className="flex items-start justify-between gap-4 pb-4">
                     <div>
@@ -4937,10 +4951,10 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                     ) : null}
                     {activeDocument.status === 'awaiting-payment' && allowed('document:mark-paid') ? (
                       <Button size="sm" disabled={documentPending} onClick={() => (paymentOpen ? setPaymentOpen(false) : openPaymentPanel())}>
-                        {paymentOpen ? 'Cancel payment' : 'Record payment'}
+                        {paymentOpen ? 'Close payment form' : 'Record payment'}
                       </Button>
                     ) : null}
-                    {(activeDocument.status === 'awaiting-payment' || activeDocument.status === 'paid') && allowed('document:void') ? (
+                    {(activeDocument.status === 'awaiting-payment' || activeDocument.status === 'paid') && !standingPayments && allowed('document:void') ? (
                       <Button variant="danger" size="sm" disabled={documentPending} onClick={voidCurrentDocument}>Void</Button>
                     ) : null}
                   </div>
@@ -4998,7 +5012,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
               <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">Document no.</label>
-                  <Input value={activeDocument.docNumber || 'Allocated on posting'} readOnly disabled />
+                  <Input aria-label="Document no." value={activeDocument.docNumber || 'Allocated on posting'} readOnly disabled />
                 </div>
 
                 <div>
@@ -5041,7 +5055,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
 
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">Date</label>
-                  <Input
+                  <Input aria-label="Date"
                     type="date"
                     value={activeDocument.date}
                     disabled={documentReadOnly}
@@ -5056,7 +5070,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
 
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">Due date</label>
-                  <Input
+                  <Input aria-label="Due date"
                     type="date"
                     value={activeDocument.dueDate}
                     disabled={documentReadOnly}
@@ -5066,7 +5080,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
 
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">Currency</label>
-                  <select
+                  <select aria-label="Currency"
                     value={activeDocument.currency}
                     disabled={documentReadOnly}
                     onChange={(event) => {
@@ -5101,14 +5115,14 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                 ) : (
                   <div>
                     <label className="mb-1.5 block text-sm font-medium text-slate-700">Status</label>
-                    <Input value={statusLabels[activeDocument.status]} readOnly disabled />
+                    <Input aria-label="Status" value={statusLabels[activeDocument.status]} readOnly disabled />
                   </div>
                 )}
 
                 {!isPurchaseView ? (
                   <div>
                     <label className="mb-1.5 block text-sm font-medium text-slate-700">Sale</label>
-                    <select
+                    <select aria-label="Sale"
                       value={activeDocument.saleType}
                       disabled={documentReadOnly}
                       onChange={(event) => updateCurrentDocument({ saleType: event.target.value as SaleType })}
@@ -5221,7 +5235,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                         <div className="grid gap-3 md:grid-cols-[1.4fr_1fr_1.6fr]">
                           <div>
                             <label className="mb-1 block text-xs font-medium text-slate-600">Stock</label>
-                            <select
+                            <select aria-label="Stock"
                               value={line.itemId ? `item:${line.itemId}` : line.landedCostKind ? `landed:${line.landedCostKind}` : line.contractId ? `contract:${line.contractId}` : ''}
                               disabled={documentReadOnly}
                               onChange={(event) => {
@@ -5259,7 +5273,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                           {line.contractId ? (
                             <div>
                               <label className="mb-1 block text-xs font-medium text-slate-600">Kind of selling cost</label>
-                              <select
+                              <select aria-label="Kind of selling cost"
                                 value={line.sellingCostKind ?? 'transport-to-buyer'}
                                 disabled={documentReadOnly}
                                 onChange={(event) => updateLine(line.id, { sellingCostKind: event.target.value as SellingCostKind })}
@@ -5271,7 +5285,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                           ) : line.itemId ? (
                             <div>
                               <label className="mb-1 block text-xs font-medium text-slate-600">Received at</label>
-                              <select
+                              <select aria-label="Received at"
                                 value={line.locationId ?? ''}
                                 disabled={documentReadOnly}
                                 onChange={(event) => updateLine(line.id, { locationId: event.target.value || null })}
@@ -5300,7 +5314,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                           <div className="grid gap-3 md:grid-cols-[2fr_2fr_3fr]">
                             <div>
                               <label className="mb-1 block text-xs font-medium text-slate-600">Grant</label>
-                              <select
+                              <select aria-label="Grant"
                                 value={line.grantId ?? ''}
                                 disabled={documentReadOnly}
                                 onChange={(event) => updateLine(line.id, { grantId: event.target.value || null, budgetLineId: null })}
@@ -5313,7 +5327,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                             {line.grantId ? (
                               <div>
                                 <label className="mb-1 block text-xs font-medium text-slate-600">Budget line</label>
-                                <select
+                                <select aria-label="Budget line"
                                   value={line.budgetLineId ?? ''}
                                   disabled={documentReadOnly}
                                   onChange={(event) => updateLine(line.id, { budgetLineId: event.target.value || null })}
@@ -5337,9 +5351,9 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                         ) : null}
                         {line.itemId ? (
                           <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_2fr]">
-                            <div><label className="mb-1 block text-xs font-medium text-slate-600">Lot ref (optional)</label><Input className="min-h-[40px]" value={line.lotRef} disabled={documentReadOnly} placeholder="auto if blank" onChange={(event) => updateLine(line.id, { lotRef: event.target.value })} /></div>
-                            <div><label className="mb-1 block text-xs font-medium text-slate-600">Community</label><Input className="min-h-[40px]" value={line.community} disabled={documentReadOnly} onChange={(event) => updateLine(line.id, { community: event.target.value })} /></div>
-                            <div><label className="mb-1 block text-xs font-medium text-slate-600">District</label><Input className="min-h-[40px]" value={line.district} disabled={documentReadOnly} onChange={(event) => updateLine(line.id, { district: event.target.value })} /></div>
+                            <div><label className="mb-1 block text-xs font-medium text-slate-600">Lot ref (optional)</label><Input aria-label="Lot ref (optional)" className="min-h-[40px]" value={line.lotRef} disabled={documentReadOnly} placeholder="auto if blank" onChange={(event) => updateLine(line.id, { lotRef: event.target.value })} /></div>
+                            <div><label className="mb-1 block text-xs font-medium text-slate-600">Community</label><Input aria-label="Community" className="min-h-[40px]" value={line.community} disabled={documentReadOnly} onChange={(event) => updateLine(line.id, { community: event.target.value })} /></div>
+                            <div><label className="mb-1 block text-xs font-medium text-slate-600">District</label><Input aria-label="District" className="min-h-[40px]" value={line.district} disabled={documentReadOnly} onChange={(event) => updateLine(line.id, { district: event.target.value })} /></div>
                             <div className="grid grid-cols-3 gap-2">
                               {qualityFieldsFor(entityCommodities.find((commodity) => commodity.id === entityItems.find((item) => item.id === line.itemId)?.commodityId)?.kind ?? 'other').map((field) => (
                                 <div key={field.key}>
@@ -5480,7 +5494,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                   <div className="mt-3 grid gap-4 md:grid-cols-3">
                     <div>
                       <label className="mb-1.5 block text-sm font-medium text-slate-700">Clearance number</label>
-                      <Input
+                      <Input aria-label="Clearance number"
                         value={activeDocument.evatClearanceNumber}
                         onChange={(event) => updateCurrentDocument({ evatClearanceNumber: event.target.value })}
                         placeholder="Pending GRA integration"
@@ -5488,7 +5502,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                     </div>
                     <div>
                       <label className="mb-1.5 block text-sm font-medium text-slate-700">QR code</label>
-                      <Input
+                      <Input aria-label="QR code"
                         value={activeDocument.evatQrCode}
                         onChange={(event) => updateCurrentDocument({ evatQrCode: event.target.value })}
                         placeholder="Pending GRA integration"
@@ -5496,7 +5510,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                     </div>
                     <div>
                       <label className="mb-1.5 block text-sm font-medium text-slate-700">Timestamp</label>
-                      <Input
+                      <Input aria-label="Timestamp"
                         value={activeDocument.evatTimestamp}
                         onChange={(event) => updateCurrentDocument({ evatTimestamp: event.target.value })}
                         placeholder="Pending GRA integration"
@@ -5516,7 +5530,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                   <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                     <div>
                       <label className="mb-1.5 block text-sm font-medium text-slate-700">Bank account</label>
-                      <select
+                      <select aria-label="Bank account"
                         value={paymentBank?.id ?? ''}
                         onChange={(event) => setPaymentForm((current) => ({ ...current, bankAccountId: event.target.value }))}
                         className="min-h-[44px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900"
@@ -5531,7 +5545,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                     </div>
                     <div>
                       <label className="mb-1.5 block text-sm font-medium text-slate-700">Date</label>
-                      <Input type="date" value={paymentForm.date} onChange={(event) => setPaymentForm((current) => ({ ...current, date: event.target.value, rate: '' }))} />
+                      <Input aria-label="Date" type="date" value={paymentForm.date} onChange={(event) => setPaymentForm((current) => ({ ...current, date: event.target.value, rate: '' }))} />
                     </div>
                     <div>
                       <label className="mb-1.5 block text-sm font-medium text-slate-700">Amount ({activeRecord.currency})</label>
@@ -5597,11 +5611,11 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
 
               {activeRecord && activeRecord.payments.length > 0 ? (
                 <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200">
-                  <div className="grid grid-cols-[1fr_1.2fr_1fr_0.7fr_1fr_1fr] gap-3 bg-slate-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                    <span>Paid on</span><span>Bank</span><span className="text-right">Amount</span><span className="text-right">Rate</span><span className="text-right">In {functionalCurrency}</span><span className="text-right">Realised FX</span>
+                  <div className="grid grid-cols-[1fr_1.2fr_1fr_0.7fr_1fr_1fr_1fr] gap-3 bg-slate-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    <span>Paid on</span><span>Bank</span><span className="text-right">Amount</span><span className="text-right">Rate</span><span className="text-right">In {functionalCurrency}</span><span className="text-right">Realised FX</span><span />
                   </div>
                   {activeRecord.payments.map((payment) => (
-                    <div key={payment.id} className="grid grid-cols-[1fr_1.2fr_1fr_0.7fr_1fr_1fr] gap-3 border-t border-slate-200 px-4 py-2 text-sm text-slate-700">
+                    <div key={payment.id} className={['grid grid-cols-[1fr_1.2fr_1fr_0.7fr_1fr_1fr_1fr] items-center gap-3 border-t border-slate-200 px-4 py-2 text-sm', payment.reversedOn ? 'text-slate-400 line-through decoration-slate-300' : 'text-slate-700'].join(' ')}>
                       <span>{payment.date}</span>
                       <span className="truncate">{payment.bankAccountName}</span>
                       <span className="text-right font-mono"><Money value={payment.txnAmount} currency={activeRecord.currency} /></span>
@@ -5610,8 +5624,18 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                       <span className={['text-right font-mono', payment.gainLoss > 0 ? 'text-emerald-700' : payment.gainLoss < 0 ? 'text-red-700' : ''].join(' ')}>
                         {payment.gainLoss === 0 ? '—' : <Money value={payment.gainLoss} currency={functionalCurrency} />}
                       </span>
+                      <span className="text-right">
+                        {payment.reversedOn ? (
+                          <span className="inline-block text-xs text-slate-500">Reversed {payment.reversedOn}</span>
+                        ) : activeDocument.status !== 'voided' && allowed('document:void') ? (
+                          <Button variant="secondary" size="sm" disabled={documentPending} onClick={() => reverseRecordedPayment(payment)}>Reverse payment</Button>
+                        ) : null}
+                      </span>
                     </div>
                   ))}
+                  {standingPayments && allowed('document:void') ? (
+                    <p className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-500">To void this document, reverse its payments first.</p>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -5674,7 +5698,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
             <form className="mt-6 space-y-4" onSubmit={handleAddEntity}>
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-slate-700">Company name</label>
-                <Input
+                <Input aria-label="Company name"
                   value={formValues.name}
                   onChange={(event) => setFormValues((current) => ({ ...current, name: event.target.value }))}
                   placeholder="Sprouted Foods"
@@ -5684,7 +5708,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">Type</label>
-                  <select
+                  <select aria-label="Type"
                     value={formValues.type}
                     onChange={(event) =>
                       setFormValues((current) => ({
@@ -5701,7 +5725,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
 
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">Financial year end</label>
-                  <Input
+                  <Input aria-label="Financial year end"
                     value={formValues.financialYearEnd}
                     onChange={(event) =>
                       setFormValues((current) => ({ ...current, financialYearEnd: event.target.value }))
@@ -5714,7 +5738,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">VAT registration</label>
-                  <select
+                  <select aria-label="VAT registration"
                     value={formValues.vatRegistered ? 'registered' : 'unregistered'}
                     onChange={(event) =>
                       setFormValues((current) => ({
@@ -5730,7 +5754,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                   {formValues.vatRegistered ? (
                     <div className="mt-2">
                       <label className="mb-1.5 block text-sm font-medium text-slate-700">Registered from</label>
-                      <Input
+                      <Input aria-label="Registered from"
                         type="date"
                         value={formValues.vatRegisteredFrom}
                         onChange={(event) => setFormValues((current) => ({ ...current, vatRegisteredFrom: event.target.value }))}
@@ -5741,7 +5765,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
 
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">TIN</label>
-                  <Input
+                  <Input aria-label="TIN"
                     value={formValues.tin}
                     onChange={(event) => setFormValues((current) => ({ ...current, tin: event.target.value }))}
                     placeholder="GH-0004-NEW"
@@ -5786,7 +5810,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">Name</label>
-                  <Input
+                  <Input aria-label="Name"
                     value={contactFormValues.name}
                     onChange={(event) =>
                       setContactFormValues((current) => ({ ...current, name: event.target.value }))
@@ -5797,7 +5821,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
 
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">Type</label>
-                  <select
+                  <select aria-label="Type"
                     value={contactFormValues.type}
                     onChange={(event) =>
                       setContactFormValues((current) => ({
@@ -5817,7 +5841,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">Category</label>
-                  <select
+                  <select aria-label="Category"
                     value={contactFormValues.category}
                     onChange={(event) =>
                       setContactFormValues((current) => ({
@@ -5837,7 +5861,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
 
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">TIN</label>
-                  <Input
+                  <Input aria-label="TIN"
                     value={contactFormValues.tin}
                     onChange={(event) =>
                       setContactFormValues((current) => ({ ...current, tin: event.target.value }))
@@ -5850,7 +5874,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">Phone</label>
-                  <Input
+                  <Input aria-label="Phone"
                     value={contactFormValues.phone}
                     onChange={(event) =>
                       setContactFormValues((current) => ({ ...current, phone: event.target.value }))
@@ -5861,7 +5885,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
 
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">Email</label>
-                  <Input
+                  <Input aria-label="Email"
                     value={contactFormValues.email}
                     onChange={(event) =>
                       setContactFormValues((current) => ({ ...current, email: event.target.value }))
@@ -5873,7 +5897,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
 
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-slate-700">Address</label>
-                <Input
+                <Input aria-label="Address"
                   value={contactFormValues.address}
                   onChange={(event) =>
                     setContactFormValues((current) => ({ ...current, address: event.target.value }))
@@ -5885,7 +5909,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">Withholding tax</label>
-                  <select
+                  <select aria-label="Withholding tax"
                     value={contactFormValues.withholdingTaxStatus}
                     onChange={(event) =>
                       setContactFormValues((current) => ({

@@ -463,11 +463,11 @@ export function CashflowPanel({ entity, entities, sources, scenariosByEntity, se
               <div className="mt-4 grid gap-4 md:grid-cols-4">
                 <div>
                   <label className={label}>Date</label>
-                  <Input type="date" value={lineForm.date} onChange={(e) => setLineForm((f) => ({ ...f, date: e.target.value }))} />
+                  <Input aria-label="Date" type="date" value={lineForm.date} onChange={(e) => setLineForm((f) => ({ ...f, date: e.target.value }))} />
                 </div>
                 <div>
                   <label className={label}>Currency</label>
-                  <select className={selectClass} value={lineForm.currency} onChange={(e) => setLineForm((f) => ({ ...f, currency: e.target.value as Currency }))}>
+                  <select aria-label="Currency" className={selectClass} value={lineForm.currency} onChange={(e) => setLineForm((f) => ({ ...f, currency: e.target.value as Currency }))}>
                     {currencies.map((currency) => (
                       <option key={currency} value={currency}>
                         {currency}
@@ -477,11 +477,11 @@ export function CashflowPanel({ entity, entities, sources, scenariosByEntity, se
                 </div>
                 <div>
                   <label className={label}>Amount</label>
-                  <Input inputMode="decimal" value={lineForm.amount} onChange={(e) => setLineForm((f) => ({ ...f, amount: e.target.value }))} placeholder="-25000.00" />
+                  <Input aria-label="Amount" inputMode="decimal" value={lineForm.amount} onChange={(e) => setLineForm((f) => ({ ...f, amount: e.target.value }))} placeholder="-25000.00" />
                 </div>
                 <div>
                   <label className={label}>What it is</label>
-                  <Input value={lineForm.description} onChange={(e) => setLineForm((f) => ({ ...f, description: e.target.value }))} placeholder="Vehicle purchase" />
+                  <Input aria-label="What it is" value={lineForm.description} onChange={(e) => setLineForm((f) => ({ ...f, description: e.target.value }))} placeholder="Vehicle purchase" />
                 </div>
               </div>
               <div className="mt-4">
@@ -672,11 +672,11 @@ export function CashflowPanel({ entity, entities, sources, scenariosByEntity, se
               <div className="mt-4 grid gap-4 md:grid-cols-3">
                 <div>
                   <label className={label}>Name</label>
-                  <Input value={assumptionForm.name} onChange={(e) => setAssumptionForm((f) => ({ ...f, name: e.target.value }))} />
+                  <Input aria-label="Name" value={assumptionForm.name} onChange={(e) => setAssumptionForm((f) => ({ ...f, name: e.target.value }))} />
                 </div>
                 <div>
                   <label className={label}>Customers pay this many days late</label>
-                  <Input inputMode="numeric" value={assumptionForm.collectionDelayDays} onChange={(e) => setAssumptionForm((f) => ({ ...f, collectionDelayDays: e.target.value }))} placeholder="0" />
+                  <Input aria-label="Customers pay this many days late" inputMode="numeric" value={assumptionForm.collectionDelayDays} onChange={(e) => setAssumptionForm((f) => ({ ...f, collectionDelayDays: e.target.value }))} placeholder="0" />
                 </div>
                 <div>
                   <label className={label}>Minimum cash to keep ({entity.functionalCurrency})</label>
@@ -684,16 +684,16 @@ export function CashflowPanel({ entity, entities, sources, scenariosByEntity, se
                 </div>
                 <div>
                   <label className={label}>Commodity price</label>
-                  <Input inputMode="numeric" value={assumptionForm.pricePct} onChange={(e) => setAssumptionForm((f) => ({ ...f, pricePct: e.target.value }))} placeholder="100" />
+                  <Input aria-label="Commodity price" inputMode="numeric" value={assumptionForm.pricePct} onChange={(e) => setAssumptionForm((f) => ({ ...f, pricePct: e.target.value }))} placeholder="100" />
                   <p className="mt-1 text-xs text-slate-500">% of what the seasons say.</p>
                 </div>
                 <div>
                   <label className={label}>Volume bought</label>
-                  <Input inputMode="numeric" value={assumptionForm.volumePct} onChange={(e) => setAssumptionForm((f) => ({ ...f, volumePct: e.target.value }))} placeholder="100" />
+                  <Input aria-label="Volume bought" inputMode="numeric" value={assumptionForm.volumePct} onChange={(e) => setAssumptionForm((f) => ({ ...f, volumePct: e.target.value }))} placeholder="100" />
                 </div>
                 <div>
                   <label className={label}>Float ahead of buying, days</label>
-                  <Input inputMode="numeric" value={assumptionForm.floatLeadDays} onChange={(e) => setAssumptionForm((f) => ({ ...f, floatLeadDays: e.target.value }))} placeholder="7" />
+                  <Input aria-label="Float ahead of buying, days" inputMode="numeric" value={assumptionForm.floatLeadDays} onChange={(e) => setAssumptionForm((f) => ({ ...f, floatLeadDays: e.target.value }))} placeholder="7" />
                 </div>
               </div>
               <h4 className="mt-6 text-sm font-semibold uppercase tracking-[0.12em] text-slate-500">Exchange rates for the combined view</h4>
@@ -814,11 +814,11 @@ export function CashflowPanel({ entity, entities, sources, scenariosByEntity, se
               <div className="mt-4 grid gap-4 md:grid-cols-4">
                 <div>
                   <label className={label}>Name</label>
-                  <Input value={seasonForm.name} onChange={(e) => setSeasonForm((f) => ({ ...f, name: e.target.value }))} placeholder="2027 main crop" />
+                  <Input aria-label="Name" value={seasonForm.name} onChange={(e) => setSeasonForm((f) => ({ ...f, name: e.target.value }))} placeholder="2027 main crop" />
                 </div>
                 <div>
                   <label className={label}>Commodity</label>
-                  <select className={selectClass} value={seasonForm.commodityId} onChange={(e) => setSeasonForm((f) => ({ ...f, commodityId: e.target.value }))}>
+                  <select aria-label="Commodity" className={selectClass} value={seasonForm.commodityId} onChange={(e) => setSeasonForm((f) => ({ ...f, commodityId: e.target.value }))}>
                     <option value="">Choose…</option>
                     {commodities.filter((row) => row.isActive).map((row) => (
                       <option key={row.id} value={row.id}>
@@ -829,23 +829,23 @@ export function CashflowPanel({ entity, entities, sources, scenariosByEntity, se
                 </div>
                 <div>
                   <label className={label}>Volume, tonnes</label>
-                  <Input inputMode="decimal" value={seasonForm.tonnes} onChange={(e) => setSeasonForm((f) => ({ ...f, tonnes: e.target.value }))} />
+                  <Input aria-label="Volume, tonnes" inputMode="decimal" value={seasonForm.tonnes} onChange={(e) => setSeasonForm((f) => ({ ...f, tonnes: e.target.value }))} />
                 </div>
                 <div>
                   <label className={label}>Price a kilo</label>
-                  <Input inputMode="decimal" value={seasonForm.price} onChange={(e) => setSeasonForm((f) => ({ ...f, price: e.target.value }))} />
+                  <Input aria-label="Price a kilo" inputMode="decimal" value={seasonForm.price} onChange={(e) => setSeasonForm((f) => ({ ...f, price: e.target.value }))} />
                 </div>
                 <div>
                   <label className={label}>Starts</label>
-                  <Input type="date" value={seasonForm.startDate} onChange={(e) => setSeasonForm((f) => ({ ...f, startDate: e.target.value }))} />
+                  <Input aria-label="Starts" type="date" value={seasonForm.startDate} onChange={(e) => setSeasonForm((f) => ({ ...f, startDate: e.target.value }))} />
                 </div>
                 <div>
                   <label className={label}>Peak</label>
-                  <Input type="date" value={seasonForm.peakDate} onChange={(e) => setSeasonForm((f) => ({ ...f, peakDate: e.target.value }))} />
+                  <Input aria-label="Peak" type="date" value={seasonForm.peakDate} onChange={(e) => setSeasonForm((f) => ({ ...f, peakDate: e.target.value }))} />
                 </div>
                 <div>
                   <label className={label}>Ends</label>
-                  <Input type="date" value={seasonForm.endDate} onChange={(e) => setSeasonForm((f) => ({ ...f, endDate: e.target.value }))} />
+                  <Input aria-label="Ends" type="date" value={seasonForm.endDate} onChange={(e) => setSeasonForm((f) => ({ ...f, endDate: e.target.value }))} />
                 </div>
               </div>
               <div className="mt-4 flex gap-2">
@@ -943,15 +943,15 @@ export function CashflowPanel({ entity, entities, sources, scenariosByEntity, se
               <div className="mt-4 grid gap-4 md:grid-cols-5">
                 <div>
                   <label className={label}>What</label>
-                  <Input value={costForm.name} onChange={(e) => setCostForm((f) => ({ ...f, name: e.target.value }))} placeholder="Payroll" />
+                  <Input aria-label="What" value={costForm.name} onChange={(e) => setCostForm((f) => ({ ...f, name: e.target.value }))} placeholder="Payroll" />
                 </div>
                 <div>
                   <label className={label}>Each time</label>
-                  <Input inputMode="decimal" value={costForm.amount} onChange={(e) => setCostForm((f) => ({ ...f, amount: e.target.value }))} />
+                  <Input aria-label="Each time" inputMode="decimal" value={costForm.amount} onChange={(e) => setCostForm((f) => ({ ...f, amount: e.target.value }))} />
                 </div>
                 <div>
                   <label className={label}>How often</label>
-                  <select className={selectClass} value={costForm.frequency} onChange={(e) => setCostForm((f) => ({ ...f, frequency: e.target.value as RecurringFrequency }))}>
+                  <select aria-label="How often" className={selectClass} value={costForm.frequency} onChange={(e) => setCostForm((f) => ({ ...f, frequency: e.target.value as RecurringFrequency }))}>
                     {recurringFrequencies.map((frequency) => (
                       <option key={frequency} value={frequency}>
                         {recurringFrequencyLabels[frequency]}
@@ -961,11 +961,11 @@ export function CashflowPanel({ entity, entities, sources, scenariosByEntity, se
                 </div>
                 <div>
                   <label className={label}>First one</label>
-                  <Input type="date" value={costForm.startDate} onChange={(e) => setCostForm((f) => ({ ...f, startDate: e.target.value }))} />
+                  <Input aria-label="First one" type="date" value={costForm.startDate} onChange={(e) => setCostForm((f) => ({ ...f, startDate: e.target.value }))} />
                 </div>
                 <div>
                   <label className={label}>Until (optional)</label>
-                  <Input type="date" value={costForm.endDate} onChange={(e) => setCostForm((f) => ({ ...f, endDate: e.target.value }))} />
+                  <Input aria-label="Until (optional)" type="date" value={costForm.endDate} onChange={(e) => setCostForm((f) => ({ ...f, endDate: e.target.value }))} />
                 </div>
               </div>
               <div className="mt-4 flex gap-2">

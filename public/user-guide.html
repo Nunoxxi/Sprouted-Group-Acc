@@ -381,6 +381,7 @@ footer { padding-top: 32px; font-size: 14px; color: var(--muted); }
         <li><b>Tax</b> appears only for a company registered for VAT.</li>
         <li><b>Inventory</b>, <b>Buying</b>, <b>Contracts</b> and <b>Pre-finance</b> appear only for Sprouted Crafts and Oikazi.</li>
         <li><b>Grants</b> appears only for Sprouted Roots.</li>
+        <li>The app remembers the company you chose. Refreshing the page, or signing in again on the same computer, opens on it.</li>
         <li>Owners also see <b>Users</b> and <b>Sessions</b> under an <b>Owner</b> heading.</li>
       </ul>
       <p>When you click a screen, its name lights up at once. A thin green bar runs along the top and the old screen fades while the new one loads. The title then reads <b>Opening …</b> until the screen is ready.</p>
@@ -403,7 +404,7 @@ footer { padding-top: 32px; font-size: 14px; color: var(--muted); }
         <li><b>What payroll owes</b>: PAYE, SSNIT and net pay still to pay, in red when past the due date.</li>
         <li><b>Provisional tax</b>: which quarterly instalment is next and when it falls due.</li>
         <li><b>VAT registration threshold</b>, for a company not yet registered: taxable sales in the last twelve months against the GH₵750,000 limit. A warning appears at 75% and again at 90%.</li>
-        <li><b>Buying agents</b>: float still out with each agent, red when older than the age limit. <span class="ui">Open buying</span> goes to the Buying screen.</li>
+        <li><b>Buying agents</b> (Sprouted Crafts and Oikazi): float still out with each agent, red when older than the age limit. <span class="ui">Open buying</span> goes to the Buying screen.</li>
         <li><b>Shared contacts</b>, with <span class="ui">Add contact</span>.</li>
         <li><b>Recent activity</b>: the latest invoices and bills. <span class="ui">View all</span> opens the full list.</li>
         <li><b>Intercompany</b>: what each group company owes the others, and the net group position.</li>
@@ -413,11 +414,11 @@ footer { padding-top: 32px; font-size: 14px; color: var(--muted); }
     <!-- 06 -->
     <section class="chapter" id="sales" data-roles="owner accountant bookkeeper data-entry">
       <div class="chapter-head"><span class="num">06</span><h2 class="title">Sales: customer invoices</h2></div>
-      <div class="who"><b>Draft:</b><span class="role">Owner</span><span class="role">Accountant</span><span class="role">Bookkeeper</span><span class="role">Data entry</span> <b>Post and record payment:</b><span class="role">Owner</span><span class="role">Accountant</span><span class="role">Bookkeeper</span> <b>Void:</b><span class="role">Owner</span><span class="role">Accountant</span></div>
+      <div class="who"><b>Draft:</b><span class="role">Owner</span><span class="role">Accountant</span><span class="role">Bookkeeper</span><span class="role">Data entry</span> <b>Post and record payment:</b><span class="role">Owner</span><span class="role">Accountant</span><span class="role">Bookkeeper</span> <b>Reverse a payment, void:</b><span class="role">Owner</span><span class="role">Accountant</span></div>
       <div class="flow"><span>Draft</span><i>→</i><span>Awaiting payment</span><i>→</i><span>Paid</span><i>or</i><span>Voided</span></div>
       <h3>Create an invoice</h3>
       <ol class="steps">
-        <li>Open <b>Sales</b> and press <span class="ui">New</span>.</li>
+        <li>Open <b>Sales</b> and press <span class="ui">New invoice</span>.</li>
         <li>Choose the <b>Contact</b>, the customer. If they are not listed, press <span class="ui">＋ New contact</span>, fill it in and they are selected for you.</li>
         <li>Set the <b>Date</b> and <b>Due date</b>. The <b>Document no.</b> is allocated when you post.</li>
         <li>Pick the <b>Currency</b>. For a currency other than cedis, the app uses the rate on file for that date. If none exists, type the rate.</li>
@@ -425,20 +426,27 @@ footer { padding-top: 32px; font-size: 14px; color: var(--muted); }
         <li>For each line, enter the <b>Description</b>, <b>Qty</b>, <b>Unit price</b>, the <b>Account</b> it belongs to and the VAT treatment: <b>Standard 20%</b>, <b>Zero-rated</b> or <b>Exempt</b>. Press <span class="ui">Add line</span> for more.</li>
         <li>Check the totals and the <b>Journal preview</b> beside the form. It shows the money in and money out the invoice will post.</li>
         <li>Attach supporting documents if you have them (see <a href="#inbox">Inbox and attachments</a>).</li>
-        <li>Press <span class="ui">Post</span>. The invoice moves to <b>Awaiting payment</b>.</li>
+        <li>Press <span class="ui">Post</span>. The invoice is given its number and moves to <b>Awaiting payment</b>. An invoice that comes to nothing cannot be posted.</li>
       </ol>
       <p>Until you post, the invoice stays a <b>Draft</b> and saves itself as you type. You can leave and come back.</p>
       <h3>Record the customer's payment</h3>
       <ol class="steps">
-        <li>Open the posted invoice and find <b>Record payment</b>. It shows what is <b>Outstanding</b>.</li>
-        <li>Choose the <b>Bank account</b> the money arrived in, the date and the <b>Amount</b>. Part-payments are fine.</li>
+        <li>Open the posted invoice and press <span class="ui">Record payment</span>. A form opens showing what is <b>Outstanding</b>, with the <b>Amount</b> already filled in with it.</li>
+        <li>Choose the <b>Bank account</b> the money arrived in and the date, and change the amount for a part-payment. If no bank account is listed, add one first under <a href="#settings">Settings → Company → Bank accounts</a>.</li>
         <li>For a foreign-currency invoice, type the rate on the bank's advice into <b>Bank rate</b>. The app shows any exchange gain or loss under <b>The calculation</b>.</li>
-        <li>Press <span class="ui">Post payment</span>. When nothing is outstanding, the invoice shows <b>Paid</b>.</li>
+        <li>Press <span class="ui">Post payment</span>. When nothing is outstanding, the invoice shows <b>Paid</b>. Each payment is listed under the invoice. To leave without recording anything, press <span class="ui">Close payment form</span>.</li>
+      </ol>
+      <h3>Undo a payment recorded by mistake</h3>
+      <ol class="steps">
+        <li>In the payments listed under the invoice, press <span class="ui">Reverse payment</span> on the wrong one, and confirm.</li>
+        <li>The app posts a reversing entry dated today. The payment stays on the list, struck through and marked <b>Reversed</b> with the date, and the invoice is owed again (<b>Awaiting payment</b>).</li>
+        <li>Record the right payment if there is one.</li>
       </ol>
       <h3>Cancel a posted invoice</h3>
       <ol class="steps">
-        <li>Open the invoice and press <span class="ui">Void</span>. If a payment was recorded, press <span class="ui">Cancel payment</span> first.</li>
-        <li>The app posts a reversing entry and marks the invoice <b>Voided</b>. The original stays visible.</li>
+        <li>If any payment is recorded against it, reverse it first (above). Until then <span class="ui">Void</span> is not offered, and the app says so under the payments.</li>
+        <li>Open the invoice, press <span class="ui">Void</span> and confirm.</li>
+        <li>The app posts a reversing entry dated today and marks the invoice <b>Voided</b>. The original stays visible.</li>
       </ol>
       <div class="warn"><strong>Filed periods are locked</strong><p>Once a VAT period has been filed, documents dated in it cannot be posted, changed or voided. Correct the error in an open period instead.</p></div>
       <p>The <b>GRA E-VAT</b> box on the invoice is reserved for the future link to GRA. Nothing is sent to GRA yet.</p>
@@ -451,7 +459,7 @@ footer { padding-top: 32px; font-size: 14px; color: var(--muted); }
       <p class="intro">Bills work like invoices, with a few extra choices on each line for stock, grants and contracts.</p>
       <h3>Enter a bill</h3>
       <ol class="steps">
-        <li>Open <b>Purchases</b>, press <span class="ui">New</span> and choose the supplier.</li>
+        <li>Open <b>Purchases</b>, press <span class="ui">New bill</span> and choose the supplier.</li>
         <li>Enter the date, due date, currency and lines as for an invoice. The bill shows the supplier's <b>WHT status</b>. Withholding tax is calculated from it and taken off what you pay.</li>
         <li>For imported goods, enter the <b>Import VAT paid at entry</b>. A VAT-registered company recovers it; an unregistered one adds it to the cost of the goods.</li>
         <li>On each line, set the <b>Stock</b> choice when it applies:
@@ -464,7 +472,7 @@ footer { padding-top: 32px; font-size: 14px; color: var(--muted); }
         </li>
         <li>For Sprouted Roots, choose the <b>Grant</b> and <b>Budget line</b> the cost counts against. Money charged to a grant must name a budget line, or the bill will not post.</li>
         <li>Check <b>Net payable</b>, attach the supplier's bill, and press <span class="ui">Post</span>.</li>
-        <li>When you pay, use <b>Record payment</b> exactly as for an invoice.</li>
+        <li>When you pay, use <span class="ui">Record payment</span> exactly as for an invoice. A payment made in error is undone with <span class="ui">Reverse payment</span>, and a bill with payments must have them reversed before it can be voided.</li>
       </ol>
       <div class="note"><strong>Tip</strong><p>A bill photographed on a phone can be sent to the Inbox (chapter 12) and matched to the bill once it is entered.</p></div>
     </section>
@@ -508,27 +516,27 @@ footer { padding-top: 32px; font-size: 14px; color: var(--muted); }
     <!-- 10 -->
     <section class="chapter" id="payments" data-roles="owner accountant bookkeeper">
       <div class="chapter-head"><span class="num">10</span><h2 class="title">Payments and mobile money</h2></div>
-      <p class="intro">Mobile money wallets, paying many farmers at once, and farmer advances. A wallet reconciles like a bank account, and its fees and levies post to charges.</p>
+      <p class="intro">Mobile money wallets, paying many farmers at once, and farmer advances. A wallet reconciles like a bank account, and its fees and levies post to charges. Tabs: <b>Statements</b>, <b>Batches</b>, <b>Farmers</b> and <b>Wallets</b>. Sprouted Roots buys no produce, so it has only Statements and Wallets.</p>
       <h3>Add a wallet</h3>
       <ol class="steps">
-        <li>Under <b>Add a mobile money wallet</b>, give it a name (e.g. "Field buying wallet") and choose the provider: MTN MoMo, Telecel Cash or AT Money.</li>
+        <li>On the <b>Wallets</b> tab, under <b>Add a mobile money wallet</b>, give it a name (e.g. "Field buying wallet") and choose the provider: MTN MoMo, Telecel Cash or AT Money.</li>
         <li>Press <span class="ui">Add wallet</span>. It becomes a bank account of the company.</li>
       </ol>
       <h3>Pay many farmers at once</h3>
       <ol class="steps">
-        <li>Under <b>Pay many farmers at once</b> you see purchases the agent left for the office to pay. Any advance has already been taken off.</li>
+        <li>On the <b>Batches</b> tab, under <b>Pay many farmers at once</b>, you see purchases the agent left for the office to pay. Any advance has already been taken off.</li>
         <li>Tick who to pay, set <b>Pay on</b> and a name (e.g. "Week 12 cashew") and press <span class="ui">Create batch</span>.</li>
         <li>Press <span class="ui">Export for disbursement</span> to get the file for your provider's bulk payment service.</li>
         <li>When the provider's statement comes back, import it (below), or use <span class="ui">Mark paid by hand</span> with the date and fee charged.</li>
       </ol>
       <h3>Import a wallet statement</h3>
       <ol class="steps">
-        <li>Under <b>Import a statement</b>, choose the wallet, the statement format and the CSV file. The first time, an Accountant adds the provider's format with <span class="ui">Add the provider mappings</span>.</li>
+        <li>On the <b>Statements</b> tab, under <b>Import a statement</b>, choose the wallet, the statement format and the CSV file. The first time, an Accountant adds the provider's format with <span class="ui">Add the provider mappings</span> (under <b>Statement formats</b> on the Wallets tab).</li>
         <li>For each line, answer <b>What is this line?</b> by matching it to a batch or another entry. Fees and levies post to charges automatically.</li>
       </ol>
       <h3>Farmers and advances</h3>
       <ol class="steps">
-        <li>Under <b>Add a farmer</b>, enter their name and wallet number and save.</li>
+        <li>On the <b>Farmers</b> tab, under <b>Add a farmer</b>, enter their name and wallet number and save.</li>
         <li>To lend before the season, use <b>Pre-season advance</b>: choose the farmer, amount and wallet, then <span class="ui">Record advance</span>.</li>
         <li>The advance is recovered automatically from what you owe the farmer for their next deliveries. <b>Advances still to recover</b> lists what is outstanding.</li>
       </ol>
@@ -591,7 +599,7 @@ footer { padding-top: 32px; font-size: 14px; color: var(--muted); }
 
       <h3>Set up payroll for a company (once)</h3>
       <ol class="steps">
-        <li>On the <b>Settings</b> tab, switch payroll on and set the <b>Pay day</b>.</li>
+        <li>Payroll is off for a company until it is switched on; until then the Payroll screen says <b>Payroll is switched off</b>. On the <b>Settings</b> tab, switch payroll on and set the <b>Pay day</b>.</li>
         <li>Choose how someone who joins or leaves mid-month is paid: by <b>calendar days</b> or <b>working days</b> employed.</li>
         <li>Say whether staff may pay into tier 3 through payroll, then save.</li>
         <li>Check that an Owner has verified the statutory rates (see <a href="#settings">Settings → Payroll rates</a>). Pay can be worked out with unverified rates, but not approved.</li>
@@ -656,32 +664,32 @@ footer { padding-top: 32px; font-size: 14px; color: var(--muted); }
     <!-- 15 -->
     <section class="chapter" id="assets" data-roles="owner accountant bookkeeper">
       <div class="chapter-head"><span class="num">15</span><h2 class="title">Assets and company tax</h2></div>
-      <p class="intro">The fixed asset register, monthly depreciation, disposals, capital allowances and the company income tax computation.</p>
+      <p class="intro">The fixed asset register, monthly depreciation, disposals, capital allowances and the company income tax computation. Tabs: <b>Register</b> and <b>Depreciation</b>, plus <b>Tax classes</b>, <b>Computation</b> and <b>Provisional</b> for a company that pays income tax.</p>
       <h3>Add an asset</h3>
       <ol class="steps">
-        <li>Press <span class="ui">Add an asset</span>. Enter what it is (e.g. "Toyota Hilux, GR-1234-26"), the cost, <b>Bought on</b> and <b>In service from</b>.</li>
+        <li>On the <b>Register</b> tab, press <span class="ui">Add an asset</span>. Enter what it is (e.g. "Toyota Hilux, GR-1234-26"), the cost, <b>Bought on</b> and <b>In service from</b>.</li>
         <li>Choose <b>Straight line</b> or <b>Reducing balance</b>, the useful life in months and any residual value.</li>
         <li>Record where it is, who has it, the serial or registration, and its capital allowance class.</li>
         <li>Save. Its <b>Depreciation schedule</b> shows the write-down month by month.</li>
       </ol>
       <h3>Run depreciation each month</h3>
       <ol class="steps">
-        <li>Under <b>Run a month</b>, choose the month and press <span class="ui">Run and post</span>.</li>
+        <li>On the <b>Depreciation</b> tab, under <b>Run a month</b>, choose the month and press <span class="ui">Run and post</span>.</li>
         <li>Every asset in service is written down in one journal. A month can only be run once.</li>
       </ol>
       <h3>Sell or scrap an asset</h3>
       <ol class="steps">
-        <li>Choose the asset and <b>Dispose of</b> it. Enter the date and what you received.</li>
+        <li>On the <b>Register</b> tab, choose the asset and <b>Dispose of</b> it. Enter the date and what you received.</li>
         <li>The screen shows the book value today. Anything above it is a gain, anything below a loss. Press <span class="ui">Post the disposal</span>.</li>
       </ol>
       <h3>Company tax</h3>
       <ol class="steps">
-        <li>Keep <b>Capital allowance classes</b> up to date with the rates in the law. The app assumes none.</li>
-        <li>Set the company's <b>Tax status</b>. An exempt entity has no computation.</li>
-        <li>Under <b>Add a tax year</b>, enter the year, tax rate, losses brought forward and estimated liability. Provisional instalments are based on the estimate.</li>
+        <li>On the <b>Tax classes</b> tab, keep the <b>Capital allowance classes</b> up to date with the rates in the law. The app assumes none.</li>
+        <li>On the same tab, set the company's <b>Tax status</b>. An exempt entity has no computation.</li>
+        <li>On the <b>Computation</b> tab, under <b>Add a tax year</b>, enter the year, tax rate, losses brought forward and estimated liability. Provisional instalments are based on the estimate.</li>
         <li>Press <span class="ui">Work it out</span>. The computation adds back depreciation and disallowed expenses, takes off capital allowances and losses, and gives the chargeable income and tax.</li>
         <li>Add any adjustments, then <span class="ui">Post the charge</span>. The tax posts as an expense and a liability on the last day of the year.</li>
-        <li>Record each provisional tax payment under <b>Record a payment</b>. The Dashboard shows the next one due.</li>
+        <li>On the <b>Provisional</b> tab, record each provisional tax payment under <b>Record a payment</b>. The Dashboard shows the next one due.</li>
       </ol>
     </section>
 
@@ -740,42 +748,42 @@ footer { padding-top: 32px; font-size: 14px; color: var(--muted); }
     <section class="chapter" id="inventory" data-roles="owner accountant bookkeeper data-entry">
       <div class="chapter-head"><span class="num">19</span><h2 class="title">Inventory</h2></div>
       <div class="who"><b>Counts and NRV prices:</b><span class="role">Data entry</span><span class="role">Bookkeeper</span><span class="role">Accountant</span><span class="role">Owner</span> <b>Post movements:</b><span class="role">Accountant</span><span class="role">Owner</span></div>
-      <p class="intro">Stock of raw cashew and cocoa by grade and location, valued at weighted average cost per kilo. The <b>Live stock value</b> should always agree with the stock accounts in the books, and a warning appears if it does not.</p>
+      <p class="intro">Stock of raw cashew and cocoa by grade and location, valued at weighted average cost per kilo. The <b>Live stock value</b> should always agree with the stock accounts in the books, and a warning appears if it does not. Tabs: <b>Stock</b>, <b>Commodities</b>, <b>Lots</b>, <b>Locations</b>, <b>Movements</b>, <b>Counts</b> and <b>NRV</b>.</p>
       <h3>Set up (once)</h3>
       <ol class="steps">
-        <li>Under <b>New commodity</b>, add e.g. "Raw cashew nuts" with its kind (which sets the quality fields), kg per bag and shrinkage tolerance %. Press <span class="ui">Add commodity</span>.</li>
+        <li>On the <b>Commodities</b> tab, under <b>New commodity</b>, add e.g. "Raw cashew nuts" with its kind (which sets the quality fields), kg per bag and shrinkage tolerance %. Press <span class="ui">Add commodity</span>.</li>
         <li>Add its grades with <span class="ui">Add grade</span>.</li>
-        <li>Add warehouses under <b>New location</b> (e.g. "Main warehouse") with <span class="ui">Add location</span>. A location like Goods in Transit can have an account override.</li>
+        <li>On the <b>Locations</b> tab, add warehouses under <b>New location</b> (e.g. "Main warehouse") with <span class="ui">Add location</span>. A location like Goods in Transit can have an account override.</li>
       </ol>
       <h3>Everyday stock work</h3>
       <ul>
         <li><b>Receiving stock</b> happens through a bill line (chapter 7) or a field purchase (chapter 20). Each one creates a <b>lot</b> recording its origin and quality.</li>
-        <li><b>Weigh-out</b>: choose a lot, enter the weight out now and press <span class="ui">Record weigh-out</span>. Loss within tolerance is absorbed; loss beyond it goes to Stock Loss.</li>
-        <li><b>Move stock between locations</b>: choose the item, from, to and quantity, then <span class="ui">Post transfer</span>.</li>
-        <li><b>Change a quantity, with a reason</b>: enter the quantity (minus removes) and what happened, then <span class="ui">Post adjustment</span>.</li>
+        <li><b>Weigh-out</b> (<b>Lots</b> tab): choose a lot, enter the weight out now and press <span class="ui">Record weigh-out</span>. Loss within tolerance is absorbed; loss beyond it goes to Stock Loss.</li>
+        <li><b>Move stock between locations</b> (<b>Movements</b> tab): choose the item, from, to and quantity, then <span class="ui">Post transfer</span>.</li>
+        <li><b>Change a quantity, with a reason</b> (<b>Movements</b> tab): enter the quantity (minus removes) and what happened, then <span class="ui">Post adjustment</span>.</li>
       </ul>
       <h3>Stock count</h3>
       <ol class="steps">
-        <li>Press <span class="ui">New count</span>, choose the location and enter what was physically counted.</li>
+        <li>On the <b>Counts</b> tab, press <span class="ui">New count</span>, choose the location and enter what was physically counted.</li>
         <li>Press <span class="ui">Save draft</span>. Anyone with the role can save a draft.</li>
         <li>An Accountant reviews the differences, ticks <b>I have reviewed the differences above</b> and presses <span class="ui">Confirm and post</span>.</li>
       </ol>
       <h3>Period end: net realisable value</h3>
-      <p>Enter the current selling price per kg for each item. Any item whose cost is above it is flagged, and <span class="ui">Write down</span> posts the difference.</p>
+      <p>On the <b>NRV</b> tab, enter the current selling price per kg for each item. Any item whose cost is above it is flagged, and <span class="ui">Write down</span> posts the difference.</p>
     </section>
 
     <!-- 20 -->
     <section class="chapter" id="buying" data-roles="owner accountant bookkeeper data-entry">
       <div class="chapter-head"><span class="num">20</span><h2 class="title">Buying and field agents</h2></div>
-      <p class="intro">Buying agents take cash floats, buy produce from farmers and record each purchase on their phone, even without signal.</p>
+      <p class="intro">Buying agents take cash floats, buy produce from farmers and record each purchase on their phone, even without signal. For Sprouted Crafts and Oikazi. Tabs: <b>Floats</b>, <b>Purchases</b> and <b>Agents</b>.</p>
       <h3>Set up an agent</h3>
       <ol class="steps">
-        <li>Add the agent and the location they receive purchases at.</li>
+        <li>On the <b>Agents</b> tab, add the agent and the location they receive purchases at.</li>
         <li>An Owner invites them as a user with the <b>Data entry</b> role and access to this company. They use the field page at <span class="path">/field</span>.</li>
-        <li>Set the <b>Age limit</b>. An open float older than this turns red here and on the Dashboard.</li>
+        <li>On the <b>Floats</b> tab, set the <b>Age limit</b>. An open float older than this turns red here and on the Dashboard.</li>
       </ol>
       <h3>Advance a float</h3>
-      <p>Under <b>Advance a float</b>, choose the agent, amount and bank account. The money is owed back until produce or cash returns.</p>
+      <p>On the <b>Floats</b> tab, under <b>Advance a float</b>, choose the agent, amount and bank account. The money is owed back until produce or cash returns.</p>
       <h3>The agent's phone page (<span class="path">/field</span>)</h3>
       <ol class="steps">
         <li>The agent adds the page to their home screen like the capture page (chapter 12).</li>
@@ -785,9 +793,9 @@ footer { padding-top: 32px; font-size: 14px; color: var(--muted); }
       </ol>
       <h3>Post what the agents sent</h3>
       <ol class="steps">
-        <li>Under <b>Synced from the field, not yet posted</b>, check each purchase. Assign a float to any purchase that has none (<span class="ui">Assign float…</span>), or reject it with a reason.</li>
+        <li>On the <b>Purchases</b> tab, under <b>Synced from the field, not yet posted</b>, check each purchase. Assign a float to any purchase that has none (<span class="ui">Assign float…</span>), or reject it with a reason.</li>
         <li>Tick the purchases and press <span class="ui">Post selected</span>. Stock is received and the float reduced.</li>
-        <li>Record labour paid from the float and cash returned, then reconcile the float when it is cleared.</li>
+        <li>On the <b>Floats</b> tab, record labour paid from the float and cash returned, then reconcile the float when it is cleared.</li>
       </ol>
     </section>
 
@@ -806,10 +814,10 @@ footer { padding-top: 32px; font-size: 14px; color: var(--muted); }
         <li>If revenue waits for the buyer's acceptance, the cost sits in Goods in Transit until you press <span class="ui">Buyer accepted</span>.</li>
         <li>Each contract shows revenue, cost of stock, selling costs and <b>Gross margin</b> per kg, plus the exchange exposure on what is still undelivered.</li>
       </ol>
-      <p>The overview compares contracted-but-undelivered quantities with stock on hand. Red means you have sold more than you hold; amber means you hold stock with no buyer.</p>
+      <p>The <b>Position</b> tab compares contracted-but-undelivered quantities with stock on hand. Red means you have sold more than you hold; amber means you hold stock with no buyer.</p>
       <h3>COCOBOD Licensed Buying Company (Oikazi)</h3>
       <ul>
-        <li>Turn on <b>Operate as a Licensed Buying Company</b> and choose how revenue is presented. Acting as <b>principal</b> books sales and cost; acting as <b>agent</b> books only margin, haulage and the pass-through difference. This is your assessment; the app never decides it for you.</li>
+        <li>On the <b>LBC</b> tab, turn on <b>Operate as a Licensed Buying Company</b> and choose how revenue is presented. Acting as <b>principal</b> books sales and cost; acting as <b>agent</b> books only margin, haulage and the pass-through difference. This is your assessment; the app never decides it for you.</li>
         <li>Set the producer price and haulage allowance per kg and press <span class="ui">Save LBC settings</span>.</li>
         <li>Record <b>Seed funds</b> received from, repaid to or offset with COCOBOD, and each <b>CMC payment received</b>.</li>
       </ul>
@@ -823,7 +831,7 @@ footer { padding-top: 32px; font-size: 14px; color: var(--muted); }
       <h3>Borrowing</h3>
       <ol class="steps">
         <li>Under <b>Add a facility</b>, enter the lender, the most you may borrow, interest a year and how the year is counted.</li>
-        <li>Use <b>Draw money</b> to record each drawdown into a bank account.</li>
+        <li>Once a facility exists, use <b>Draw money</b> to record each drawdown into a bank account.</li>
         <li>Press <span class="ui">Charge interest</span> to bring interest up to date. It is charged as it builds up, not only when the lender collects. Record repayments as they happen.</li>
       </ol>
       <h3>Advance to an aggregator</h3>
@@ -835,7 +843,7 @@ footer { padding-top: 32px; font-size: 14px; color: var(--muted); }
       </ol>
       <h3>A load has arrived</h3>
       <ol class="steps">
-        <li>Choose which advance it is against, the date in and the waybill number.</li>
+        <li>On the <b>Deliveries</b> tab (it needs at least one advance), choose which advance it is against, the date in and the waybill number.</li>
         <li>Enter the weighbridge figures, loaded and empty (or the direct weight).</li>
         <li>Enter what the sample said: moisture %, outturn and who checked it.</li>
         <li>The app works out what the load is worth, the cut for wetness or outturn, and how much of the advance it clears.</li>
@@ -898,7 +906,7 @@ footer { padding-top: 32px; font-size: 14px; color: var(--muted); }
     <!-- 26 -->
     <section class="chapter" id="settings" data-roles="owner accountant bookkeeper">
       <div class="chapter-head"><span class="num">26</span><h2 class="title">Settings</h2></div>
-      <p class="intro">Topics: <b>Company</b>, <b>Chart of accounts</b>, <b>Projects</b>, <b>Funds</b>, <b>Contacts</b>, <b>Asset classes</b>, <b>Tax rates</b>, <b>Payroll rates</b> and <b>Backups &amp; audit</b>. Most are for Owners; Accountants and Bookkeepers can use exchange rates, bank accounts and the chart.</p>
+      <p class="intro">Topics: <b>Company</b>, <b>Chart of accounts</b>, <b>Projects</b>, <b>Funds</b>, <b>Contacts</b>, <b>Asset classes</b>, <b>Tax rates</b>, <b>Payroll rates</b> and <b>Backups &amp; audit</b>. Most are for Owners; Accountants and Bookkeepers can use exchange rates, bank accounts and the chart. Exchange rates and bank accounts are under <b>Company</b>.</p>
 
       <h3>Company</h3>
       <ul>
@@ -992,7 +1000,8 @@ footer { padding-top: 32px; font-size: 14px; color: var(--muted); }
             <tr><td>Signed out in the middle of the day</td><td>Sessions end after 12 hours, or an Owner forced a sign-out. Sign in again.</td></tr>
             <tr><td>"That code was not accepted"</td><td>Check the time on your phone is set automatically, then try the newest code.</td></tr>
             <tr><td>The account is locked</td><td>An Owner presses <span class="ui">Unlock</span> on Users.</td></tr>
-            <tr><td>A document will not post</td><td>Read the red message. Usual causes are a filed VAT period, a missing exchange rate, a grant line with no budget line, or a required attachment.</td></tr>
+            <tr><td>A document will not post</td><td>Read the red message. Usual causes are a filed VAT period, a missing exchange rate, a grant line with no budget line, a required attachment, or a document that comes to nothing.</td></tr>
+            <tr><td><span class="ui">Void</span> is not offered on a posted invoice or bill</td><td>A payment is recorded against it. Reverse the payment first (chapter 6). Only Owners and Accountants can void or reverse.</td></tr>
             <tr><td>A pay run will not approve</td><td>A rate it uses is a placeholder or missing. The message names it (chapter 13).</td></tr>
             <tr><td>Phone captures stuck on "Waiting to send"</td><td>Check the signal and press <span class="ui">Send now</span>. If asked, sign in again; nothing is lost.</td></tr>
             <tr><td>Anything else</td><td>Click <span class="ui">?</span> → <b>Contact support</b> and describe it. Copy any message the app showed.</td></tr>

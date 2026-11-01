@@ -314,7 +314,7 @@ export function InboxPanel({ entity, attachments, rules, documents, allowed, cur
           <div className="mt-4 flex flex-wrap items-end gap-3">
             <div>
               <label className={label}>Kind</label>
-              <select className="min-h-[44px] rounded-lg border border-slate-200 bg-white px-3 text-sm" value={ruleForm.target} onChange={(event) => setRuleForm((f) => ({ ...f, target: event.target.value as AttachmentTarget }))}>
+              <select aria-label="Kind" className="min-h-[44px] rounded-lg border border-slate-200 bg-white px-3 text-sm" value={ruleForm.target} onChange={(event) => setRuleForm((f) => ({ ...f, target: event.target.value as AttachmentTarget }))}>
                 {ruleTargets.map((target) => (
                   <option key={target} value={target}>
                     {attachmentTargetLabels[target]}
@@ -324,11 +324,11 @@ export function InboxPanel({ entity, attachments, rules, documents, allowed, cur
             </div>
             <div>
               <label className={label}>Required at and above</label>
-              <Input inputMode="decimal" value={ruleForm.threshold} onChange={(event) => setRuleForm((f) => ({ ...f, threshold: event.target.value }))} placeholder="5000.00" />
+              <Input aria-label="Required at and above" inputMode="decimal" value={ruleForm.threshold} onChange={(event) => setRuleForm((f) => ({ ...f, threshold: event.target.value }))} placeholder="5000.00" />
             </div>
             <div>
               <label className={label}>Switched on?</label>
-              <select className="min-h-[44px] rounded-lg border border-slate-200 bg-white px-3 text-sm" value={ruleForm.isActive ? 'yes' : 'no'} onChange={(event) => setRuleForm((f) => ({ ...f, isActive: event.target.value === 'yes' }))}>
+              <select aria-label="Switched on?" className="min-h-[44px] rounded-lg border border-slate-200 bg-white px-3 text-sm" value={ruleForm.isActive ? 'yes' : 'no'} onChange={(event) => setRuleForm((f) => ({ ...f, isActive: event.target.value === 'yes' }))}>
                 <option value="yes">Yes</option>
                 <option value="no">No</option>
               </select>

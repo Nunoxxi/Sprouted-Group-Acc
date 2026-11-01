@@ -331,7 +331,7 @@ export function InventoryPanel({ entity, accounts, items, commodities, lots, loc
                     </div>
                     {allowed('inventory:manage') ? (
                       <div className="mt-3 flex items-end gap-2">
-                        <div className="flex-1"><label className={label}>New grade</label><Input value={gradeForms[commodity.id] ?? ''} placeholder={commodity.kind === 'cocoa' ? 'Grade 1' : 'Standard'} onChange={(e) => setGradeForms({ ...gradeForms, [commodity.id]: e.target.value })} /></div>
+                        <div className="flex-1"><label className={label}>New grade</label><Input aria-label="New grade" value={gradeForms[commodity.id] ?? ''} placeholder={commodity.kind === 'cocoa' ? 'Grade 1' : 'Standard'} onChange={(e) => setGradeForms({ ...gradeForms, [commodity.id]: e.target.value })} /></div>
                         <Button size="sm" variant="secondary" disabled={pending || !(gradeForms[commodity.id] ?? '').trim()} onClick={() => run(`Grade added to ${commodity.code}.`, () => saveGrade(entity.id, { commodityId: commodity.id, grade: gradeForms[commodity.id] ?? '' }), () => setGradeForms({ ...gradeForms, [commodity.id]: '' }))}>Add grade</Button>
                       </div>
                     ) : null}
@@ -346,18 +346,18 @@ export function InventoryPanel({ entity, accounts, items, commodities, lots, loc
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{commodityForm.id ? 'Edit commodity' : 'New commodity'}</p>
               <div className="mt-3 space-y-3">
                 <div className="grid grid-cols-[110px_1fr] gap-3">
-                  <div><label className={label}>Code</label><Input value={commodityForm.code} onChange={(e) => setCommodityForm({ ...commodityForm, code: e.target.value })} placeholder="RCN" /></div>
-                  <div><label className={label}>Name</label><Input value={commodityForm.name} onChange={(e) => setCommodityForm({ ...commodityForm, name: e.target.value })} placeholder="Raw cashew nuts" /></div>
+                  <div><label className={label}>Code</label><Input aria-label="Code" value={commodityForm.code} onChange={(e) => setCommodityForm({ ...commodityForm, code: e.target.value })} placeholder="RCN" /></div>
+                  <div><label className={label}>Name</label><Input aria-label="Name" value={commodityForm.name} onChange={(e) => setCommodityForm({ ...commodityForm, name: e.target.value })} placeholder="Raw cashew nuts" /></div>
                 </div>
                 <div>
                   <label className={label}>Kind (decides the quality fields)</label>
-                  <select value={commodityForm.kind} className={selectClass} onChange={(e) => setCommodityForm({ ...commodityForm, kind: e.target.value as CommodityKind })}>
+                  <select aria-label="Kind (decides the quality fields)" value={commodityForm.kind} className={selectClass} onChange={(e) => setCommodityForm({ ...commodityForm, kind: e.target.value as CommodityKind })}>
                     {commodityKinds.map((kind) => <option key={kind} value={kind}>{commodityKindLabels[kind]}</option>)}
                   </select>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><label className={label}>kg per bag</label><Input type="number" inputMode="decimal" min={0} step="0.001" value={commodityForm.kgPerBag} onChange={(e) => setCommodityForm({ ...commodityForm, kgPerBag: e.target.value })} placeholder="80" /></div>
-                  <div><label className={label}>Shrinkage tolerance %</label><Input type="number" inputMode="decimal" min={0} max={50} step="0.1" value={commodityForm.tolerance} onChange={(e) => setCommodityForm({ ...commodityForm, tolerance: e.target.value })} placeholder="2" /></div>
+                  <div><label className={label}>kg per bag</label><Input aria-label="kg per bag" type="number" inputMode="decimal" min={0} step="0.001" value={commodityForm.kgPerBag} onChange={(e) => setCommodityForm({ ...commodityForm, kgPerBag: e.target.value })} placeholder="80" /></div>
+                  <div><label className={label}>Shrinkage tolerance %</label><Input aria-label="Shrinkage tolerance %" type="number" inputMode="decimal" min={0} max={50} step="0.1" value={commodityForm.tolerance} onChange={(e) => setCommodityForm({ ...commodityForm, tolerance: e.target.value })} placeholder="2" /></div>
                 </div>
                 <p className="text-xs text-slate-500">Weight loss at a weigh-out up to the tolerance (of the lot&rsquo;s weight in) stays in the cost of the remaining stock; anything beyond it posts to 5045 Stock Loss.</p>
                 <div className="flex justify-end gap-2">
@@ -419,9 +419,9 @@ export function InventoryPanel({ entity, accounts, items, commodities, lots, loc
                     <div className="font-medium text-slate-900">{lot.lotRef} · {itemById.get(lot.itemId)?.name}</div>
                     <div className="text-xs text-slate-600">Weight in {formatKg(lot.gramsIn)} · shrunk so far {formatKg(lot.gramsShrunk)} · tolerance {commodity.shrinkageTolerancePct}% = {formatKg(Math.floor((lot.gramsIn * commodity.shrinkageTolerancePct) / 100))}</div>
                   </div>
-                  <div><label className={label}>Weight out now — kg</label><Input type="number" inputMode="decimal" min={0} step="0.001" value={weighForm.gramsOut} disabled={!allowed('stock:post')} onChange={(e) => setWeighForm({ ...weighForm, gramsOut: e.target.value })} /></div>
-                  <div><label className={label}>Date</label><Input type="date" value={weighForm.date} disabled={!allowed('stock:post')} onChange={(e) => setWeighForm({ ...weighForm, date: e.target.value })} /></div>
-                  <div><label className={label}>Note</label><Input value={weighForm.note} disabled={!allowed('stock:post')} onChange={(e) => setWeighForm({ ...weighForm, note: e.target.value })} /></div>
+                  <div><label className={label}>Weight out now — kg</label><Input aria-label="Weight out now — kg" type="number" inputMode="decimal" min={0} step="0.001" value={weighForm.gramsOut} disabled={!allowed('stock:post')} onChange={(e) => setWeighForm({ ...weighForm, gramsOut: e.target.value })} /></div>
+                  <div><label className={label}>Date</label><Input aria-label="Date" type="date" value={weighForm.date} disabled={!allowed('stock:post')} onChange={(e) => setWeighForm({ ...weighForm, date: e.target.value })} /></div>
+                  <div><label className={label}>Note</label><Input aria-label="Note" value={weighForm.note} disabled={!allowed('stock:post')} onChange={(e) => setWeighForm({ ...weighForm, note: e.target.value })} /></div>
                   {previewError ? <p className="text-xs text-red-700">{previewError}</p> : null}
                   {preview ? (
                     <div className="rounded-xl border border-slate-200 p-3 text-xs">
@@ -463,12 +463,12 @@ export function InventoryPanel({ entity, accounts, items, commodities, lots, loc
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{locationForm.id ? 'Edit location' : 'New location'}</p>
               <div className="mt-3 space-y-3">
                 <div className="grid grid-cols-[110px_1fr] gap-3">
-                  <div><label className={label}>Code</label><Input value={locationForm.code} onChange={(e) => setLocationForm({ ...locationForm, code: e.target.value })} placeholder="WH1" /></div>
-                  <div><label className={label}>Name</label><Input value={locationForm.name} onChange={(e) => setLocationForm({ ...locationForm, name: e.target.value })} placeholder="Main warehouse" /></div>
+                  <div><label className={label}>Code</label><Input aria-label="Code" value={locationForm.code} onChange={(e) => setLocationForm({ ...locationForm, code: e.target.value })} placeholder="WH1" /></div>
+                  <div><label className={label}>Name</label><Input aria-label="Name" value={locationForm.name} onChange={(e) => setLocationForm({ ...locationForm, name: e.target.value })} placeholder="Main warehouse" /></div>
                 </div>
                 <div>
                   <label className={label}>Account override</label>
-                  <select value={locationForm.accountCode} className={selectClass} onChange={(e) => setLocationForm({ ...locationForm, accountCode: e.target.value })}>
+                  <select aria-label="Account override" value={locationForm.accountCode} className={selectClass} onChange={(e) => setLocationForm({ ...locationForm, accountCode: e.target.value })}>
                     <option value="">None — each item&apos;s own account</option>
                     {inventoryAccounts.map((account) => <option key={account.code} value={account.code}>{account.code} · {account.name}</option>)}
                   </select>
@@ -496,15 +496,15 @@ export function InventoryPanel({ entity, accounts, items, commodities, lots, loc
                 <h3 className="mt-1 text-xl font-semibold text-slate-900">Move stock between locations</h3>
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
                   <div className="md:col-span-2"><label className={label}>Item</label>
-                    <select value={transferForm.itemId} className={selectClass} onChange={(e) => setTransferForm({ ...transferForm, itemId: e.target.value, unit: itemById.get(e.target.value)?.baseUnit ?? 'kg' })}>
+                    <select aria-label="Item" value={transferForm.itemId} className={selectClass} onChange={(e) => setTransferForm({ ...transferForm, itemId: e.target.value, unit: itemById.get(e.target.value)?.baseUnit ?? 'kg' })}>
                       <option value="">Choose…</option>{activeItems.map((item) => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}
                     </select></div>
-                  <div><label className={label}>From</label><select value={transferForm.fromLocationId} className={selectClass} onChange={(e) => setTransferForm({ ...transferForm, fromLocationId: e.target.value })}><option value="">Choose…</option>{activeLocations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></div>
-                  <div><label className={label}>To</label><select value={transferForm.toLocationId} className={selectClass} onChange={(e) => setTransferForm({ ...transferForm, toLocationId: e.target.value })}><option value="">Choose…</option>{activeLocations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></div>
-                  <div><label className={label}>Quantity</label><Input type="number" min={0} step="any" value={transferForm.quantity} onChange={(e) => setTransferForm({ ...transferForm, quantity: e.target.value })} /></div>
-                  <div><label className={label}>Unit</label><select value={transferForm.unit} className={selectClass} onChange={(e) => setTransferForm({ ...transferForm, unit: e.target.value as StockUnit })}>{unitsFor(itemById.get(transferForm.itemId)).map((unit) => <option key={unit} value={unit}>{unitLabels[unit]}</option>)}</select></div>
-                  <div><label className={label}>Date</label><Input type="date" value={transferForm.date} onChange={(e) => setTransferForm({ ...transferForm, date: e.target.value })} /></div>
-                  <div><label className={label}>Note</label><Input value={transferForm.note} onChange={(e) => setTransferForm({ ...transferForm, note: e.target.value })} /></div>
+                  <div><label className={label}>From</label><select aria-label="From" value={transferForm.fromLocationId} className={selectClass} onChange={(e) => setTransferForm({ ...transferForm, fromLocationId: e.target.value })}><option value="">Choose…</option>{activeLocations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></div>
+                  <div><label className={label}>To</label><select aria-label="To" value={transferForm.toLocationId} className={selectClass} onChange={(e) => setTransferForm({ ...transferForm, toLocationId: e.target.value })}><option value="">Choose…</option>{activeLocations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></div>
+                  <div><label className={label}>Quantity</label><Input aria-label="Quantity" type="number" min={0} step="any" value={transferForm.quantity} onChange={(e) => setTransferForm({ ...transferForm, quantity: e.target.value })} /></div>
+                  <div><label className={label}>Unit</label><select aria-label="Unit" value={transferForm.unit} className={selectClass} onChange={(e) => setTransferForm({ ...transferForm, unit: e.target.value as StockUnit })}>{unitsFor(itemById.get(transferForm.itemId)).map((unit) => <option key={unit} value={unit}>{unitLabels[unit]}</option>)}</select></div>
+                  <div><label className={label}>Date</label><Input aria-label="Date" type="date" value={transferForm.date} onChange={(e) => setTransferForm({ ...transferForm, date: e.target.value })} /></div>
+                  <div><label className={label}>Note</label><Input aria-label="Note" value={transferForm.note} onChange={(e) => setTransferForm({ ...transferForm, note: e.target.value })} /></div>
                 </div>
                 <div className="mt-3 flex justify-end">
                   <Button size="sm" disabled={pending || !transferForm.itemId || !transferForm.fromLocationId || !transferForm.toLocationId || !transferForm.quantity} onClick={() => run('Transfer posted.', () => transferStock(entity.id, { ...transferForm, quantity: Number(transferForm.quantity) }), () => setTransferForm({ ...transferForm, quantity: '', note: '' }))}>Post transfer</Button>
@@ -515,16 +515,16 @@ export function InventoryPanel({ entity, accounts, items, commodities, lots, loc
                 <h3 className="mt-1 text-xl font-semibold text-slate-900">Change a quantity, with a reason</h3>
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
                   <div className="md:col-span-2"><label className={label}>Item</label>
-                    <select value={adjustForm.itemId} className={selectClass} onChange={(e) => setAdjustForm({ ...adjustForm, itemId: e.target.value, unit: itemById.get(e.target.value)?.baseUnit ?? 'kg' })}>
+                    <select aria-label="Item" value={adjustForm.itemId} className={selectClass} onChange={(e) => setAdjustForm({ ...adjustForm, itemId: e.target.value, unit: itemById.get(e.target.value)?.baseUnit ?? 'kg' })}>
                       <option value="">Choose…</option>{activeItems.map((item) => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}
                     </select></div>
-                  <div><label className={label}>Location</label><select value={adjustForm.locationId} className={selectClass} onChange={(e) => setAdjustForm({ ...adjustForm, locationId: e.target.value })}><option value="">Choose…</option>{activeLocations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></div>
-                  <div><label className={label}>Reason</label><select value={adjustForm.reason} className={selectClass} onChange={(e) => setAdjustForm({ ...adjustForm, reason: e.target.value as AdjustmentReason })}>{adjustmentReasons.map((reason) => <option key={reason} value={reason}>{reasonLabels[reason]}</option>)}</select></div>
-                  <div><label className={label}>Quantity (− removes)</label><Input type="number" step="any" value={adjustForm.quantity} onChange={(e) => setAdjustForm({ ...adjustForm, quantity: e.target.value })} placeholder="-12.5" /></div>
-                  <div><label className={label}>Unit</label><select value={adjustForm.unit} className={selectClass} onChange={(e) => setAdjustForm({ ...adjustForm, unit: e.target.value as StockUnit })}>{unitsFor(itemById.get(adjustForm.itemId)).map((unit) => <option key={unit} value={unit}>{unitLabels[unit]}</option>)}</select></div>
-                  <div><label className={label}>Date</label><Input type="date" value={adjustForm.date} onChange={(e) => setAdjustForm({ ...adjustForm, date: e.target.value })} /></div>
-                  <div><label className={label}>Cost per kg (only for stock found with none on hand)</label><Input type="number" min={0} step="0.01" value={adjustForm.unitCost} onChange={(e) => setAdjustForm({ ...adjustForm, unitCost: e.target.value })} /></div>
-                  <div className="md:col-span-2"><label className={label}>Note</label><Input value={adjustForm.note} onChange={(e) => setAdjustForm({ ...adjustForm, note: e.target.value })} placeholder="What happened" /></div>
+                  <div><label className={label}>Location</label><select aria-label="Location" value={adjustForm.locationId} className={selectClass} onChange={(e) => setAdjustForm({ ...adjustForm, locationId: e.target.value })}><option value="">Choose…</option>{activeLocations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></div>
+                  <div><label className={label}>Reason</label><select aria-label="Reason" value={adjustForm.reason} className={selectClass} onChange={(e) => setAdjustForm({ ...adjustForm, reason: e.target.value as AdjustmentReason })}>{adjustmentReasons.map((reason) => <option key={reason} value={reason}>{reasonLabels[reason]}</option>)}</select></div>
+                  <div><label className={label}>Quantity (− removes)</label><Input aria-label="Quantity (− removes)" type="number" step="any" value={adjustForm.quantity} onChange={(e) => setAdjustForm({ ...adjustForm, quantity: e.target.value })} placeholder="-12.5" /></div>
+                  <div><label className={label}>Unit</label><select aria-label="Unit" value={adjustForm.unit} className={selectClass} onChange={(e) => setAdjustForm({ ...adjustForm, unit: e.target.value as StockUnit })}>{unitsFor(itemById.get(adjustForm.itemId)).map((unit) => <option key={unit} value={unit}>{unitLabels[unit]}</option>)}</select></div>
+                  <div><label className={label}>Date</label><Input aria-label="Date" type="date" value={adjustForm.date} onChange={(e) => setAdjustForm({ ...adjustForm, date: e.target.value })} /></div>
+                  <div><label className={label}>Cost per kg (only for stock found with none on hand)</label><Input aria-label="Cost per kg (only for stock found with none on hand)" type="number" min={0} step="0.01" value={adjustForm.unitCost} onChange={(e) => setAdjustForm({ ...adjustForm, unitCost: e.target.value })} /></div>
+                  <div className="md:col-span-2"><label className={label}>Note</label><Input aria-label="Note" value={adjustForm.note} onChange={(e) => setAdjustForm({ ...adjustForm, note: e.target.value })} placeholder="What happened" /></div>
                 </div>
                 <p className="mt-2 text-xs text-slate-500">Valued at the item&apos;s weighted average cost. The difference posts to 5030 Inventory Adjustments with the reason on the journal — nothing is applied silently.</p>
                 <div className="mt-3 flex justify-end">
@@ -566,11 +566,11 @@ export function InventoryPanel({ entity, accounts, items, commodities, lots, loc
             <h3 className="mt-1 text-xl font-semibold text-slate-900">Stock count</h3>
             <div className="mt-3 grid gap-3 md:grid-cols-3">
               <div><label className={label}>Location</label>
-                <select value={countForm.locationId} className={selectClass} disabled={!!countForm.id} onChange={(e) => setCountForm({ ...countForm, locationId: e.target.value, counted: {} })}>
+                <select aria-label="Location" value={countForm.locationId} className={selectClass} disabled={!!countForm.id} onChange={(e) => setCountForm({ ...countForm, locationId: e.target.value, counted: {} })}>
                   <option value="">Choose…</option>{activeLocations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
                 </select></div>
-              <div><label className={label}>Date</label><Input type="date" value={countForm.date} disabled={savedCount?.status === 'posted'} onChange={(e) => setCountForm({ ...countForm, date: e.target.value })} /></div>
-              <div><label className={label}>Note</label><Input value={countForm.note} disabled={savedCount?.status === 'posted'} onChange={(e) => setCountForm({ ...countForm, note: e.target.value })} /></div>
+              <div><label className={label}>Date</label><Input aria-label="Date" type="date" value={countForm.date} disabled={savedCount?.status === 'posted'} onChange={(e) => setCountForm({ ...countForm, date: e.target.value })} /></div>
+              <div><label className={label}>Note</label><Input aria-label="Note" value={countForm.note} disabled={savedCount?.status === 'posted'} onChange={(e) => setCountForm({ ...countForm, note: e.target.value })} /></div>
             </div>
             {countLocation ? (
               <div className="mt-4 overflow-x-auto">
@@ -661,8 +661,8 @@ export function InventoryPanel({ entity, accounts, items, commodities, lots, loc
               <p className="mt-1 text-sm text-slate-600">Enter the selling price per kg for each item. Any item whose weighted average cost exceeds it is flagged with the write-down needed.</p>
             </div>
             <div className="flex items-end gap-3">
-              <div><label className={label}>Period</label><Input type="month" value={nrvPeriod} onChange={(e) => { setNrvPeriod(e.target.value); setNrvInputs({}); }} /></div>
-              {allowed('stock:post') ? <div><label className={label}>Write-down date</label><Input type="date" value={nrvDate} onChange={(e) => setNrvDate(e.target.value)} /></div> : null}
+              <div><label className={label}>Period</label><Input aria-label="Period" type="month" value={nrvPeriod} onChange={(e) => { setNrvPeriod(e.target.value); setNrvInputs({}); }} /></div>
+              {allowed('stock:post') ? <div><label className={label}>Write-down date</label><Input aria-label="Write-down date" type="date" value={nrvDate} onChange={(e) => setNrvDate(e.target.value)} /></div> : null}
             </div>
           </div>
           <div className="mt-4 overflow-x-auto">

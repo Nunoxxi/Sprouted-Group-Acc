@@ -161,6 +161,7 @@ const documentCalls: Record<keyof typeof documentActions, Call | null> = {
   postDocument: () => documentActions.postDocument(FORBIDDEN_ENTITY, 'doc-1'),
   recordPayment: () => documentActions.recordPayment(FORBIDDEN_ENTITY, { documentId: 'doc-1', bankAccountId: 'bank-1', date: '2026-09-20', txnAmount: 100, rate: '12.5' }),
   voidDocument: () => documentActions.voidDocument(FORBIDDEN_ENTITY, 'doc-1'),
+  reversePayment: () => documentActions.reversePayment(FORBIDDEN_ENTITY, 'payment-1'),
   fileTaxPeriod: () => documentActions.fileTaxPeriod(FORBIDDEN_ENTITY, '2026-08'),
   // Not entity-scoped (contacts are group-wide; entities are created by Owners);
   // covered by the role tests below instead.

@@ -234,6 +234,9 @@ export type PaymentRecord = {
   /** Positive = realised gain, negative = loss, functional currency. */
   gainLoss: number;
   journal: PostedJournal | null;
+  /** The day the payment was reversed; null while it stands. */
+  reversedOn: string | null;
+  reversalJournal: PostedJournal | null;
 };
 
 export type ExchangeRateRow = {

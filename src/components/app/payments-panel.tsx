@@ -175,7 +175,7 @@ export function PaymentsPanel({ entity, bankAccounts, farmers, advances, batches
               <div className="mt-4 grid gap-4 md:grid-cols-3">
                 <div>
                   <label className={label}>Wallet or bank account</label>
-                  <select className={selectClass} value={importForm.bankAccountId} onChange={(e) => setImportForm((f) => ({ ...f, bankAccountId: e.target.value }))}>
+                  <select aria-label="Wallet or bank account" className={selectClass} value={importForm.bankAccountId} onChange={(e) => setImportForm((f) => ({ ...f, bankAccountId: e.target.value }))}>
                     {bankAccounts.map((account) => (
                       <option key={account.id} value={account.id}>
                         {account.name} — {bankAccountKindLabels[account.kind]}
@@ -185,7 +185,7 @@ export function PaymentsPanel({ entity, bankAccounts, farmers, advances, batches
                 </div>
                 <div>
                   <label className={label}>Statement format</label>
-                  <select className={selectClass} value={importForm.mappingId} onChange={(e) => setImportForm((f) => ({ ...f, mappingId: e.target.value }))}>
+                  <select aria-label="Statement format" className={selectClass} value={importForm.mappingId} onChange={(e) => setImportForm((f) => ({ ...f, mappingId: e.target.value }))}>
                     {mappings.map((mapping) => (
                       <option key={mapping.id} value={mapping.id}>
                         {mapping.name}
@@ -195,7 +195,7 @@ export function PaymentsPanel({ entity, bankAccounts, farmers, advances, batches
                 </div>
                 <div>
                   <label className={label}>CSV file</label>
-                  <input
+                  <input aria-label="CSV file"
                     type="file"
                     accept=".csv,text/csv"
                     className="min-h-[44px] w-full text-sm text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm"
@@ -341,11 +341,11 @@ export function PaymentsPanel({ entity, bankAccounts, farmers, advances, batches
                 <div className="mt-4 grid gap-4 md:grid-cols-3">
                   <div>
                     <label className={label}>Pay on</label>
-                    <Input type="date" value={batchForm.date} onChange={(e) => setBatchForm((f) => ({ ...f, date: e.target.value }))} />
+                    <Input aria-label="Pay on" type="date" value={batchForm.date} onChange={(e) => setBatchForm((f) => ({ ...f, date: e.target.value }))} />
                   </div>
                   <div>
                     <label className={label}>From</label>
-                    <select className={selectClass} value={batchForm.bankAccountId} onChange={(e) => setBatchForm((f) => ({ ...f, bankAccountId: e.target.value }))}>
+                    <select aria-label="From" className={selectClass} value={batchForm.bankAccountId} onChange={(e) => setBatchForm((f) => ({ ...f, bankAccountId: e.target.value }))}>
                       {bankAccounts.map((account) => (
                         <option key={account.id} value={account.id}>
                           {account.name} — {bankAccountKindLabels[account.kind]}
@@ -355,7 +355,7 @@ export function PaymentsPanel({ entity, bankAccounts, farmers, advances, batches
                   </div>
                   <div>
                     <label className={label}>Note</label>
-                    <Input value={batchForm.note} onChange={(e) => setBatchForm((f) => ({ ...f, note: e.target.value }))} placeholder="Week 12 cashew" />
+                    <Input aria-label="Note" value={batchForm.note} onChange={(e) => setBatchForm((f) => ({ ...f, note: e.target.value }))} placeholder="Week 12 cashew" />
                   </div>
                 </div>
                 <div className="mt-4 overflow-x-auto">
@@ -503,11 +503,11 @@ export function PaymentsPanel({ entity, bankAccounts, farmers, advances, batches
                     <div className="flex flex-wrap items-end gap-2">
                       <div>
                         <label className={label}>Paid on</label>
-                        <Input type="date" value={paying.date} onChange={(e) => setPaying({ ...paying, date: e.target.value })} />
+                        <Input aria-label="Paid on" type="date" value={paying.date} onChange={(e) => setPaying({ ...paying, date: e.target.value })} />
                       </div>
                       <div>
                         <label className={label}>Fee charged</label>
-                        <Input inputMode="decimal" value={paying.fee} onChange={(e) => setPaying({ ...paying, fee: e.target.value })} placeholder="0.00" />
+                        <Input aria-label="Fee charged" inputMode="decimal" value={paying.fee} onChange={(e) => setPaying({ ...paying, fee: e.target.value })} placeholder="0.00" />
                       </div>
                       <Button
                         size="sm"
@@ -543,23 +543,23 @@ export function PaymentsPanel({ entity, bankAccounts, farmers, advances, batches
             <div className="mt-4 grid gap-4 md:grid-cols-3">
               <div>
                 <label className={label}>Name</label>
-                <Input value={farmerForm.name} onChange={(e) => setFarmerForm((f) => ({ ...f, name: e.target.value }))} />
+                <Input aria-label="Name" value={farmerForm.name} onChange={(e) => setFarmerForm((f) => ({ ...f, name: e.target.value }))} />
               </div>
               <div>
                 <label className={label}>Phone</label>
-                <Input value={farmerForm.phone} onChange={(e) => setFarmerForm((f) => ({ ...f, phone: e.target.value }))} />
+                <Input aria-label="Phone" value={farmerForm.phone} onChange={(e) => setFarmerForm((f) => ({ ...f, phone: e.target.value }))} />
               </div>
               <div>
                 <label className={label}>Wallet number</label>
-                <Input value={farmerForm.walletNumber} onChange={(e) => setFarmerForm((f) => ({ ...f, walletNumber: e.target.value }))} placeholder="0244000111" />
+                <Input aria-label="Wallet number" value={farmerForm.walletNumber} onChange={(e) => setFarmerForm((f) => ({ ...f, walletNumber: e.target.value }))} placeholder="0244000111" />
               </div>
               <div>
                 <label className={label}>Community</label>
-                <Input value={farmerForm.community} onChange={(e) => setFarmerForm((f) => ({ ...f, community: e.target.value }))} />
+                <Input aria-label="Community" value={farmerForm.community} onChange={(e) => setFarmerForm((f) => ({ ...f, community: e.target.value }))} />
               </div>
               <div>
                 <label className={label}>District</label>
-                <Input value={farmerForm.district} onChange={(e) => setFarmerForm((f) => ({ ...f, district: e.target.value }))} />
+                <Input aria-label="District" value={farmerForm.district} onChange={(e) => setFarmerForm((f) => ({ ...f, district: e.target.value }))} />
               </div>
             </div>
             <div className="mt-4 flex gap-2">
@@ -586,7 +586,7 @@ export function PaymentsPanel({ entity, bankAccounts, farmers, advances, batches
             <div className="mt-4 grid gap-4 md:grid-cols-4">
               <div>
                 <label className={label}>Farmer</label>
-                <select className={selectClass} value={advanceForm.farmerId} onChange={(e) => setAdvanceForm((f) => ({ ...f, farmerId: e.target.value }))}>
+                <select aria-label="Farmer" className={selectClass} value={advanceForm.farmerId} onChange={(e) => setAdvanceForm((f) => ({ ...f, farmerId: e.target.value }))}>
                   <option value="">Choose…</option>
                   {farmers.filter((f) => f.isActive).map((farmer) => (
                     <option key={farmer.id} value={farmer.id}>
@@ -597,15 +597,15 @@ export function PaymentsPanel({ entity, bankAccounts, farmers, advances, batches
               </div>
               <div>
                 <label className={label}>Date</label>
-                <Input type="date" value={advanceForm.date} onChange={(e) => setAdvanceForm((f) => ({ ...f, date: e.target.value }))} />
+                <Input aria-label="Date" type="date" value={advanceForm.date} onChange={(e) => setAdvanceForm((f) => ({ ...f, date: e.target.value }))} />
               </div>
               <div>
                 <label className={label}>Amount</label>
-                <Input inputMode="decimal" value={advanceForm.amount} onChange={(e) => setAdvanceForm((f) => ({ ...f, amount: e.target.value }))} placeholder="500.00" />
+                <Input aria-label="Amount" inputMode="decimal" value={advanceForm.amount} onChange={(e) => setAdvanceForm((f) => ({ ...f, amount: e.target.value }))} placeholder="500.00" />
               </div>
               <div>
                 <label className={label}>From</label>
-                <select className={selectClass} value={advanceForm.bankAccountId} onChange={(e) => setAdvanceForm((f) => ({ ...f, bankAccountId: e.target.value }))}>
+                <select aria-label="From" className={selectClass} value={advanceForm.bankAccountId} onChange={(e) => setAdvanceForm((f) => ({ ...f, bankAccountId: e.target.value }))}>
                   {bankAccounts.map((account) => (
                     <option key={account.id} value={account.id}>
                       {account.name}
@@ -798,11 +798,11 @@ export function PaymentsPanel({ entity, bankAccounts, farmers, advances, batches
             <div className="mt-4 grid gap-4 md:grid-cols-3">
               <div>
                 <label className={label}>Name</label>
-                <Input value={walletForm.name} onChange={(e) => setWalletForm((f) => ({ ...f, name: e.target.value }))} placeholder="Field buying wallet" />
+                <Input aria-label="Name" value={walletForm.name} onChange={(e) => setWalletForm((f) => ({ ...f, name: e.target.value }))} placeholder="Field buying wallet" />
               </div>
               <div>
                 <label className={label}>Provider</label>
-                <select className={selectClass} value={walletForm.provider} onChange={(e) => setWalletForm((f) => ({ ...f, provider: e.target.value }))}>
+                <select aria-label="Provider" className={selectClass} value={walletForm.provider} onChange={(e) => setWalletForm((f) => ({ ...f, provider: e.target.value }))}>
                   {['MTN MoMo', 'Telecel Cash', 'AT Money'].map((provider) => (
                     <option key={provider} value={provider}>
                       {provider}
@@ -812,7 +812,7 @@ export function PaymentsPanel({ entity, bankAccounts, farmers, advances, batches
               </div>
               <div>
                 <label className={label}>Wallet number</label>
-                <Input value={walletForm.number} onChange={(e) => setWalletForm((f) => ({ ...f, number: e.target.value }))} placeholder="0244000111" />
+                <Input aria-label="Wallet number" value={walletForm.number} onChange={(e) => setWalletForm((f) => ({ ...f, number: e.target.value }))} placeholder="0244000111" />
               </div>
             </div>
             <div className="mt-4">

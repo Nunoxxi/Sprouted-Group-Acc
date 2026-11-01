@@ -147,7 +147,7 @@ export function OpeningPanel({ entity, opening, allowed }: Props) {
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">1 · Cut-over date</p>
               <p className="mt-1 text-sm text-slate-600">The date the balances are as at. Every opening journal is dated here.</p>
               <div className="mt-3 flex items-end gap-2">
-                <div className="flex-1"><label className={label}>Cut-over</label><Input type="date" value={cutOver} disabled={!allowed('entity:configure') || posted.length > 0} onChange={(e) => setCutOver(e.target.value)} /></div>
+                <div className="flex-1"><label className={label}>Cut-over</label><Input aria-label="Cut-over" type="date" value={cutOver} disabled={!allowed('entity:configure') || posted.length > 0} onChange={(e) => setCutOver(e.target.value)} /></div>
                 {allowed('entity:configure') ? <Button size="sm" variant="secondary" disabled={pending || posted.length > 0 || cutOver === entity.cutOverDate} onClick={() => run(`Cut-over date set to ${cutOver}.`, () => setCutOverDate(entity.id, cutOver))}>Save</Button> : null}
               </div>
               {posted.length > 0 ? <p className="mt-2 text-xs text-slate-500">Fixed: opening balances have been posted at {status.cutOverDate}.</p> : null}

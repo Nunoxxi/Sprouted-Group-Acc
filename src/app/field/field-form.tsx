@@ -309,26 +309,26 @@ export function FieldForm({ refs: serverRefs }: { refs: FieldReferenceData }) {
 
       <section className="mt-4 space-y-4">
         {refs.entities.length > 1 ? (
-          <div><label className={label}>Buying for</label><select className={field} value={entityId} onChange={(e) => { setEntityId(e.target.value); setForm({ ...form, agentId: '', floatId: '', itemId: '', locationId: '' }); }}>{refs.entities.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}</select></div>
+          <div><label className={label}>Buying for</label><select aria-label="Buying for" className={field} value={entityId} onChange={(e) => { setEntityId(e.target.value); setForm({ ...form, agentId: '', floatId: '', itemId: '', locationId: '' }); }}>{refs.entities.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}</select></div>
         ) : null}
-        <div><label className={label}>Agent</label><select className={field} value={form.agentId} onChange={(e) => setForm({ ...form, agentId: e.target.value, floatId: '', locationId: '' })}><option value="">Choose…</option>{entityAgents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
+        <div><label className={label}>Agent</label><select aria-label="Agent" className={field} value={form.agentId} onChange={(e) => setForm({ ...form, agentId: e.target.value, floatId: '', locationId: '' })}><option value="">Choose…</option>{entityAgents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
         {openFloats.length > 0 ? (
-          <div><label className={label}>Float</label><select className={field} value={form.floatId} onChange={(e) => setForm({ ...form, floatId: e.target.value })}><option value="">Assign later</option>{openFloats.map((f) => <option key={f.id} value={f.id}>Float of {f.date} · GH₵{(f.amountMinor / 100).toFixed(2)}</option>)}</select></div>
+          <div><label className={label}>Float</label><select aria-label="Float" className={field} value={form.floatId} onChange={(e) => setForm({ ...form, floatId: e.target.value })}><option value="">Assign later</option>{openFloats.map((f) => <option key={f.id} value={f.id}>Float of {f.date} · GH₵{(f.amountMinor / 100).toFixed(2)}</option>)}</select></div>
         ) : null}
-        <div><label className={label}>Date</label><input type="date" className={field} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div>
-        <div><label className={label}>Farmer</label><input className={field} value={form.farmerName} autoComplete="off" placeholder="Name" onChange={(e) => setForm({ ...form, farmerName: e.target.value })} /></div>
+        <div><label className={label}>Date</label><input aria-label="Date" type="date" className={field} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div>
+        <div><label className={label}>Farmer</label><input aria-label="Farmer" className={field} value={form.farmerName} autoComplete="off" placeholder="Name" onChange={(e) => setForm({ ...form, farmerName: e.target.value })} /></div>
         <div className="grid grid-cols-2 gap-3">
-          <div><label className={label}>Phone</label><input className={field} type="tel" inputMode="tel" value={form.farmerPhone} onChange={(e) => setForm({ ...form, farmerPhone: e.target.value })} /></div>
-          <div><label className={label}>Wallet number</label><input className={field} type="tel" inputMode="tel" value={form.walletNumber} onChange={(e) => setForm({ ...form, walletNumber: e.target.value })} /></div>
+          <div><label className={label}>Phone</label><input aria-label="Phone" className={field} type="tel" inputMode="tel" value={form.farmerPhone} onChange={(e) => setForm({ ...form, farmerPhone: e.target.value })} /></div>
+          <div><label className={label}>Wallet number</label><input aria-label="Wallet number" className={field} type="tel" inputMode="tel" value={form.walletNumber} onChange={(e) => setForm({ ...form, walletNumber: e.target.value })} /></div>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <div><label className={label}>Community</label><input className={field} value={form.community} onChange={(e) => setForm({ ...form, community: e.target.value })} /></div>
-          <div><label className={label}>District</label><input className={field} value={form.district} onChange={(e) => setForm({ ...form, district: e.target.value })} /></div>
+          <div><label className={label}>Community</label><input aria-label="Community" className={field} value={form.community} onChange={(e) => setForm({ ...form, community: e.target.value })} /></div>
+          <div><label className={label}>District</label><input aria-label="District" className={field} value={form.district} onChange={(e) => setForm({ ...form, district: e.target.value })} /></div>
         </div>
-        <div><label className={label}>Grade</label><select className={field} value={form.itemId} onChange={(e) => { setForm({ ...form, itemId: e.target.value }); setQuality({}); }}><option value="">Choose…</option>{entityItems.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</select></div>
+        <div><label className={label}>Grade</label><select aria-label="Grade" className={field} value={form.itemId} onChange={(e) => { setForm({ ...form, itemId: e.target.value }); setQuality({}); }}><option value="">Choose…</option>{entityItems.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</select></div>
         <div className="grid grid-cols-2 gap-3">
           <div><label className={label}>Bags{commodity ? ` (${commodity.gramsPerBag / 1000} kg)` : ''}</label><input type="number" inputMode="decimal" min={0} step="any" className={field} value={form.bags} onChange={(e) => setForm({ ...form, bags: e.target.value, kg: '' })} /></div>
-          <div><label className={label}>or weight (kg)</label><input type="number" inputMode="decimal" min={0} step="any" className={field} value={form.kg} onChange={(e) => setForm({ ...form, kg: e.target.value, bags: '' })} /></div>
+          <div><label className={label}>or weight (kg)</label><input aria-label="or weight (kg)" type="number" inputMode="decimal" min={0} step="any" className={field} value={form.kg} onChange={(e) => setForm({ ...form, kg: e.target.value, bags: '' })} /></div>
         </div>
         {grams > 0 ? <p className="-mt-2 text-sm text-slate-600">= {(grams / 1000).toLocaleString('en-GH', { maximumFractionDigits: 3 })} kg</p> : null}
         <div><label className={label}>Price paid (GH₵){producerPrice !== null ? ` — producer price GH₵${(producerPrice / 100).toFixed(2)}/kg` : ''}</label><input type="number" inputMode="decimal" min={0} step="0.01" className={field} value={form.price} placeholder={suggestedPrice !== null ? (suggestedPrice / 100).toFixed(2) : ''} onChange={(e) => setForm({ ...form, price: e.target.value })} />{producerPrice !== null && form.price.trim() && Math.round(Number(form.price) * 100) !== suggestedPrice ? <p className="mt-1 text-xs text-amber-800">Differs from the gazetted producer price.</p> : null}</div>
@@ -352,7 +352,7 @@ export function FieldForm({ refs: serverRefs }: { refs: FieldReferenceData }) {
               </div>
             </div>
             {form.paymentMethod === 'mobile-money' ? (
-              <div><label className={label}>Transfer reference</label><input className={field} autoCapitalize="characters" autoComplete="off" value={form.paymentRef} onChange={(e) => setForm({ ...form, paymentRef: e.target.value })} placeholder="From the confirmation message" /></div>
+              <div><label className={label}>Transfer reference</label><input aria-label="Transfer reference" className={field} autoCapitalize="characters" autoComplete="off" value={form.paymentRef} onChange={(e) => setForm({ ...form, paymentRef: e.target.value })} placeholder="From the confirmation message" /></div>
             ) : (
               <div>
                 <label className={label}>Farmer&rsquo;s confirmation</label>
@@ -380,9 +380,9 @@ export function FieldForm({ refs: serverRefs }: { refs: FieldReferenceData }) {
           </div>
         ) : null}
         {entityLocations.length > 1 ? (
-          <div><label className={label}>Delivered to</label><select className={field} value={form.locationId || agent?.defaultLocationId || ''} onChange={(e) => setForm({ ...form, locationId: e.target.value })}><option value="">Agent&rsquo;s usual place</option>{entityLocations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></div>
+          <div><label className={label}>Delivered to</label><select aria-label="Delivered to" className={field} value={form.locationId || agent?.defaultLocationId || ''} onChange={(e) => setForm({ ...form, locationId: e.target.value })}><option value="">Agent&rsquo;s usual place</option>{entityLocations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></div>
         ) : null}
-        <div><label className={label}>Note</label><input className={field} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></div>
+        <div><label className={label}>Note</label><input aria-label="Note" className={field} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></div>
       </section>
 
       <section className="mt-6">

@@ -109,7 +109,7 @@ export function postedJournal(row: JournalRow): PostedJournal {
   };
 }
 
-export type PaymentRow = Payment & { bankAccount: BankAccount; journalEntry: JournalRow | null };
+export type PaymentRow = Payment & { bankAccount: BankAccount; journalEntry: JournalRow | null; reversalEntry: JournalRow | null };
 
 export function paymentRecord(row: PaymentRow): PaymentRecord {
   return {
@@ -125,6 +125,8 @@ export function paymentRecord(row: PaymentRow): PaymentRecord {
     reliefAmount: toMinor(row.reliefMinor),
     gainLoss: toMinor(row.gainLossMinor),
     journal: row.journalEntry ? postedJournal(row.journalEntry) : null,
+    reversedOn: row.reversalEntry ? isoDate(row.reversalEntry.postedAt) : null,
+    reversalJournal: row.reversalEntry ? postedJournal(row.reversalEntry) : null,
   };
 }
 
@@ -228,6 +230,7 @@ export const documentInclude = {
     include: {
       bankAccount: true,
       journalEntry: { include: { lines: { include: { account: { select: { code: true, name: true } } } } } },
+      reversalEntry: { include: { lines: { include: { account: { select: { code: true, name: true } } } } } },
     },
   },
 } as const;

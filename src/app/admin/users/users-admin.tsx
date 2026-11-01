@@ -144,11 +144,11 @@ function InviteForm({
       <form onSubmit={submit} className="mt-4 grid gap-4 md:grid-cols-2">
         <div>
           <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Name</label>
-          <Input required value={name} onChange={(e) => setName(e.target.value)} />
+          <Input aria-label="Name" required value={name} onChange={(e) => setName(e.target.value)} />
         </div>
         <div>
           <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Email</label>
-          <Input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+          <Input aria-label="Email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
         </div>
         <RoleAndEntities role={role} entityIds={entityIds} entities={entities} onRole={setRole} onEntities={setEntityIds} />
         <div className="md:col-span-2">
@@ -181,7 +181,7 @@ function RoleAndEntities({
     <>
       <div>
         <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Role</label>
-        <select
+        <select aria-label="Role"
           value={role}
           onChange={(e) => onRole(e.target.value as Role)}
           className="min-h-[44px] w-full rounded-lg border border-slate-200 bg-white px-3 text-sm"
