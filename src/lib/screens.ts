@@ -34,6 +34,7 @@ export const screens = [
   'Personal data',
   'Go-live',
   'Settings',
+  'User guide',
 ] as const;
 
 export type Screen = (typeof screens)[number];
@@ -67,6 +68,8 @@ export const sectionsByScreen: Record<Screen, readonly Section[]> = {
   'Personal data': ['privacy'],
   'Go-live': ['opening'],
   Settings: ['settings'],
+  // The guide is a page of its own (public/user-guide.html); it reads nothing.
+  'User guide': [],
 };
 
 /** The screen named in the address, or the dashboard for anything else. */

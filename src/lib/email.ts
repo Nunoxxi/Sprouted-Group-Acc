@@ -21,6 +21,8 @@ export type OutboundEmail = {
   from?: string | null;
   /** Files sent with it, e.g. a payslip PDF. Content is base64. */
   attachments?: { filename: string; content: string }[];
+  /** Where a reply goes, when not to the sender: a support request is answered to the person who asked. */
+  replyTo?: string | null;
 };
 
 const fallbackSender = 'Sprouted Accounting <accounting@example.com>';
@@ -62,7 +64,14 @@ export async function sendEmail(message: OutboundEmail): Promise<void> {
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from, to: [message.to], subject: message.subject, text: message.text, ...(message.attachments?.length ? { attachments: message.attachments } : {}) }),
+      body: JSON.stringify({
+        from,
+        to: [message.to],
+        subject: message.subject,
+        text: message.text,
+        ...(message.replyTo ? { reply_to: message.replyTo } : {}),
+        ...(message.attachments?.length ? { attachments: message.attachments } : {}),
+      }),
     });
     if (!response.ok) {
       throw new Error(`Email delivery failed (${response.status}): ${await response.text()}`);

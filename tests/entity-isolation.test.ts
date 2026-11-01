@@ -128,6 +128,7 @@ import * as chartActions from '@/app/actions/chart';
 import * as settingsActions from '@/app/actions/settings';
 import * as preFinanceActions from '@/app/actions/prefinance';
 import * as userActions from '@/app/actions/users';
+import * as supportActions from '@/app/actions/support';
 import * as auditRoute from '@/app/api/audit/route';
 import * as backupsRoute from '@/app/api/backups/route';
 import { roleHas, roles } from '@/lib/authz';
@@ -494,6 +495,11 @@ const privacyCalls: Record<keyof typeof privacyActions, Call> = {
 };
 
 /** Every user-management Server Function. Owner-only, so any other role is refused. */
+/** The support form: any signed-in person, but only naming a company they may see. */
+const supportCalls: Record<keyof typeof supportActions, Call> = {
+  contactSupport: () => supportActions.contactSupport({ entityId: FORBIDDEN_ENTITY, screen: 'Payroll', topic: 'problem', message: 'The pay run will not approve.' }),
+};
+
 const userCalls: Record<keyof typeof userActions, Call> = {
   listUsers: () => userActions.listUsers(),
   listSessions: () => userActions.listSessions(),
@@ -571,6 +577,7 @@ describe('coverage', () => {
       'prefinance',
       'privacy',
       'settings',
+      'support',
       'trading',
       'users',
       'vat',
@@ -583,6 +590,8 @@ describe('coverage', () => {
     expect(exportedDocs.sort()).toEqual(Object.keys(documentCalls).sort());
     const exportedUsers = Object.keys(userActions).filter((k) => typeof (userActions as Record<string, unknown>)[k] === 'function');
     expect(exportedUsers.sort()).toEqual(Object.keys(userCalls).sort());
+    const exportedSupport = Object.keys(supportActions).filter((k) => typeof (supportActions as Record<string, unknown>)[k] === 'function');
+    expect(exportedSupport.sort()).toEqual(Object.keys(supportCalls).sort());
     const exportedFx = Object.keys(fxActions).filter((k) => typeof (fxActions as Record<string, unknown>)[k] === 'function');
     expect(exportedFx.sort()).toEqual(Object.keys(fxCalls).sort());
     const exportedVat = Object.keys(vatActions).filter((k) => typeof (vatActions as Record<string, unknown>)[k] === 'function');
@@ -630,7 +639,7 @@ describe('coverage', () => {
 // --- signed out --------------------------------------------------------------------
 
 describe('signed out', () => {
-  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...payrollSettingsCalls, ...attachmentCalls, ...privacyCalls, ...chartCalls, ...settingsCalls, ...preFinanceCalls, ...userCalls, ...payrollRatesCalls, ...groupPayrollCalls })) {
+  for (const [name, call] of Object.entries({ ...documentCalls, ...fxCalls, ...vatCalls, ...entityCalls, ...inventoryCalls, ...tradingCalls, ...contractCalls, ...openingCalls, ...momoCalls, ...grantCalls, ...cashflowCalls, ...assetCalls, ...payrollCalls, ...payrollSettingsCalls, ...attachmentCalls, ...privacyCalls, ...chartCalls, ...settingsCalls, ...preFinanceCalls, ...userCalls, ...payrollRatesCalls, ...groupPayrollCalls, ...supportCalls })) {
     if (!call) continue;
     it(`${name} is refused without touching the database`, async () => {
       expect(isRefusal(await call())).toBe(true);

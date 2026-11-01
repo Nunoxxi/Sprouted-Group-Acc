@@ -17,6 +17,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 
 import { captureDocument } from '@/app/actions/attachments';
 import { prepareFile } from '@/components/app/attachments';
+import { SupportDialog } from '@/components/app/help-menu';
 import { SignOutButton } from '@/components/auth/sign-out-button';
 import { captureKindHints, captureKindLabels, captureKinds, checkCapture, parseCedis, type CaptureKind } from '@/lib/capture';
 
@@ -128,6 +129,7 @@ export function CaptureForm({ user, companies, canOpenApp }: { user: { name: str
   const [needsSignIn, setNeedsSignIn] = useState(false);
   const [notice, setNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [askingSupport, setAskingSupport] = useState(false);
   const cameraInput = useRef<HTMLInputElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const sendingRef = useRef(false);
@@ -373,7 +375,12 @@ export function CaptureForm({ user, companies, canOpenApp }: { user: { name: str
         </section>
       ) : null}
 
-      <p className="mt-10 text-center text-sm">
+      <p className="mt-10 flex justify-center gap-5 text-sm">
+        <a className="text-brand-800 underline" href="/user-guide.html#for-staff" target="_blank" rel="noopener">How to use this</a>
+        <button type="button" className="text-brand-800 underline" onClick={() => setAskingSupport(true)}>Contact support</button>
+      </p>
+      {askingSupport ? <SupportDialog where={{ entityId, screen: 'Phone capture' }} onClose={() => setAskingSupport(false)} /> : null}
+      <p className="mt-3 text-center text-sm">
         {canOpenApp ? (
           <Link className="text-brand-800 underline" href="/">Open the full app</Link>
         ) : (

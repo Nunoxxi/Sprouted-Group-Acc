@@ -1,0 +1,1111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The user guide, served inside the app at /user-guide.html (the User guide screen shows it).
+     A copy of the published guide; update both together. Opens at a role with #for-<role>. -->
+<title>Sprouted Accounting User Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: a field manual. Fixed contents rail on wide screens, one reading column; every screen is a numbered chapter, every task a numbered procedure. */
+:root {
+  --bg: #f5f3ee;
+  --paper: #fffefb;
+  --ink: #1d2a25;
+  --muted: #5d6b65;
+  --rule: #dcd8ce;
+  --brand: #2f6f5a;
+  --brand-soft: #e3efe9;
+  --brand-ink: #1f5242;
+  --chip: #ece9e1;
+  --warn-bg: #fbf1dc;
+  --warn-ink: #7a5310;
+  --warn-rule: #e9cf98;
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Public Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131a17; --paper: #1a2320; --ink: #e6ece8; --muted: #9db0a7; --rule: #2e3b36;
+    --brand: #6fbf9f; --brand-soft: #1f3a30; --brand-ink: #a6e0c8; --chip: #25302c;
+    --warn-bg: #33290f; --warn-ink: #f0cf86; --warn-rule: #5e4a1c;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #131a17; --paper: #1a2320; --ink: #e6ece8; --muted: #9db0a7; --rule: #2e3b36;
+  --brand: #6fbf9f; --brand-soft: #1f3a30; --brand-ink: #a6e0c8; --chip: #25302c;
+  --warn-bg: #33290f; --warn-ink: #f0cf86; --warn-rule: #5e4a1c;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+img { max-width: 100%; }
+html { scroll-behavior: smooth; scroll-padding-top: 24px; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 400 16px/1.65 var(--font-body);
+}
+a { color: var(--brand-ink); text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 4px; }
+
+.shell {
+  display: grid; grid-template-columns: 1fr; gap: 0;
+  max-width: 1180px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+@media (min-width: 980px) { .shell { grid-template-columns: 270px minmax(0, 1fr); gap: 48px; } }
+
+/* contents rail */
+.rail { padding-block: 28px 8px; min-width: 0; }
+@media (min-width: 980px) {
+  .rail { position: sticky; top: 0; align-self: start; max-height: 100vh; overflow-y: auto; padding-block: 36px 36px; }
+}
+.brandmark { display: flex; align-items: center; gap: 10px; font: 700 13px/1 var(--font-body); letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+.brandmark i { width: 12px; height: 12px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 0 4px var(--brand-soft); }
+.search { margin-top: 18px; }
+.search label { display: block; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+.search input {
+  width: 100%; font: 400 15px/1.3 var(--font-body); color: var(--ink);
+  background: var(--paper); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px;
+}
+.search p { margin: 6px 0 0; font-size: 13px; color: var(--muted); min-height: 1.3em; }
+.toc { margin-top: 14px; display: grid; gap: 14px; }
+.toc details > summary { cursor: pointer; font-weight: 600; font-size: 14px; list-style: none; }
+.toc details > summary::-webkit-details-marker { display: none; }
+@media (min-width: 980px) { .toc details > summary { pointer-events: none; } }
+.toc h2 { font: 700 11px/1.2 var(--font-body); letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin: 0 0 6px; }
+.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.toc a { display: flex; gap: 10px; padding: 4px 8px; border-radius: 6px; text-decoration: none; color: var(--ink); font-size: 14px; line-height: 1.35; }
+.toc a span { font: 500 11px/1.7 var(--font-mono); color: var(--muted); min-width: 1.6em; }
+.toc a:hover, .toc a.here { background: var(--brand-soft); color: var(--brand-ink); }
+
+/* reading column */
+main { padding-block: 28px 80px; min-width: 0; }
+@media (min-width: 980px) { main { padding-block: 44px 120px; } }
+.hero { padding-bottom: 28px; border-bottom: 1px solid var(--rule); }
+.eyebrow { font: 600 12px/1 var(--font-body); letter-spacing: .16em; text-transform: uppercase; color: var(--brand-ink); }
+h1 { font: 700 clamp(34px, 6vw, 52px)/1.04 var(--font-display); letter-spacing: -.02em; margin: 12px 0 14px; text-wrap: balance; }
+.lede { font-size: 18px; color: var(--muted); max-width: 62ch; margin: 0; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 18px; font-size: 14px; color: var(--muted); }
+
+section.chapter { padding-block: 40px 8px; border-bottom: 1px solid var(--rule); }
+section.chapter[hidden] { display: none !important; }
+.chapter-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.num { font: 500 13px/1 var(--font-mono); color: var(--brand); background: var(--brand-soft); padding: 5px 8px; border-radius: 6px; }
+h2.title { font: 700 clamp(25px, 3.6vw, 32px)/1.15 var(--font-display); letter-spacing: -.01em; margin: 0; text-wrap: balance; }
+h3 { font: 700 18px/1.3 var(--font-body); margin: 30px 0 8px; text-wrap: balance; }
+h4 { font: 600 15px/1.35 var(--font-body); margin: 20px 0 6px; color: var(--brand-ink); }
+p, li { max-width: 68ch; }
+p { margin: 10px 0; }
+.intro { font-size: 17px; }
+
+ol.steps { counter-reset: step; list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 10px; }
+ol.steps > li { counter-increment: step; position: relative; padding-left: 40px; }
+ol.steps > li::before {
+  content: counter(step); position: absolute; left: 0; top: 1px;
+  width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+  font: 600 13px/1 var(--font-mono); color: var(--paper); background: var(--brand);
+}
+ul { padding-left: 22px; margin: 10px 0; }
+ul li { margin: 4px 0; }
+
+.ui {
+  font: 600 .88em/1 var(--font-body); white-space: nowrap;
+  background: var(--chip); border: 1px solid var(--rule); border-bottom-width: 2px;
+  border-radius: 6px; padding: 2px 6px; color: var(--ink);
+}
+code, .path { font: 500 .88em/1 var(--font-mono); background: var(--chip); padding: 2px 5px; border-radius: 4px; }
+
+.who { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px 0 4px; font-size: 13px; color: var(--muted); }
+.who b { font-weight: 600; margin-right: 2px; }
+.role { font: 600 12px/1 var(--font-body); padding: 4px 8px; border-radius: 999px; background: var(--brand-soft); color: var(--brand-ink); }
+
+.note, .warn {
+  border-left: 3px solid var(--brand); background: var(--paper); padding: 12px 14px; margin: 16px 0;
+  border-radius: 0 8px 8px 0; max-width: 68ch;
+}
+.note p, .warn p { margin: 4px 0; }
+.note strong, .warn strong { display: block; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; margin-bottom: 2px; }
+.note strong { color: var(--brand-ink); }
+.warn { border-left-color: var(--warn-rule); background: var(--warn-bg); color: var(--warn-ink); }
+
+.table-wrap { overflow-x: auto; margin: 14px 0; border: 1px solid var(--rule); border-radius: 10px; background: var(--paper); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 520px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-weight: 600; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); background: var(--bg); }
+tr:last-child td { border-bottom: 0; }
+td.y { color: var(--brand-ink); font-weight: 700; text-align: center; }
+td.n { color: var(--muted); text-align: center; }
+th.c { text-align: center; }
+
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 12px 0; font-size: 14px; }
+.flow span { background: var(--paper); border: 1px solid var(--rule); border-radius: 999px; padding: 4px 11px; font-weight: 600; }
+.flow i { font-style: normal; color: var(--muted); }
+
+.grid2 { display: grid; gap: 14px; grid-template-columns: 1fr; margin: 14px 0; }
+@media (min-width: 720px) { .grid2 { grid-template-columns: 1fr 1fr; } }
+.card { background: var(--paper); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; min-width: 0; }
+.card h4 { margin-top: 0; }
+.card p { margin: 6px 0 0; font-size: 15px; }
+
+.picker { margin-top: 26px; }
+.picker > p { margin: 0 0 8px; font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.picker-options { display: flex; flex-wrap: wrap; gap: 6px; }
+.picker-options button {
+  font: 600 14px/1 var(--font-body); color: var(--ink); cursor: pointer;
+  background: var(--paper); border: 1px solid var(--rule); border-radius: 999px; padding: 9px 14px;
+  transition: background-color .15s ease-out, color .15s ease-out, transform .15s ease-out;
+}
+.picker-options button:hover { border-color: var(--brand); }
+.picker-options button:active { transform: scale(.97); }
+.picker-options button[aria-pressed="true"] { background: var(--brand); border-color: var(--brand); color: var(--paper); }
+@media (prefers-reduced-motion: reduce) { .picker-options button { transition: none; } }
+.role-intro { margin-top: 18px; background: var(--paper); border: 1px solid var(--rule); border-radius: 12px; padding: 16px 18px; max-width: 72ch; }
+.role-intro[hidden] { display: none !important; }
+.role-intro h2 { font: 700 20px/1.25 var(--font-display); margin: 0; }
+.role-intro p { margin: 6px 0 0; }
+.role-count { font-size: 14px; color: var(--muted); }
+.toc li[hidden] { display: none; }
+.empty { padding: 40px 0; color: var(--muted); }
+footer { padding-top: 32px; font-size: 14px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <aside class="rail" aria-label="Contents">
+    <div class="brandmark"><i></i>Sprouted Group</div>
+    <div class="search">
+      <label for="find">Find in the guide</label>
+      <input id="find" type="search" placeholder="e.g. payslip, VAT, receipt" autocomplete="off">
+      <p id="find-result" aria-live="polite"></p>
+    </div>
+    <nav class="toc" id="toc">
+      <details open>
+        <summary><h2>Getting started</h2></summary>
+        <ol>
+          <li><a href="#basics"><span>01</span>How the app is organised</a></li>
+          <li><a href="#roles"><span>02</span>Roles: who can do what</a></li>
+          <li><a href="#signin"><span>03</span>Signing in and two-factor</a></li>
+          <li><a href="#navigate"><span>04</span>Finding your way around</a></li>
+        </ol>
+      </details>
+      <details open>
+        <summary><h2>Everyday work</h2></summary>
+        <ol>
+          <li><a href="#dashboard"><span>05</span>Dashboard</a></li>
+          <li><a href="#sales"><span>06</span>Sales: customer invoices</a></li>
+          <li><a href="#purchases"><span>07</span>Purchases: supplier bills</a></li>
+          <li><a href="#contacts"><span>08</span>Contacts</a></li>
+          <li><a href="#bank"><span>09</span>Bank</a></li>
+          <li><a href="#payments"><span>10</span>Payments and mobile money</a></li>
+          <li><a href="#inbox"><span>11</span>Inbox and attachments</a></li>
+          <li><a href="#phone"><span>12</span>Sending documents from a phone</a></li>
+        </ol>
+      </details>
+      <details open>
+        <summary><h2>People and money</h2></summary>
+        <ol>
+          <li><a href="#payroll"><span>13</span>Payroll</a></li>
+          <li><a href="#cashflow"><span>14</span>Cash flow forecast</a></li>
+          <li><a href="#assets"><span>15</span>Assets and company tax</a></li>
+          <li><a href="#grants"><span>16</span>Grants (Sprouted Roots)</a></li>
+          <li><a href="#intercompany"><span>17</span>Intercompany</a></li>
+          <li><a href="#tax"><span>18</span>Tax: VAT and withholding</a></li>
+        </ol>
+      </details>
+      <details open>
+        <summary><h2>Commodities</h2></summary>
+        <ol>
+          <li><a href="#inventory"><span>19</span>Inventory</a></li>
+          <li><a href="#buying"><span>20</span>Buying and field agents</a></li>
+          <li><a href="#contracts"><span>21</span>Sales contracts and cocoa</a></li>
+          <li><a href="#prefinance"><span>22</span>Pre-finance</a></li>
+        </ol>
+      </details>
+      <details open>
+        <summary><h2>Reporting and control</h2></summary>
+        <ol>
+          <li><a href="#reports"><span>23</span>Reports</a></li>
+          <li><a href="#privacy"><span>24</span>Personal data</a></li>
+          <li><a href="#golive"><span>25</span>Go-live: opening balances</a></li>
+          <li><a href="#settings"><span>26</span>Settings</a></li>
+          <li><a href="#owner"><span>27</span>Owner tools: users and sessions</a></li>
+          <li><a href="#help"><span>28</span>Good habits and troubleshooting</a></li>
+        </ol>
+      </details>
+    </nav>
+  </aside>
+
+  <main id="content">
+    <header class="hero">
+      <p class="eyebrow">User guide</p>
+      <h1>Sprouted Accounting, step by step</h1>
+      <p class="lede">How to use every part of the group's accounting app, for Sprouted Roots, Sprouted Crafts and Oikazi. Each chapter covers one screen: what it is for, who can use it, and the steps for each task.</p>
+      <div class="meta"><span>Covers the app as of November 2026</span><span>Amounts in Ghana cedis (GH₵)</span></div>
+      <div class="picker" role="group" aria-labelledby="picker-label">
+        <p id="picker-label">Show the guide for</p>
+        <div class="picker-options">
+          <button type="button" data-pick="all" aria-pressed="true">Everyone</button>
+          <button type="button" data-pick="owner" aria-pressed="false">Owner</button>
+          <button type="button" data-pick="accountant" aria-pressed="false">Accountant</button>
+          <button type="button" data-pick="bookkeeper" aria-pressed="false">Bookkeeper</button>
+          <button type="button" data-pick="data-entry" aria-pressed="false">Data entry</button>
+          <button type="button" data-pick="staff" aria-pressed="false">Staff</button>
+          <button type="button" data-pick="viewer" aria-pressed="false">Viewer</button>
+        </div>
+      </div>
+      <div class="role-intro" id="role-intro" hidden>
+        <h2 id="role-intro-title"></h2>
+        <p id="role-intro-text"></p>
+        <p class="role-count" id="role-intro-count"></p>
+      </div>
+    </header>
+
+    <!-- 01 -->
+    <section class="chapter" id="basics" data-roles="owner accountant bookkeeper data-entry staff viewer">
+      <div class="chapter-head"><span class="num">01</span><h2 class="title">How the app is organised</h2></div>
+      <p class="intro">One app holds the books of all three companies. Each company keeps its own books. You choose which company you are working in, and everything you see and enter belongs to that company.</p>
+      <div class="grid2">
+        <div class="card"><h4>Sprouted Roots</h4><p>The charity arm: farmer programmes and raw material aggregation. It sees <b>Grants</b>, and its reports split money into restricted and unrestricted funds and track spending per project.</p></div>
+        <div class="card"><h4>Sprouted Crafts and Oikazi</h4><p>Cashew and cocoa processing. They hold stock, so they see <b>Inventory</b>, <b>Buying</b>, <b>Contracts</b> and <b>Pre-finance</b>.</p></div>
+      </div>
+      <h3>Words the app uses</h3>
+      <ul>
+        <li><b>Money in</b> and <b>money out</b>: the two sides of every entry. You will not see "debit" or "credit".</li>
+        <li><b>Draft</b>: saved but not yet in the books. You can change it freely.</li>
+        <li><b>Post</b>: put it in the books. A posted entry cannot be edited or deleted.</li>
+        <li><b>Void</b> or <b>reverse</b>: cancel a posted entry by adding an equal and opposite one. The original stays on the record. Nothing is ever deleted.</li>
+        <li><b>Journal</b>: the money in and money out lines an entry puts in the books. Most screens show a preview before you post.</li>
+      </ul>
+      <div class="note"><strong>Good to know</strong><p>VAT is worked out for you at the Ghana rates: 15% VAT, 2.5% NHIL and 2.5% GETFund, all on the same amount, 20% in total. It only applies to a company registered for VAT.</p></div>
+    </section>
+
+    <!-- 02 -->
+    <section class="chapter" id="roles" data-roles="owner accountant bookkeeper data-entry viewer">
+      <div class="chapter-head"><span class="num">02</span><h2 class="title">Roles: who can do what</h2></div>
+      <p>Every person has one <b>role</b>, which says what they may do, and access to one or more <b>companies</b>, which says where. An Owner sets both. If a button described here is missing for you, your role does not include it.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>What</th><th class="c">Owner</th><th class="c">Accountant</th><th class="c">Bookkeeper</th><th class="c">Data entry</th><th class="c">Staff</th><th class="c">Viewer</th></tr></thead>
+          <tbody>
+            <tr><td>See reports and the books</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="y">✓</td></tr>
+            <tr><td>Draft invoices and bills, add contacts</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="n">–</td></tr>
+            <tr><td>Send documents from a phone</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td></tr>
+            <tr><td>Post entries, record payments, reconcile the bank</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="n">–</td><td class="n">–</td></tr>
+            <tr><td>Void posted entries, file VAT periods, revalue currencies</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="n">–</td></tr>
+            <tr><td>Stock counts and NRV prices</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="n">–</td></tr>
+            <tr><td>Post stock transfers, adjustments, items and locations</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="n">–</td></tr>
+            <tr><td>Prepare payroll and see who is paid what</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="n">–</td><td class="n">–</td></tr>
+            <tr><td>Approve and post payroll</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="n">–</td></tr>
+            <tr><td>Pre-finance facilities and advances</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="n">–</td></tr>
+            <tr><td>Record pre-finance deliveries</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="n">–</td><td class="n">–</td></tr>
+            <tr><td>See phone numbers and other personal details</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="n">–</td></tr>
+            <tr><td>Answer data requests, erase a person</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="n">–</td></tr>
+            <tr><td>Audit log and ledger exports</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="n">–</td><td class="n">–</td></tr>
+            <tr><td>Company settings, payroll rates, users and sessions</td><td class="y">✓</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="n">–</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul>
+        <li><b>Owner</b> sees every company and can do everything.</li>
+        <li><b>Accountant</b> posts, corrects, closes periods and runs payroll. Needs two-factor sign-in.</li>
+        <li><b>Bookkeeper</b> enters and posts day-to-day invoices and bills and reconciles them, but does not correct or close. Needs two-factor sign-in.</li>
+        <li><b>Data entry</b> drafts invoices and bills and records field purchases. Nothing they do posts.</li>
+        <li><b>Staff</b> only sends documents from a phone. They see nothing in the books.</li>
+        <li><b>Viewer</b> reads reports. Nothing is editable.</li>
+      </ul>
+    </section>
+
+    <!-- 03 -->
+    <section class="chapter" id="signin" data-roles="owner accountant bookkeeper data-entry staff viewer">
+      <div class="chapter-head"><span class="num">03</span><h2 class="title">Signing in and two-factor</h2></div>
+      <p>Accounts are created by invitation only. There is no sign-up page.</p>
+      <h3>Accept your invitation</h3>
+      <ol class="steps">
+        <li>Open the email from Sprouted Accounting and click the link. It works once and expires after 48 hours.</li>
+        <li>Choose a password of at least 12 characters. A sentence you will remember works well. You don't need symbols or numbers, but the app refuses passwords known to have leaked online.</li>
+        <li>Type it again in <b>Repeat it</b> and press <span class="ui">Set password</span>.</li>
+        <li>Press <span class="ui">Go to sign in</span> and sign in with your email and new password.</li>
+      </ol>
+      <p>If the link says <b>This link is no longer valid</b>, ask an Owner to send a new invitation, or use <span class="ui">Request a reset link</span>.</p>
+
+      <h3>Set up two-factor sign-in</h3>
+      <p>Owners, Accountants and Bookkeepers must use an authenticator app, because they can post to the books. The app asks you to set it up the first time you sign in.</p>
+      <ol class="steps">
+        <li>Install an authenticator app on your phone: Google Authenticator, Microsoft Authenticator, 1Password or similar.</li>
+        <li>Confirm your password in the app when asked.</li>
+        <li>Scan the code on screen with the authenticator app.</li>
+        <li>Type the 6-digit code it shows into <b>Code from the app</b> and press <span class="ui">Verify and enable</span>.</li>
+        <li><b>Save your backup codes</b> somewhere safe, away from your phone. Each one signs you in once if you lose the phone. They are shown only once.</li>
+        <li>Tick <b>I have saved these codes somewhere safe</b>, then <span class="ui">Go to the app</span>.</li>
+      </ol>
+
+      <h3>Sign in each day</h3>
+      <ol class="steps">
+        <li>Enter your email and password and press <span class="ui">Sign in</span>.</li>
+        <li>If you use two-factor, enter the 6-digit code from your authenticator app and press <span class="ui">Continue</span>. The button says <b>Opening the app…</b> while the app loads.</li>
+        <li>Lost your phone? Press <b>Lost your device? Use a backup code</b> and type one of your backup codes.</li>
+      </ol>
+      <div class="note"><strong>Sessions</strong><p>You are signed out automatically after 12 hours, so each working day starts with a fresh sign-in.</p></div>
+
+      <h3>Forgotten password</h3>
+      <ol class="steps">
+        <li>On the sign-in page press <b>Forgotten your password?</b></li>
+        <li>Enter your email and press <span class="ui">Send reset link</span>.</li>
+        <li>Open the email and choose a new password. Signing in anywhere else with the old one stops working.</li>
+      </ol>
+      <div class="warn"><strong>Locked out?</strong><p>Ten wrong passwords lock the account until an Owner unlocks it. Five wrong attempts in a minute make you wait a minute. Ten wrong two-factor codes pause code entry for 15 minutes.</p></div>
+    </section>
+
+    <!-- 04 -->
+    <section class="chapter" id="navigate" data-roles="owner accountant bookkeeper data-entry viewer">
+      <div class="chapter-head"><span class="num">04</span><h2 class="title">Finding your way around</h2></div>
+      <h3>Choose the company</h3>
+      <ol class="steps">
+        <li>At the top of the left-hand menu, click the box showing the <b>Current entity</b>.</li>
+        <li>Pick Sprouted Roots, Sprouted Crafts or Oikazi. Only companies you have access to are listed.</li>
+        <li>Everything on screen now belongs to that company. The coloured dot shows which one you are in.</li>
+      </ol>
+      <h3>The menu</h3>
+      <p>The left-hand menu lists the screens. Some appear only where they apply:</p>
+      <ul>
+        <li><b>Tax</b> appears only for a company registered for VAT.</li>
+        <li><b>Inventory</b>, <b>Buying</b>, <b>Contracts</b> and <b>Pre-finance</b> appear only for Sprouted Crafts and Oikazi.</li>
+        <li><b>Grants</b> appears only for Sprouted Roots.</li>
+        <li>Owners also see <b>Users</b> and <b>Sessions</b> under an <b>Owner</b> heading.</li>
+      </ul>
+      <p>When you click a screen, its name lights up at once. A thin green bar runs along the top and the old screen fades while the new one loads. The title then reads <b>Opening …</b> until the screen is ready.</p>
+      <h3>Getting help</h3>
+      <ol class="steps">
+        <li>Click the <span class="ui">?</span> at the top right of any screen.</li>
+        <li>Choose <b>User guide</b> to open this guide at your role. It is also the last item in the left-hand menu.</li>
+        <li>Choose <b>Contact support</b>, pick what it is about, describe what you were doing and what happened, and press <span class="ui">Send</span>. Your name, role, company and screen go with it, and the reply comes to your email.</li>
+      </ol>
+      <p>On the phone page, the same two links are at the bottom: <b>How to use this</b> and <b>Contact support</b>.</p>
+      <div class="note"><strong>Saving</strong><p>Drafts of invoices and bills save themselves as you type. Everything else has its own save or post button, and a green message confirms it worked. A red message says what went wrong and how to fix it.</p></div>
+    </section>
+
+    <!-- 05 -->
+    <section class="chapter" id="dashboard" data-roles="owner accountant bookkeeper data-entry viewer">
+      <div class="chapter-head"><span class="num">05</span><h2 class="title">Dashboard</h2></div>
+      <p class="intro">The first screen after signing in: a summary of the selected company and anything needing attention.</p>
+      <ul>
+        <li><b>Headline figures</b> for the company, and the <b>Entity balance</b>.</li>
+        <li><b>What payroll owes</b>: PAYE, SSNIT and net pay still to pay, in red when past the due date.</li>
+        <li><b>Provisional tax</b>: which quarterly instalment is next and when it falls due.</li>
+        <li><b>VAT registration threshold</b>, for a company not yet registered: taxable sales in the last twelve months against the GH₵750,000 limit. A warning appears at 75% and again at 90%.</li>
+        <li><b>Buying agents</b>: float still out with each agent, red when older than the age limit. <span class="ui">Open buying</span> goes to the Buying screen.</li>
+        <li><b>Shared contacts</b>, with <span class="ui">Add contact</span>.</li>
+        <li><b>Recent activity</b>: the latest invoices and bills. <span class="ui">View all</span> opens the full list.</li>
+        <li><b>Intercompany</b>: what each group company owes the others, and the net group position.</li>
+      </ul>
+    </section>
+
+    <!-- 06 -->
+    <section class="chapter" id="sales" data-roles="owner accountant bookkeeper data-entry">
+      <div class="chapter-head"><span class="num">06</span><h2 class="title">Sales: customer invoices</h2></div>
+      <div class="who"><b>Draft:</b><span class="role">Owner</span><span class="role">Accountant</span><span class="role">Bookkeeper</span><span class="role">Data entry</span> <b>Post and record payment:</b><span class="role">Owner</span><span class="role">Accountant</span><span class="role">Bookkeeper</span> <b>Void:</b><span class="role">Owner</span><span class="role">Accountant</span></div>
+      <div class="flow"><span>Draft</span><i>→</i><span>Awaiting payment</span><i>→</i><span>Paid</span><i>or</i><span>Voided</span></div>
+      <h3>Create an invoice</h3>
+      <ol class="steps">
+        <li>Open <b>Sales</b> and press <span class="ui">New</span>.</li>
+        <li>Choose the <b>Contact</b>, the customer. If they are not listed, press <span class="ui">＋ New contact</span>, fill it in and they are selected for you.</li>
+        <li>Set the <b>Date</b> and <b>Due date</b>. The <b>Document no.</b> is allocated when you post.</li>
+        <li>Pick the <b>Currency</b>. For a currency other than cedis, the app uses the rate on file for that date. If none exists, type the rate.</li>
+        <li>For a VAT-registered company, choose <b>Domestic</b> (VAT charged per line) or <b>Export</b> (zero-rated).</li>
+        <li>For each line, enter the <b>Description</b>, <b>Qty</b>, <b>Unit price</b>, the <b>Account</b> it belongs to and the VAT treatment: <b>Standard 20%</b>, <b>Zero-rated</b> or <b>Exempt</b>. Press <span class="ui">Add line</span> for more.</li>
+        <li>Check the totals and the <b>Journal preview</b> beside the form. It shows the money in and money out the invoice will post.</li>
+        <li>Attach supporting documents if you have them (see <a href="#inbox">Inbox and attachments</a>).</li>
+        <li>Press <span class="ui">Post</span>. The invoice moves to <b>Awaiting payment</b>.</li>
+      </ol>
+      <p>Until you post, the invoice stays a <b>Draft</b> and saves itself as you type. You can leave and come back.</p>
+      <h3>Record the customer's payment</h3>
+      <ol class="steps">
+        <li>Open the posted invoice and find <b>Record payment</b>. It shows what is <b>Outstanding</b>.</li>
+        <li>Choose the <b>Bank account</b> the money arrived in, the date and the <b>Amount</b>. Part-payments are fine.</li>
+        <li>For a foreign-currency invoice, type the rate on the bank's advice into <b>Bank rate</b>. The app shows any exchange gain or loss under <b>The calculation</b>.</li>
+        <li>Press <span class="ui">Post payment</span>. When nothing is outstanding, the invoice shows <b>Paid</b>.</li>
+      </ol>
+      <h3>Cancel a posted invoice</h3>
+      <ol class="steps">
+        <li>Open the invoice and press <span class="ui">Void</span>. If a payment was recorded, press <span class="ui">Cancel payment</span> first.</li>
+        <li>The app posts a reversing entry and marks the invoice <b>Voided</b>. The original stays visible.</li>
+      </ol>
+      <div class="warn"><strong>Filed periods are locked</strong><p>Once a VAT period has been filed, documents dated in it cannot be posted, changed or voided. Correct the error in an open period instead.</p></div>
+      <p>The <b>GRA E-VAT</b> box on the invoice is reserved for the future link to GRA. Nothing is sent to GRA yet.</p>
+    </section>
+
+    <!-- 07 -->
+    <section class="chapter" id="purchases" data-roles="owner accountant bookkeeper data-entry">
+      <div class="chapter-head"><span class="num">07</span><h2 class="title">Purchases: supplier bills</h2></div>
+      <div class="who"><b>Same roles as Sales.</b></div>
+      <p class="intro">Bills work like invoices, with a few extra choices on each line for stock, grants and contracts.</p>
+      <h3>Enter a bill</h3>
+      <ol class="steps">
+        <li>Open <b>Purchases</b>, press <span class="ui">New</span> and choose the supplier.</li>
+        <li>Enter the date, due date, currency and lines as for an invoice. The bill shows the supplier's <b>WHT status</b>. Withholding tax is calculated from it and taken off what you pay.</li>
+        <li>For imported goods, enter the <b>Import VAT paid at entry</b>. A VAT-registered company recovers it; an unregistered one adds it to the cost of the goods.</li>
+        <li>On each line, set the <b>Stock</b> choice when it applies:
+          <ul>
+            <li><b>Not stock — expense only</b> for ordinary costs.</li>
+            <li><b>Receive a grade (creates a lot)</b> for produce bought in. Choose the grade, where it was <b>Received at</b>, and optionally a lot reference, community and district.</li>
+            <li><b>Capitalise into stock (landed cost)</b> for costs like haulage, spread per kilo over the lots you tick.</li>
+            <li><b>Selling cost of a sales contract</b> for costs that belong to a sale.</li>
+          </ul>
+        </li>
+        <li>For Sprouted Roots, choose the <b>Grant</b> and <b>Budget line</b> the cost counts against. Money charged to a grant must name a budget line, or the bill will not post.</li>
+        <li>Check <b>Net payable</b>, attach the supplier's bill, and press <span class="ui">Post</span>.</li>
+        <li>When you pay, use <b>Record payment</b> exactly as for an invoice.</li>
+      </ol>
+      <div class="note"><strong>Tip</strong><p>A bill photographed on a phone can be sent to the Inbox (chapter 12) and matched to the bill once it is entered.</p></div>
+    </section>
+
+    <!-- 08 -->
+    <section class="chapter" id="contacts" data-roles="owner accountant bookkeeper data-entry">
+      <div class="chapter-head"><span class="num">08</span><h2 class="title">Contacts</h2></div>
+      <p>Customers, suppliers, farmers and donors are <b>shared by all three companies</b>, so a correction made once applies everywhere. Telephone numbers, mobile money numbers and addresses are encrypted and hidden until someone with permission asks to see them.</p>
+      <h3>Add a contact</h3>
+      <ol class="steps">
+        <li>Press <span class="ui">Add contact</span> on the Dashboard, or <span class="ui">＋ New contact</span> inside an invoice or bill.</li>
+        <li>Enter the <b>Name</b> and choose <b>Customer</b>, <b>Supplier</b> or <b>Both</b>, and a category (Farmer, Group entity or Other).</li>
+        <li>Add the TIN, phone, email and address, and the withholding tax status if they are a supplier.</li>
+        <li>Press <span class="ui">Create contact</span>.</li>
+      </ol>
+      <p>To edit, find or switch off contacts, go to <b>Settings → Contacts</b> (chapter 26).</p>
+    </section>
+
+    <!-- 09 -->
+    <section class="chapter" id="bank" data-roles="owner accountant bookkeeper">
+      <div class="chapter-head"><span class="num">09</span><h2 class="title">Bank</h2></div>
+      <div class="who"><b>Reconcile:</b><span class="role">Owner</span><span class="role">Accountant</span><span class="role">Bookkeeper</span></div>
+      <p class="intro">Bring in your bank statement and agree each line to the books.</p>
+      <h3>Import a statement</h3>
+      <ol class="steps">
+        <li>Download the statement from your bank as a CSV file.</li>
+        <li>On <b>Bank</b>, press <span class="ui">Import CSV</span> and choose the file.</li>
+        <li>Tell the app which column is which using <span class="ui">Map</span>: date, description, amount and so on. It remembers the layout for next time.</li>
+        <li>The lines appear under <b>Imported bank lines</b>, split into <b>Unreconciled</b>, <b>Needs action</b> and <b>Matched</b>.</li>
+      </ol>
+      <h3>Reconcile each line</h3>
+      <ol class="steps">
+        <li>Open a line. If the app found a likely invoice or bill, it shows a <b>Suggested match</b> and other <b>Candidate documents</b>.</li>
+        <li>Confirm the right one. The document is marked paid and the line moves to <b>Matched</b>.</li>
+        <li>If nothing matches (bank charges, for example), choose an account under <b>Code to account</b> and press <span class="ui">Code row</span>.</li>
+        <li>For lines that repeat every month, use <span class="ui">Apply repeated</span> to code them the same way again.</li>
+        <li>Made a mistake? Press <span class="ui">Undo match</span> or <span class="ui">Undo</span>.</li>
+      </ol>
+    </section>
+
+    <!-- 10 -->
+    <section class="chapter" id="payments" data-roles="owner accountant bookkeeper">
+      <div class="chapter-head"><span class="num">10</span><h2 class="title">Payments and mobile money</h2></div>
+      <p class="intro">Mobile money wallets, paying many farmers at once, and farmer advances. A wallet reconciles like a bank account, and its fees and levies post to charges.</p>
+      <h3>Add a wallet</h3>
+      <ol class="steps">
+        <li>Under <b>Add a mobile money wallet</b>, give it a name (e.g. "Field buying wallet") and choose the provider: MTN MoMo, Telecel Cash or AT Money.</li>
+        <li>Press <span class="ui">Add wallet</span>. It becomes a bank account of the company.</li>
+      </ol>
+      <h3>Pay many farmers at once</h3>
+      <ol class="steps">
+        <li>Under <b>Pay many farmers at once</b> you see purchases the agent left for the office to pay. Any advance has already been taken off.</li>
+        <li>Tick who to pay, set <b>Pay on</b> and a name (e.g. "Week 12 cashew") and press <span class="ui">Create batch</span>.</li>
+        <li>Press <span class="ui">Export for disbursement</span> to get the file for your provider's bulk payment service.</li>
+        <li>When the provider's statement comes back, import it (below), or use <span class="ui">Mark paid by hand</span> with the date and fee charged.</li>
+      </ol>
+      <h3>Import a wallet statement</h3>
+      <ol class="steps">
+        <li>Under <b>Import a statement</b>, choose the wallet, the statement format and the CSV file. The first time, an Accountant adds the provider's format with <span class="ui">Add the provider mappings</span>.</li>
+        <li>For each line, answer <b>What is this line?</b> by matching it to a batch or another entry. Fees and levies post to charges automatically.</li>
+      </ol>
+      <h3>Farmers and advances</h3>
+      <ol class="steps">
+        <li>Under <b>Add a farmer</b>, enter their name and wallet number and save.</li>
+        <li>To lend before the season, use <b>Pre-season advance</b>: choose the farmer, amount and wallet, then <span class="ui">Record advance</span>.</li>
+        <li>The advance is recovered automatically from what you owe the farmer for their next deliveries. <b>Advances still to recover</b> lists what is outstanding.</li>
+      </ol>
+    </section>
+
+    <!-- 11 -->
+    <section class="chapter" id="inbox" data-roles="owner accountant bookkeeper data-entry">
+      <div class="chapter-head"><span class="num">11</span><h2 class="title">Inbox and attachments</h2></div>
+      <p class="intro">A holding place for receipts, bills and other paperwork. Save the file now and match it to its transaction later. PDFs and photos are accepted, up to 10 MB each; photos are shrunk automatically.</p>
+      <h3>Upload</h3>
+      <ol class="steps">
+        <li>On <b>Inbox</b>, press <span class="ui">Upload files</span> to choose files, or <span class="ui">Photograph a receipt</span> on a phone or tablet.</li>
+        <li>The files appear under <b>Waiting to be matched</b>. Documents sent from phones (chapter 12) arrive here too. They are labelled with their kind, amount, date and "from a phone".</li>
+      </ol>
+      <h3>Match to a transaction</h3>
+      <ol class="steps">
+        <li>Press <span class="ui">Suggest matches</span>. The app looks for reference numbers in file names, then transactions around the same date.</li>
+        <li>For each file, choose the transaction in <b>Match to…</b> and press <span class="ui">Match</span>.</li>
+        <li>Matched files move to <b>Recently attached</b>. Click a file name to open it.</li>
+      </ol>
+      <p>You can also attach a file directly on an invoice, bill, payment, asset or stock count. A file on a <b>posted</b> transaction cannot be removed: evidence stays evidence.</p>
+      <h3>Require a document before posting</h3>
+      <ol class="steps">
+        <li>Under <b>When a document is required</b>, choose a kind of transaction, such as supplier bills.</li>
+        <li>Enter an amount. At or above it, that kind of transaction cannot be posted without an attachment. Leave it blank to require one on every transaction of that kind.</li>
+        <li>Save the rule.</li>
+      </ol>
+    </section>
+
+    <!-- 12 -->
+    <section class="chapter" id="phone" data-roles="owner accountant bookkeeper data-entry staff">
+      <div class="chapter-head"><span class="num">12</span><h2 class="title">Sending documents from a phone</h2></div>
+      <div class="who"><b>Who:</b><span class="role">Staff</span><span class="role">Data entry</span><span class="role">Bookkeeper</span><span class="role">Accountant</span><span class="role">Owner</span></div>
+      <p class="intro">Staff on the move send in supplier bills, customer invoices, expense claims and receipts from their phones. It works with no signal: items wait on the phone and go when the signal returns.</p>
+      <h3>Put it on your home screen (once)</h3>
+      <ol class="steps">
+        <li>Open the app's address followed by <span class="path">/capture</span> in your phone's browser and sign in.</li>
+        <li><b>Android (Chrome):</b> tap ⋮ then <b>Add to Home screen</b>. <b>iPhone (Safari):</b> tap Share then <b>Add to Home Screen</b>.</li>
+        <li>Open it from the new icon from now on. Staff go straight to this page when they sign in.</li>
+      </ol>
+      <h3>Send a document</h3>
+      <ol class="steps">
+        <li>Choose the <b>Company</b>, if you work for more than one.</li>
+        <li>Under <b>What is it?</b>, tap <b>Supplier bill</b>, <b>Customer invoice</b>, <b>Expense claim</b> or <b>Receipt</b>.</li>
+        <li>Tap <span class="ui">Take a photo</span>, or <span class="ui">Choose a file</span> for a PDF. Use <b>Take it again</b> if it is blurred.</li>
+        <li>Enter the <b>Amount</b> and the <b>Date on it</b>. An expense claim must have an amount; for the others it is optional.</li>
+        <li>Add a <b>Note</b> if it helps finance, e.g. what an expense was for.</li>
+        <li>Tap <span class="ui">Send</span>.</li>
+      </ol>
+      <p>The badge at the top says <b>Online</b> or <b>Offline — saving on phone</b>. Below the form you see what is <b>Waiting to send</b> (with <span class="ui">Send now</span>), anything that <b>Could not be sent</b> and why, and what was <b>Sent this week</b>. If the session ended, a message asks you to sign in again. Your captures stay safe on the phone.</p>
+      <div class="note"><strong>What happens next</strong><p>Each document lands in that company's Inbox for finance to match or enter. Nothing reaches the books until someone in finance enters and posts it.</p></div>
+    </section>
+
+    <!-- 13 -->
+    <section class="chapter" id="payroll" data-roles="owner accountant bookkeeper">
+      <div class="chapter-head"><span class="num">13</span><h2 class="title">Payroll</h2></div>
+      <div class="who"><b>Prepare:</b><span class="role">Owner</span><span class="role">Accountant</span><span class="role">Bookkeeper</span> <b>Approve and post:</b><span class="role">Owner</span><span class="role">Accountant</span></div>
+      <p class="intro">Monthly pay worked out from the statutory rates: PAYE, SSNIT tier 1 and tier 2, optional tier 3, allowances, reliefs and loans. Payroll has five tabs: <b>Pay runs</b>, <b>What payroll owes</b>, <b>People</b>, <b>Reports</b> and <b>Settings</b>.</p>
+      <div class="flow"><span>Draft</span><i>→</i><span>Approved</span><i>→</i><span>Posted</span><i>→</i><span>Payslips emailed</span></div>
+
+      <h3>Set up payroll for a company (once)</h3>
+      <ol class="steps">
+        <li>On the <b>Settings</b> tab, switch payroll on and set the <b>Pay day</b>.</li>
+        <li>Choose how someone who joins or leaves mid-month is paid: by <b>calendar days</b> or <b>working days</b> employed.</li>
+        <li>Say whether staff may pay into tier 3 through payroll, then save.</li>
+        <li>Check that an Owner has verified the statutory rates (see <a href="#settings">Settings → Payroll rates</a>). Pay can be worked out with unverified rates, but not approved.</li>
+      </ol>
+
+      <h3>Add an employee</h3>
+      <ol class="steps">
+        <li>On <b>People</b>, press <span class="ui">Add an employee</span>.</li>
+        <li>Enter the name, staff number, start date, whether they are employed as permanent staff, tax residency, SSNIT number and <b>Email for payslips</b>.</li>
+        <li>Choose how they are <b>Paid by</b> (bank transfer or mobile money) and enter the account or wallet number.</li>
+        <li>Enter the <b>Basic salary a month</b>, any tier 3 amount, and tick the <b>reliefs they have registered</b> with GRA (marriage, children in education, aged dependants, disability and so on).</li>
+        <li>Save. Then add allowances (vehicle, accommodation and others) with <span class="ui">Add an allowance</span>.</li>
+        <li>Optionally split their cost across projects under <b>Cost split across projects</b>. Shares must add up to 100%.</li>
+      </ol>
+      <p>For a staff loan or salary advance, use <b>Loans and advances → Lend or advance</b>. Enter the amount, how much comes off pay each month and the first month. Repayments are deducted automatically. Casual workers cannot yet be paid through payroll; casual labour paid through a buying agent is recorded against the agent's float.</p>
+
+      <h3>Run the month</h3>
+      <ol class="steps">
+        <li>On <b>Pay runs</b>, choose the <b>Pay period</b> and press <span class="ui">Open the pay run</span>. Everyone employed on any day of the month is worked out.</li>
+        <li>Under <b>Who is paid what</b>, enter any <b>Bonus</b> or <b>Overtime</b> for this month in cedis and press <span class="ui">Save and recalculate</span>.</li>
+        <li>Click <span class="ui">Working</span> on a person to see their calculation step by step, or <span class="ui">Payslip</span> to preview it. A draft payslip is marked <b>Provisional</b>.</li>
+        <li>Check <b>The journal it will post</b>. Pay is split by project, and PAYE, SSNIT, tier 2, tier 3 and net pay are each shown as money owed.</li>
+        <li>An Accountant or Owner presses <span class="ui">Approve</span>. The figures are locked. Use <span class="ui">Back to draft</span> to change something.</li>
+        <li>Press <span class="ui">Post the journal</span>. The run is now in the books, and what it owes appears under <b>What payroll owes</b>.</li>
+      </ol>
+      <div class="warn"><strong>Not ready to approve?</strong><p>The app refuses to approve a run while a rate it uses is unverified or missing, for example a relief someone has ticked with no rate in force. The message names it. Fix it under Settings → Payroll rates, or change the employee, then press <span class="ui">Save and recalculate</span>.</p></div>
+
+      <h3>Send payslips</h3>
+      <ol class="steps">
+        <li>On a posted run, press <span class="ui">Email payslips</span> at the top to email everyone. If some were sent already, the button reads "Email the N payslips not yet sent".</li>
+        <li>The message lists anyone with no email address and anything that failed. Fix those and press the button again; nobody gets a duplicate.</li>
+        <li>To send one person's payslip, open their <span class="ui">Payslip</span> and press <span class="ui">Email it</span>, or <span class="ui">Download PDF</span> to print it.</li>
+      </ol>
+
+      <h3>Pay what payroll owes</h3>
+      <ol class="steps">
+        <li>On <b>What payroll owes</b>, each amount shows who it is owed to (GRA, SSNIT, the tier 2 trustee, staff) and its due date. Due dates come from the deadlines under Payroll rates, and late items turn red.</li>
+        <li>Once you have paid, press <span class="ui">Mark paid</span> and choose the bank account. The payment posts.</li>
+      </ol>
+      <h3>Undo a posted run</h3>
+      <p>Press <span class="ui">Reverse this pay run</span> on the run. A reversing entry dated today undoes the journal, and the month can be run again. This only works before anything the run left owing has been paid. A draft you no longer need can be removed with <span class="ui">Discard draft</span>.</p>
+      <h3>Reports</h3>
+      <p>The <b>Reports</b> tab shows payroll summaries, the SSNIT report, PAYE, employer cost per employee and year-to-date figures for any company you can see. Each has <span class="ui">Export to Excel</span>.</p>
+    </section>
+
+    <!-- 14 -->
+    <section class="chapter" id="cashflow" data-roles="owner accountant bookkeeper viewer">
+      <div class="chapter-head"><span class="num">14</span><h2 class="title">Cash flow forecast</h2></div>
+      <p class="intro">A look ahead at cash, built from what is already in the books plus buying seasons and anything you add. Nothing here posts.</p>
+      <ol class="steps">
+        <li>The first time, press <span class="ui">Create the baseline</span>. The baseline is your main set of assumptions.</li>
+        <li>Under <b>Assumptions</b>, set how many days late customers pay, the minimum cash to keep, commodity price and volume (as % of the season plan), and how many days ahead of buying floats go out.</li>
+        <li>Add <b>Buying seasons</b>: name, dates, tonnes and price per kilo. The forecast follows the season's curve, so you see the cash needed before anything is sold.</li>
+        <li>Add <b>Payroll, rent and the rest</b> as recurring costs, with how often and from when.</li>
+        <li>Use <b>Add a line by hand</b> for anything the books don't know about yet, such as a vehicle purchase. Positive amounts are money in, negative amounts are money out.</li>
+        <li>Read the <b>Lowest point</b> and whether cash falls below the minimum, per company and for the group. Each currency is also shown on its own.</li>
+        <li>To test "what if", press <span class="ui">Copy and change</span> on a scenario and compare them under <b>Scenarios side by side</b>.</li>
+        <li>Press <span class="ui">Re-read the books</span> after new entries are posted.</li>
+      </ol>
+    </section>
+
+    <!-- 15 -->
+    <section class="chapter" id="assets" data-roles="owner accountant bookkeeper">
+      <div class="chapter-head"><span class="num">15</span><h2 class="title">Assets and company tax</h2></div>
+      <p class="intro">The fixed asset register, monthly depreciation, disposals, capital allowances and the company income tax computation.</p>
+      <h3>Add an asset</h3>
+      <ol class="steps">
+        <li>Press <span class="ui">Add an asset</span>. Enter what it is (e.g. "Toyota Hilux, GR-1234-26"), the cost, <b>Bought on</b> and <b>In service from</b>.</li>
+        <li>Choose <b>Straight line</b> or <b>Reducing balance</b>, the useful life in months and any residual value.</li>
+        <li>Record where it is, who has it, the serial or registration, and its capital allowance class.</li>
+        <li>Save. Its <b>Depreciation schedule</b> shows the write-down month by month.</li>
+      </ol>
+      <h3>Run depreciation each month</h3>
+      <ol class="steps">
+        <li>Under <b>Run a month</b>, choose the month and press <span class="ui">Run and post</span>.</li>
+        <li>Every asset in service is written down in one journal. A month can only be run once.</li>
+      </ol>
+      <h3>Sell or scrap an asset</h3>
+      <ol class="steps">
+        <li>Choose the asset and <b>Dispose of</b> it. Enter the date and what you received.</li>
+        <li>The screen shows the book value today. Anything above it is a gain, anything below a loss. Press <span class="ui">Post the disposal</span>.</li>
+      </ol>
+      <h3>Company tax</h3>
+      <ol class="steps">
+        <li>Keep <b>Capital allowance classes</b> up to date with the rates in the law. The app assumes none.</li>
+        <li>Set the company's <b>Tax status</b>. An exempt entity has no computation.</li>
+        <li>Under <b>Add a tax year</b>, enter the year, tax rate, losses brought forward and estimated liability. Provisional instalments are based on the estimate.</li>
+        <li>Press <span class="ui">Work it out</span>. The computation adds back depreciation and disallowed expenses, takes off capital allowances and losses, and gives the chargeable income and tax.</li>
+        <li>Add any adjustments, then <span class="ui">Post the charge</span>. The tax posts as an expense and a liability on the last day of the year.</li>
+        <li>Record each provisional tax payment under <b>Record a payment</b>. The Dashboard shows the next one due.</li>
+      </ol>
+    </section>
+
+    <!-- 16 -->
+    <section class="chapter" id="grants" data-roles="owner accountant bookkeeper">
+      <div class="chapter-head"><span class="num">16</span><h2 class="title">Grants (Sprouted Roots)</h2></div>
+      <p class="intro">Donor grants, in the donor's own currency, periods and budget lines. Tabs: <b>Overview</b>, <b>Budget</b>, <b>Money in</b>, <b>Conditions</b> and <b>In kind &amp; time</b>.</p>
+      <h3>Set up a grant</h3>
+      <ol class="steps">
+        <li>Press <span class="ui">New grant</span>. Name it (e.g. "Cashew farmer livelihoods") and choose the donor and the fund it belongs to. Anything coded to the grant is coded to its fund too.</li>
+        <li>Say whether it is <b>Restricted — for this purpose only</b>, and set the donor currency and rate.</li>
+        <li>Choose how income is recognised. This is your decision, and it cannot be changed once money has come in.</li>
+        <li>Set when the donor's reporting periods start, how many days after each period the report is due, and the underspend warning level.</li>
+        <li>On <b>Budget</b>, add each budget line (e.g. "Farmer training") with its amount.</li>
+      </ol>
+      <h3>Day to day</h3>
+      <ol class="steps">
+        <li>When the donor pays, go to <b>Money in → Record money from the donor</b> and press <span class="ui">Record receipt</span>.</li>
+        <li>Charge costs to the grant on the bill line (chapter 7), choosing the budget line.</li>
+        <li>Release deferred income with <b>Recognise deferred income</b>, either because eligible spending happened or because a condition was met. The amount is worked out for you.</li>
+        <li>Record donor requirements under <b>Conditions</b> (e.g. "Baseline survey delivered") and mark them met.</li>
+        <li>Record donated goods under <b>Record an in-kind contribution</b>, and staff hours under <b>Allocate staff time</b>. Choose whether to charge the time to the grant or report it only.</li>
+      </ol>
+      <h3>Report to the donor</h3>
+      <p>On <b>Overview</b>, the <b>Donor report</b> shows budget against actual in the donor's periods and currency, and flags overspent or unbudgeted lines and spending well behind schedule. Press <span class="ui">Export to Excel</span>.</p>
+    </section>
+
+    <!-- 17 -->
+    <section class="chapter" id="intercompany" data-roles="owner accountant bookkeeper">
+      <div class="chapter-head"><span class="num">17</span><h2 class="title">Intercompany</h2></div>
+      <p class="intro">Trade between the group companies, such as Roots supplying raw cashew to Crafts. Both sides post together so the books always agree.</p>
+      <ol class="steps">
+        <li>Under <b>New mirrored transaction</b>, press <span class="ui">New reference</span>.</li>
+        <li>Choose the <b>From entity</b> and <b>To entity</b>, the <b>Amount (GHS)</b> and a description (e.g. "Raw cashew supply").</li>
+        <li>Press <span class="ui">Create mirrored entry</span>. An invoice posts in one company and the matching bill in the other, linked by the shared reference.</li>
+      </ol>
+      <p>Editing one side without the other is blocked on purpose. The <b>Group matrix</b> shows balances between every pair of companies and flags any <b>Mismatch</b>. A difference caused only by exchange rates is labelled <b>FX difference</b>, not a mismatch. The <b>Related-party report</b> is ready for the accounts' disclosure note.</p>
+    </section>
+
+    <!-- 18 -->
+    <section class="chapter" id="tax" data-roles="owner accountant bookkeeper">
+      <div class="chapter-head"><span class="num">18</span><h2 class="title">Tax: VAT and withholding</h2></div>
+      <div class="who"><b>File a period:</b><span class="role">Owner</span><span class="role">Accountant</span></div>
+      <p class="intro">Shown only for a VAT-registered company.</p>
+      <h3>VAT return</h3>
+      <ol class="steps">
+        <li>Choose the period. The return shows VAT, NHIL and GETFund charged on sales, what is <b>Recoverable on purchases</b>, and the <b>Net position</b> payable to GRA.</li>
+        <li>Click any figure to drill down to the documents behind it.</li>
+        <li>When the return is submitted to GRA, press <span class="ui">File this period</span>. It is marked <b>Filed — locked</b>, and documents dated in it can no longer be changed.</li>
+      </ol>
+      <h3>Withholding tax</h3>
+      <p>The withholding tax table lists the amounts withheld per supplier with their TIN, ready for GRA. Press <span class="ui">Download CSV</span>.</p>
+    </section>
+
+    <!-- 19 -->
+    <section class="chapter" id="inventory" data-roles="owner accountant bookkeeper data-entry">
+      <div class="chapter-head"><span class="num">19</span><h2 class="title">Inventory</h2></div>
+      <div class="who"><b>Counts and NRV prices:</b><span class="role">Data entry</span><span class="role">Bookkeeper</span><span class="role">Accountant</span><span class="role">Owner</span> <b>Post movements:</b><span class="role">Accountant</span><span class="role">Owner</span></div>
+      <p class="intro">Stock of raw cashew and cocoa by grade and location, valued at weighted average cost per kilo. The <b>Live stock value</b> should always agree with the stock accounts in the books, and a warning appears if it does not.</p>
+      <h3>Set up (once)</h3>
+      <ol class="steps">
+        <li>Under <b>New commodity</b>, add e.g. "Raw cashew nuts" with its kind (which sets the quality fields), kg per bag and shrinkage tolerance %. Press <span class="ui">Add commodity</span>.</li>
+        <li>Add its grades with <span class="ui">Add grade</span>.</li>
+        <li>Add warehouses under <b>New location</b> (e.g. "Main warehouse") with <span class="ui">Add location</span>. A location like Goods in Transit can have an account override.</li>
+      </ol>
+      <h3>Everyday stock work</h3>
+      <ul>
+        <li><b>Receiving stock</b> happens through a bill line (chapter 7) or a field purchase (chapter 20). Each one creates a <b>lot</b> recording its origin and quality.</li>
+        <li><b>Weigh-out</b>: choose a lot, enter the weight out now and press <span class="ui">Record weigh-out</span>. Loss within tolerance is absorbed; loss beyond it goes to Stock Loss.</li>
+        <li><b>Move stock between locations</b>: choose the item, from, to and quantity, then <span class="ui">Post transfer</span>.</li>
+        <li><b>Change a quantity, with a reason</b>: enter the quantity (minus removes) and what happened, then <span class="ui">Post adjustment</span>.</li>
+      </ul>
+      <h3>Stock count</h3>
+      <ol class="steps">
+        <li>Press <span class="ui">New count</span>, choose the location and enter what was physically counted.</li>
+        <li>Press <span class="ui">Save draft</span>. Anyone with the role can save a draft.</li>
+        <li>An Accountant reviews the differences, ticks <b>I have reviewed the differences above</b> and presses <span class="ui">Confirm and post</span>.</li>
+      </ol>
+      <h3>Period end: net realisable value</h3>
+      <p>Enter the current selling price per kg for each item. Any item whose cost is above it is flagged, and <span class="ui">Write down</span> posts the difference.</p>
+    </section>
+
+    <!-- 20 -->
+    <section class="chapter" id="buying" data-roles="owner accountant bookkeeper data-entry">
+      <div class="chapter-head"><span class="num">20</span><h2 class="title">Buying and field agents</h2></div>
+      <p class="intro">Buying agents take cash floats, buy produce from farmers and record each purchase on their phone, even without signal.</p>
+      <h3>Set up an agent</h3>
+      <ol class="steps">
+        <li>Add the agent and the location they receive purchases at.</li>
+        <li>An Owner invites them as a user with the <b>Data entry</b> role and access to this company. They use the field page at <span class="path">/field</span>.</li>
+        <li>Set the <b>Age limit</b>. An open float older than this turns red here and on the Dashboard.</li>
+      </ol>
+      <h3>Advance a float</h3>
+      <p>Under <b>Advance a float</b>, choose the agent, amount and bank account. The money is owed back until produce or cash returns.</p>
+      <h3>The agent's phone page (<span class="path">/field</span>)</h3>
+      <ol class="steps">
+        <li>The agent adds the page to their home screen like the capture page (chapter 12).</li>
+        <li>For each purchase, the agent fills in the agent, float, date, farmer (name, phone, wallet, community, district), grade, bags or kg, quality, and price paid. The gazetted producer price is suggested for cocoa.</li>
+        <li>The agent chooses <b>Paid now</b> (from the float) or <b>Pay centrally later</b>, takes the farmer's signature or thumbprint, and presses <span class="ui">Save purchase</span>.</li>
+        <li>With signal, <span class="ui">Sync</span> sends the saved purchases. Nothing is recorded twice.</li>
+      </ol>
+      <h3>Post what the agents sent</h3>
+      <ol class="steps">
+        <li>Under <b>Synced from the field, not yet posted</b>, check each purchase. Assign a float to any purchase that has none (<span class="ui">Assign float…</span>), or reject it with a reason.</li>
+        <li>Tick the purchases and press <span class="ui">Post selected</span>. Stock is received and the float reduced.</li>
+        <li>Record labour paid from the float and cash returned, then reconcile the float when it is cleared.</li>
+      </ol>
+    </section>
+
+    <!-- 21 -->
+    <section class="chapter" id="contracts" data-roles="owner accountant bookkeeper">
+      <div class="chapter-head"><span class="num">21</span><h2 class="title">Sales contracts and cocoa</h2></div>
+      <h3>Create a contract</h3>
+      <ol class="steps">
+        <li>Press <span class="ui">New contract</span>. Choose the buyer, commodity grade, quantity in tonnes or bags, contract rate and currency.</li>
+        <li>Enter the delivery terms (e.g. "FOB Tema", "EXW warehouse", "CMC take-over Kumasi"), where it delivers from, and when revenue is recognised.</li>
+        <li>Press <span class="ui">Create contract</span>.</li>
+      </ol>
+      <h3>Deliver against it</h3>
+      <ol class="steps">
+        <li>Choose the contract and fill in <b>Record a delivery</b>: quantity, date, rate and take-over centre. Press <span class="ui">Post delivery</span>.</li>
+        <li>If revenue waits for the buyer's acceptance, the cost sits in Goods in Transit until you press <span class="ui">Buyer accepted</span>.</li>
+        <li>Each contract shows revenue, cost of stock, selling costs and <b>Gross margin</b> per kg, plus the exchange exposure on what is still undelivered.</li>
+      </ol>
+      <p>The overview compares contracted-but-undelivered quantities with stock on hand. Red means you have sold more than you hold; amber means you hold stock with no buyer.</p>
+      <h3>COCOBOD Licensed Buying Company (Oikazi)</h3>
+      <ul>
+        <li>Turn on <b>Operate as a Licensed Buying Company</b> and choose how revenue is presented. Acting as <b>principal</b> books sales and cost; acting as <b>agent</b> books only margin, haulage and the pass-through difference. This is your assessment; the app never decides it for you.</li>
+        <li>Set the producer price and haulage allowance per kg and press <span class="ui">Save LBC settings</span>.</li>
+        <li>Record <b>Seed funds</b> received from, repaid to or offset with COCOBOD, and each <b>CMC payment received</b>.</li>
+      </ul>
+    </section>
+
+    <!-- 22 -->
+    <section class="chapter" id="prefinance" data-roles="owner accountant bookkeeper">
+      <div class="chapter-head"><span class="num">22</span><h2 class="title">Pre-finance</h2></div>
+      <div class="who"><b>Facilities and advances:</b><span class="role">Owner</span><span class="role">Accountant</span> <b>Deliveries:</b><span class="role">Bookkeeper</span><span class="role">Accountant</span><span class="role">Owner</span></div>
+      <p class="intro">Money borrowed from a lender and advanced to aggregators against nuts they promise to deliver. Tabs: <b>Overview</b>, <b>Borrowing</b>, <b>Advances</b>, <b>Deliveries</b>, <b>Aggregators</b>, <b>Cycles</b> and <b>Terms</b>.</p>
+      <h3>Borrowing</h3>
+      <ol class="steps">
+        <li>Under <b>Add a facility</b>, enter the lender, the most you may borrow, interest a year and how the year is counted.</li>
+        <li>Use <b>Draw money</b> to record each drawdown into a bank account.</li>
+        <li>Press <span class="ui">Charge interest</span> to bring interest up to date. It is charged as it builds up, not only when the lender collects. Record repayments as they happen.</li>
+      </ol>
+      <h3>Advance to an aggregator</h3>
+      <ol class="steps">
+        <li>On <b>Aggregators</b>, set the most each one may owe at once with <span class="ui">Set limit</span>.</li>
+        <li>Under <b>Advance money to an aggregator</b>, enter the agreed price a kilo, the date, when the nuts are promised by and the account paid from.</li>
+        <li>Enter the quality the price assumes (outturn and moisture) and the price cut per point if the load is wet or the outturn differs. These terms are fixed on the advance and never change.</li>
+        <li>Press <span class="ui">Send the money</span>. If the advance breaks a limit you are warned, and you must tick to go ahead anyway.</li>
+      </ol>
+      <h3>A load has arrived</h3>
+      <ol class="steps">
+        <li>Choose which advance it is against, the date in and the waybill number.</li>
+        <li>Enter the weighbridge figures, loaded and empty (or the direct weight).</li>
+        <li>Enter what the sample said: moisture %, outturn and who checked it.</li>
+        <li>The app works out what the load is worth, the cut for wetness or outturn, and how much of the advance it clears.</li>
+        <li>Choose what happens to any balance: still owed against the next load, paid back in cash, or written off to the season. Then press <span class="ui">Record this load</span>.</li>
+      </ol>
+      <h3>Keep an eye on it</h3>
+      <p>The <b>Overview</b> shows money out with aggregators, what you owe the lender, interest so far, <b>Who is late</b>, what quality has cost this season, and how fast money comes back. Use <span class="ui">Set money aside against the late ones</span> to update the provision, and <span class="ui">Give up on it</span> (with a reason) to write off an advance. <b>Cycles</b> tracks each loop of the money from drawdown to cash back. <b>Terms</b> holds the defaults a new advance starts with.</p>
+    </section>
+
+    <!-- 23 -->
+    <section class="chapter" id="reports" data-roles="owner accountant bookkeeper data-entry viewer">
+      <div class="chapter-head"><span class="num">23</span><h2 class="title">Reports</h2></div>
+      <ol class="steps">
+        <li>Open <b>Reports</b> and choose a report: <b>Trial balance</b>, <b>Profit &amp; loss</b>, <b>Balance sheet</b>, <b>Cash flow</b>, <b>Aged receivables</b>, <b>Aged payables</b>, <b>Fund report</b>, <b>Projects</b> or <b>Group view</b>.</li>
+        <li>Set the period with <b>From</b> and <b>To</b>. Most reports show the prior period beside it.</li>
+        <li>Optionally choose <b>Show in</b> USD or EUR at a closing rate. This is a translation for reading, not the books.</li>
+        <li>Click any figure to see the transactions behind it.</li>
+        <li>Press <span class="ui">Export Excel</span> or <span class="ui">Export PDF</span>.</li>
+      </ol>
+      <ul>
+        <li><b>Aged receivables / payables</b>: who owes what, grouped by days overdue.</li>
+        <li><b>Fund report</b> (Sprouted Roots): income and spending split into restricted and unrestricted funds, with each fund's closing balance.</li>
+        <li><b>Projects</b>: funds received, expenses, budget used and closing balance per project.</li>
+        <li><b>Group view</b>: all three companies side by side with a group total. It is a management summary only; balances between the companies are not removed, so it is not a set of consolidated accounts.</li>
+      </ul>
+    </section>
+
+    <!-- 24 -->
+    <section class="chapter" id="privacy" data-roles="owner accountant">
+      <div class="chapter-head"><span class="num">24</span><h2 class="title">Personal data</h2></div>
+      <div class="who"><b>Requests and erasure:</b><span class="role">Owner</span><span class="role">Accountant</span></div>
+      <p class="intro">What each company holds about farmers, agents, staff and contacts, and how to answer someone who asks about their data. Telephone numbers, mobile money numbers, addresses and signatures are encrypted.</p>
+      <h3>Someone asks what you hold about them</h3>
+      <ol class="steps">
+        <li>Under <b>Somebody has asked about their data</b>, find them by name. Numbers cannot be searched, because they are encrypted.</li>
+        <li>Record who asked and anything they said, then press <span class="ui">Show me everything held about them</span>.</li>
+        <li>Use <span class="ui">Open as a page to print or send</span> to give them a copy. The request is recorded.</li>
+      </ol>
+      <h3>Someone asks to be erased</h3>
+      <ol class="steps">
+        <li>Find them, then under <b>They have asked to be erased</b> type <code>ERASE</code> to confirm.</li>
+        <li>Their name becomes a reference, and their phone, mobile money number and any signature are deleted. Every amount, date and journal stays, because the accounts must.</li>
+      </ol>
+      <p><b>Every time somebody looked</b> lists each time a hidden number was shown. <b>The register</b> lists every personal field, why it is held and what happens on erasure; use it for your data protection registration.</p>
+    </section>
+
+    <!-- 25 -->
+    <section class="chapter" id="golive" data-roles="owner">
+      <div class="chapter-head"><span class="num">25</span><h2 class="title">Go-live: opening balances</h2></div>
+      <div class="who"><b>Who:</b><span class="role">Owner</span></div>
+      <p class="intro">Used once per company to bring in balances from the old system.</p>
+      <ol class="steps">
+        <li><b>Cut-over date</b>: set the date the balances are as at. Every opening entry is dated here.</li>
+        <li><b>The template</b>: press <span class="ui">Download template</span>. It is an Excel workbook with a trial balance sheet and detail sheets (customers, suppliers, stock, assets and so on). Fill it in.</li>
+        <li>Press <span class="ui">Upload filled-in file</span>. Any sheet with an error is refused with the row numbers to fix. Fix them and upload again.</li>
+        <li><b>Review and post</b>: the trial balance posts first, holding control accounts in Opening Balance Suspense. Each detail sheet then clears its part. When Suspense reaches zero, everything agrees.</li>
+      </ol>
+    </section>
+
+    <!-- 26 -->
+    <section class="chapter" id="settings" data-roles="owner accountant bookkeeper">
+      <div class="chapter-head"><span class="num">26</span><h2 class="title">Settings</h2></div>
+      <p class="intro">Topics: <b>Company</b>, <b>Chart of accounts</b>, <b>Projects</b>, <b>Funds</b>, <b>Contacts</b>, <b>Asset classes</b>, <b>Tax rates</b>, <b>Payroll rates</b> and <b>Backups &amp; audit</b>. Most are for Owners; Accountants and Bookkeepers can use exchange rates, bank accounts and the chart.</p>
+
+      <h3>Company</h3>
+      <ul>
+        <li><b>Financial year end</b> and company details. The company type (programme or trading) is fixed.</li>
+        <li><b>Functional currency</b>: can only be changed while nothing has been posted.</li>
+        <li><b>VAT registration</b>: press <span class="ui">Switch VAT on</span> and give the <b>Registration effective from</b> date. VAT applies only to documents dated on or after it. <span class="ui">Switch VAT off</span> leaves posted documents as they were.</li>
+        <li><b>Email sender</b>: the address invitations and payslips come from for this company. Leave it blank to use the group default.</li>
+        <li><b>Exchange rates</b>: enter "1 unit of USD equals … GHS" with the date and source (e.g. Bank of Ghana), then press <span class="ui">Save rate</span>. Foreign-currency documents cannot be posted until a rate exists.</li>
+        <li><b>Bank accounts</b>: one currency each. Name it (e.g. "Stanbic USD account") and press <span class="ui">Add bank account</span>.</li>
+        <li><b>Period end revaluation</b>: choose the period and press <span class="ui">Preview</span> to see each foreign balance revalued at the closing rate. Then <span class="ui">Post revaluation</span>, and on the first day of the next period, <span class="ui">Reverse into next period</span>.</li>
+      </ul>
+
+      <h3>Chart of accounts</h3>
+      <ol class="steps">
+        <li>Press <span class="ui">Add an account</span>. Give the number and name, the kind of account and where it <b>Sits beneath</b>.</li>
+        <li>Use <b>Find an account</b> to edit one. An account with postings can be renamed but not removed. Switch it off instead, or <b>Merge this account into another</b>.</li>
+        <li>Changes that reach history show <b>Before you save</b> with what will happen. Press <span class="ui">I understand — save it</span> to go ahead.</li>
+      </ol>
+
+      <h3>Projects and Funds</h3>
+      <ul>
+        <li><b>Projects</b>: add a project with how it is paid for, the award currency and amount, and its fund. Add <b>Budget lines</b>. A revised budget keeps the figure first agreed, so reports show both. A closed project leaves the coding lists but stays in every report.</li>
+        <li><b>Funds</b>: mark each as <b>Restricted</b> (only for what the funder agreed) or <b>Unrestricted</b>. Changing this moves everything that went through the fund.</li>
+      </ul>
+
+      <h3>Contacts, asset classes and tax rates</h3>
+      <ul>
+        <li><b>Contacts</b>: search, edit, switch off and set withholding tax status. Changes apply to all three companies.</li>
+        <li><b>Asset classes</b>: the depreciation rate and accounts for each kind of asset. A change applies to new assets only.</li>
+        <li><b>Tax rates</b>: the VAT, NHIL and GETFund rates and the registration threshold. Use <span class="ui">Put back to the Ghanaian rates</span> to undo changes.</li>
+      </ul>
+
+      <h3>Payroll rates (Owner only)</h3>
+      <p>PAYE bands, SSNIT, reliefs and payment deadlines. These are national law, so one set covers every company, each with the date it takes effect.</p>
+      <ol class="steps">
+        <li>Use <b>Show the figures for the payroll of</b> to pick a month.</li>
+        <li>Each figure shows whether it is <b>Placeholder — not verified</b> or verified. Check it against GRA or SSNIT. If it is right, press <span class="ui">Mark verified</span>, say where you checked, and confirm.</li>
+        <li>If it is wrong, press <span class="ui">Correct</span>, enter the right figure, tick <b>I have checked these against GRA or SSNIT</b> and save.</li>
+        <li>When the law changes, press <span class="ui">New figures from…</span> and give the date they take effect. The old figures end the day before. Use <span class="ui">End…</span> only when something is abolished.</li>
+        <li>Marked a figure verified by mistake? Use <span class="ui">Unverify</span> to make it a placeholder again. This is refused if an approved pay run used it.</li>
+        <li>Use <b>Check a calculation</b> to work a made-up employee through the payroll step by step and compare with a GRA calculator. Nothing is saved.</li>
+      </ol>
+      <p>Current SSNIT split: employee 5.5% (0.5% tier 1 and 5% tier 2), employer 13% tier 1. The check figures are tier 1 total 13.5% and combined 18.5%.</p>
+
+      <h3>Backups &amp; audit</h3>
+      <ul>
+        <li><b>Ledger exports</b>: a nightly copy of the books. <span class="ui">Download latest</span> saves it.</li>
+        <li><b>Audit log</b>: every posting, edit and void with who and when. It cannot be edited, and <b>Chain verified</b> confirms nothing has been tampered with.</li>
+      </ul>
+    </section>
+
+    <!-- 27 -->
+    <section class="chapter" id="owner" data-roles="owner">
+      <div class="chapter-head"><span class="num">27</span><h2 class="title">Owner tools: users and sessions</h2></div>
+      <div class="who"><b>Who:</b><span class="role">Owner</span></div>
+      <h3>Invite someone</h3>
+      <ol class="steps">
+        <li>Open <b>Users</b> under the Owner heading.</li>
+        <li>Under <b>Invite someone</b>, enter their name and email, choose a <b>Role</b> (the description below it says what it allows), and tick the companies under <b>Entity access</b>. Owners always see every company.</li>
+        <li>Press <span class="ui">Send invitation</span>. They get an email link valid for 48 hours. <span class="ui">Re-send invitation</span> sends a new one.</li>
+      </ol>
+      <h3>Manage people</h3>
+      <ul>
+        <li><span class="ui">Change access</span> then <span class="ui">Save access</span>: change someone's role or companies.</li>
+        <li><span class="ui">Unlock</span>: after ten wrong passwords.</li>
+        <li><span class="ui">Deactivate</span>: someone who has left. They are signed out everywhere and moved to the <b>Deactivated</b> tab. Nobody is deleted, so the record of who did what stays complete. <span class="ui">Reactivate</span> brings them back.</li>
+      </ul>
+      <h3>Who is signed in</h3>
+      <p><b>Sessions</b> lists every live session with person, device, address and last activity. <span class="ui">Force sign-out</span> ends one, for example on a lost laptop.</p>
+    </section>
+
+    <!-- 28 -->
+    <section class="chapter" id="help" data-roles="owner accountant bookkeeper data-entry staff viewer">
+      <div class="chapter-head"><span class="num">28</span><h2 class="title">Good habits and troubleshooting</h2></div>
+      <h3>Good habits</h3>
+      <ul>
+        <li>Check the company selector before entering anything.</li>
+        <li>Attach the paperwork to every bill and invoice. Send it from your phone the moment you get it.</li>
+        <li>Reconcile the bank and mobile money wallets at least weekly.</li>
+        <li>Enter exchange rates on the day for any foreign-currency work.</li>
+        <li>Mistakes are corrected by voiding or reversing and entering again. Nothing is ever deleted, and that is deliberate.</li>
+        <li>Never share your password or backup codes. Every action is recorded under your name.</li>
+      </ul>
+      <h3>Common problems</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>What you see</th><th>What to do</th></tr></thead>
+          <tbody>
+            <tr><td>A screen or button described here is missing</td><td>Your role does not include it, or the screen does not apply to this company (e.g. Grants only for Roots). Ask an Owner.</td></tr>
+            <tr><td>"You do not have access to this entity"</td><td>Ask an Owner to tick that company under your access.</td></tr>
+            <tr><td>Signed out in the middle of the day</td><td>Sessions end after 12 hours, or an Owner forced a sign-out. Sign in again.</td></tr>
+            <tr><td>"That code was not accepted"</td><td>Check the time on your phone is set automatically, then try the newest code.</td></tr>
+            <tr><td>The account is locked</td><td>An Owner presses <span class="ui">Unlock</span> on Users.</td></tr>
+            <tr><td>A document will not post</td><td>Read the red message. Usual causes are a filed VAT period, a missing exchange rate, a grant line with no budget line, or a required attachment.</td></tr>
+            <tr><td>A pay run will not approve</td><td>A rate it uses is a placeholder or missing. The message names it (chapter 13).</td></tr>
+            <tr><td>Phone captures stuck on "Waiting to send"</td><td>Check the signal and press <span class="ui">Send now</span>. If asked, sign in again; nothing is lost.</td></tr>
+            <tr><td>Anything else</td><td>Click <span class="ui">?</span> → <b>Contact support</b> and describe it. Copy any message the app showed.</td></tr>
+            <tr><td>Phone numbers show blank for everyone</td><td>The server's encryption key is missing. Tell an Owner. The numbers are not lost.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <p class="empty" id="no-match" hidden>No chapter mentions that. Try a shorter word, such as "VAT", "float" or "payslip".</p>
+
+    <footer>Sprouted Group · Sprouted Roots, Sprouted Crafts and Oikazi. If something in the app works differently from this guide, the app is right; ask an Owner to have the guide updated.</footer>
+  </main>
+</div>
+
+<script>
+(function () {
+  var chapters = Array.prototype.slice.call(document.querySelectorAll('section.chapter'));
+  var tocLinks = Array.prototype.slice.call(document.querySelectorAll('.toc a'));
+  var input = document.getElementById('find');
+  var result = document.getElementById('find-result');
+  var none = document.getElementById('no-match');
+  var pickButtons = Array.prototype.slice.call(document.querySelectorAll('[data-pick]'));
+  var intro = document.getElementById('role-intro');
+
+  // What each role's guide is for, in a sentence or two.
+  var roleIntros = {
+    owner: ['Your guide as an Owner', 'You can do everything, in every company: post and correct, run payroll, verify the payroll rates, change company settings, bring in opening balances, and invite and manage people.'],
+    accountant: ['Your guide as an Accountant', 'You post, correct and close: invoices and bills, the bank, payroll from preparation to posting, VAT returns, stock movements, pre-finance, currency revaluation and data requests. You sign in with a two-factor code.'],
+    bookkeeper: ['Your guide as a Bookkeeper', 'You keep the books day to day: enter and post invoices and bills, record payments, reconcile the bank and mobile money, prepare payroll for approval and record pre-finance deliveries. Voiding, filing VAT and approving payroll are for an Accountant. You sign in with a two-factor code.'],
+    'data-entry': ['Your guide as Data entry', 'You draft invoices and bills, add contacts, upload and send documents, count stock and record field purchases. Nothing you enter reaches the books until a Bookkeeper or Accountant posts it.'],
+    staff: ['Your guide as Staff', 'You send bills, customer invoices, expense claims and receipts from your phone. That is all your account does, and you do not see the books.'],
+    viewer: ['Your guide as a Viewer', 'You can read the dashboard, the cash flow forecast and the reports for the companies you have access to. Nothing is editable.']
+  };
+
+  var role = 'all';
+
+  // Show only chapters for the chosen role that also mention the words typed.
+  function apply() {
+    var words = input.value.toLowerCase().split(/\s+/).filter(Boolean);
+    var shown = 0;
+    chapters.forEach(function (chapter) {
+      var forRole = role === 'all' || (chapter.getAttribute('data-roles') || '').split(' ').indexOf(role) !== -1;
+      var text = chapter.textContent.toLowerCase();
+      var match = forRole && words.every(function (word) { return text.indexOf(word) !== -1; });
+      chapter.hidden = !match;
+      var link = document.querySelector('.toc a[href="#' + chapter.id + '"]');
+      if (link) link.parentElement.hidden = !match;
+      if (match) shown++;
+    });
+    document.querySelectorAll('.toc details').forEach(function (group) {
+      group.hidden = !group.querySelector('li:not([hidden])');
+    });
+    none.hidden = shown > 0;
+    result.textContent = words.length ? (shown === 1 ? '1 chapter mentions it' : shown + ' chapters mention it') : '';
+    return shown;
+  }
+
+  function pick(next) {
+    role = roleIntros[next] ? next : 'all';
+    pickButtons.forEach(function (button) { button.setAttribute('aria-pressed', String(button.getAttribute('data-pick') === role)); });
+    var total = apply();
+    if (role === 'all') {
+      intro.hidden = true;
+    } else {
+      document.getElementById('role-intro-title').textContent = roleIntros[role][0];
+      document.getElementById('role-intro-text').textContent = roleIntros[role][1];
+      var count = chapters.filter(function (c) { return (c.getAttribute('data-roles') || '').split(' ').indexOf(role) !== -1; }).length;
+      document.getElementById('role-intro-count').textContent = count + ' chapters, in the order to read them. Steps your role cannot do are labelled with the roles that can.';
+      intro.hidden = false;
+    }
+    try { localStorage.setItem('sprouted-guide-role', role); } catch (e) {}
+    return total;
+  }
+
+  pickButtons.forEach(function (button) {
+    button.addEventListener('click', function () { pick(button.getAttribute('data-pick')); });
+  });
+  input.addEventListener('input', apply);
+
+  // Contents: mark the chapter being read.
+  if ('IntersectionObserver' in window) {
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        tocLinks.forEach(function (link) { link.classList.toggle('here', link.getAttribute('href') === '#' + entry.target.id); });
+      });
+    }, { rootMargin: '-20% 0px -70% 0px' });
+    chapters.forEach(function (chapter) { observer.observe(chapter); });
+  }
+
+  // On a phone the contents start folded, so the guide itself comes first.
+  if (window.matchMedia('(max-width: 979px)').matches) {
+    document.querySelectorAll('.toc details').forEach(function (d) { d.open = false; });
+  }
+  // A link ending #for-staff (and so on) opens that role's guide; otherwise
+  // the role this reader chose last time, if the browser kept it.
+  var hash = location.hash.slice(1);
+  if (hash.indexOf('for-') === 0) {
+    pick(hash.slice(4));
+  } else {
+    var saved = null;
+    try { saved = localStorage.getItem('sprouted-guide-role'); } catch (e) {}
+    if (saved) pick(saved);
+    if (hash) {
+      var target = document.getElementById(hash);
+      if (target) {
+        if (target.hidden) pick('all');
+        target.scrollIntoView();
+      }
+    }
+  }
+})();
+</script>
+</body>
+</html>

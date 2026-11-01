@@ -48,6 +48,7 @@ import { remittanceLabels, remittancePosition } from '@/lib/payroll-run';
 import { PayrollRatesSettings } from '@/components/app/payroll-rates-panel';
 import { Attachments } from '@/components/app/attachments';
 import { InboxPanel } from '@/components/app/inbox-panel';
+import { HelpMenu } from '@/components/app/help-menu';
 import { ChartPanel } from '@/components/app/chart-panel';
 import { AssetClassSettings, CompanySettings, ContactsSettings, FundsSettings, ProjectsSettings, TaxRateSettings } from '@/components/app/settings-panels';
 import { statutoryTaxRates } from '@/lib/settings';
@@ -2570,6 +2571,7 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
                 and in Settings, and every screen already has its own way of
                 adding what belongs on it, so nothing was lost by removing
                 them. */}
+            <HelpMenu where={{ entityId: selectedEntity.id, screen: activeNav }} onOpenGuide={() => setActiveNav('User guide')} />
           </div>
         </header>
 
@@ -4890,6 +4892,21 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
               bankAccounts={entityBankAccounts}
               allowed={allowed}
             />
+          ) : activeNav === 'User guide' ? (
+            <div className="space-y-3">
+              <p className="text-sm text-slate-600">
+                Open at the guide for your role, {initialData.currentUser.roleLabel}. Choose another role at the top of the guide, or{' '}
+                <a className="font-medium text-brand-800 underline-offset-2 hover:underline" href={`/user-guide.html#for-${initialData.currentUser.role}`} target="_blank" rel="noopener">
+                  open it in its own window
+                </a>
+                .
+              </p>
+              <iframe
+                title="User guide"
+                src={`/user-guide.html#for-${initialData.currentUser.role}`}
+                className="h-[calc(100vh-12rem)] min-h-[480px] w-full rounded-2xl border border-slate-200 bg-white"
+              />
+            </div>
           ) : activeNav === 'Go-live' ? (
             <OpeningPanel key={selectedEntity.id} entity={selectedEntity} opening={initialData.openingByEntity[selectedEntity.id]} allowed={allowed} />
           ) : (
