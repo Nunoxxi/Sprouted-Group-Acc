@@ -12,7 +12,13 @@ services:
   - type: web
     name: sprouted-accounting
     runtime: node
-    plan: free
+    # Frankfurt, near the Supabase database in eu-west-1 (Ireland). The first
+    # service ran in Oregon and every database round trip crossed the Atlantic.
+    # Render cannot move a service between regions; a new one has to be made.
+    region: frankfurt
+    # Starter, not free: a free service sleeps after 15 idle minutes and the
+    # next visitor waits for it to wake.
+    plan: starter
     # NODE_ENV=production makes npm ci skip devDependencies, and next build
     # needs typescript, tailwindcss and postcss from there — hence --include=dev.
     buildCommand: npm ci --include=dev && npm run build

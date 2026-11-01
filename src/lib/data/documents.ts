@@ -323,8 +323,17 @@ async function loadEverything(principal: Principal, screen: Screen): Promise<Ini
   const entityScope = principal.entityIds === 'all' ? {} : { entityId: { in: [...principal.entityIds] } };
   const entityFilter = principal.entityIds === 'all' ? {} : { id: { in: [...principal.entityIds] } };
 
-  const [entities, contacts, accounts, funds, projects, documents, filings, rates, bankAccounts, revaluations] = await Promise.all([
-    prisma.entity.findMany({ where: entityFilter, orderBy: { code: 'asc' } }),
+  // The screen's own sections need only the entity list, so they start as
+  // soon as that arrives rather than waiting for the documents and the rest.
+  const entitiesLoaded = prisma.entity.findMany({ where: entityFilter, orderBy: { code: 'asc' } });
+  const wanted = new Set(sectionsByScreen[screen]);
+  const sectionsLoaded = entitiesLoaded.then((rows) => {
+    const loaders = sectionLoaders(entityScope, rows.map((entity) => entity.id), rows, principal);
+    return Promise.all(sections.map((section) => (wanted.has(section) ? loaders[section]() : emptySection(section))));
+  });
+
+  const [entities, contacts, accounts, funds, projects, documents, filings, rates, bankAccounts, revaluations, loaded] = await Promise.all([
+    entitiesLoaded,
     prisma.contact.findMany({ include: { balances: { where: entityScope } }, orderBy: { name: 'asc' } }),
     prisma.account.findMany({ where: entityScope, include: { parent: { select: { code: true } } }, orderBy: [{ entityId: 'asc' }, { code: 'asc' }] }),
     prisma.fund.findMany({ where: entityScope, orderBy: { code: 'asc' } }),
@@ -338,6 +347,7 @@ async function loadEverything(principal: Principal, screen: Screen): Promise<Ini
       include: { journalEntry: { include: journalLinesInclude }, reversalEntry: { include: journalLinesInclude } },
       orderBy: { period: 'desc' },
     }),
+    sectionsLoaded,
   ]);
 
   const entityIds = entities.map((entity) => entity.id);
@@ -346,10 +356,7 @@ async function loadEverything(principal: Principal, screen: Screen): Promise<Ini
 
   const periodsByEntity = groupBy(filings, (filing) => filing.entityId);
 
-  // Only the sections this screen reads, run together; the rest go empty.
-  const wanted = new Set(sectionsByScreen[screen]);
-  const loaders = sectionLoaders(entityScope, entityIds, entities, principal);
-  const loaded = await Promise.all(sections.map((section) => (wanted.has(section) ? loaders[section]() : emptySection(section))));
+  // Only the sections this screen reads were loaded; the rest are empty.
   const sectionData = Object.assign({}, ...loaded) as AllSections;
 
   return {

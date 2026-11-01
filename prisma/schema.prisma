@@ -1,5 +1,9 @@
+// relationJoins: a query with nested includes (a document, its lines, its
+// journal, its payments) is one round trip to the database instead of one per
+// level. The database is a long way from the server, so each trip costs.
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["relationJoins"]
 }
 
 // Postgres. DATABASE_URL is the transaction pooler (runtime); DIRECT_URL is the
