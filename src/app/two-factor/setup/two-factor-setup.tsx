@@ -135,10 +135,7 @@ export function TwoFactorSetup({ email }: { email: string }) {
       <Button
         className="mt-5 w-full"
         disabled={!saved}
-        onClick={() => {
-          router.push('/');
-          router.refresh();
-        }}
+        onClick={() => router.replace('/')}
       >
         Go to the app
       </Button>

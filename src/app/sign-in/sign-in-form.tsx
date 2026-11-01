@@ -15,6 +15,7 @@ export function SignInForm() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [opening, setOpening] = useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -40,9 +41,11 @@ export function SignInForm() {
       return;
     }
 
+    // One navigation, not a push followed by a refresh: the page is rendered
+    // per request anyway, and the refresh only loaded it a second time.
     const next = params.get('next');
-    router.push(next && next.startsWith('/') ? next : '/');
-    router.refresh();
+    setOpening(true);
+    router.replace(next && next.startsWith('/') ? next : '/');
   }
 
   return (
@@ -65,7 +68,7 @@ export function SignInForm() {
         </div>
         <FormError message={error} />
         <Button type="submit" className="w-full" disabled={busy}>
-          {busy ? 'Signing in…' : 'Sign in'}
+          {opening ? 'Opening the app…' : busy ? 'Signing in…' : 'Sign in'}
         </Button>
         <p className="text-center text-sm">
           <a href="/forgot-password" className="text-brand-800 underline-offset-2 hover:underline">

@@ -19,6 +19,7 @@ export default function TwoFactorPage() {
   const [useBackup, setUseBackup] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [opening, setOpening] = useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -36,8 +37,10 @@ export default function TwoFactorPage() {
       return;
     }
 
-    router.push('/');
-    router.refresh();
+    // One navigation, not a push followed by a refresh: the page is rendered
+    // per request anyway, and the refresh only loaded it a second time.
+    setOpening(true);
+    router.replace('/');
   }
 
   return (
@@ -60,7 +63,7 @@ export default function TwoFactorPage() {
         </div>
         <FormError message={error} />
         <Button type="submit" className="w-full" disabled={busy}>
-          {busy ? 'Checking…' : 'Continue'}
+          {opening ? 'Opening the app…' : busy ? 'Checking…' : 'Continue'}
         </Button>
         <button
           type="button"

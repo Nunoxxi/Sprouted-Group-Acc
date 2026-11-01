@@ -473,6 +473,8 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
     });
   };
   const loadingNav = navigating ? pendingNav : null;
+  // The tab pressed lights up at once, while its screen is still on its way.
+  const highlightedNav = loadingNav ?? activeNav;
   const [entityMenuOpen, setEntityMenuOpen] = useState(false);
   const [showAddEntityForm, setShowAddEntityForm] = useState(false);
   const [showAddContactForm, setShowAddContactForm] = useState(false);
@@ -2506,14 +2508,14 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
 
         <nav className="mt-6 space-y-1">
           {visibleNavigation.map((item) => {
-            const active = item === activeNav;
+            const active = item === highlightedNav;
             return (
               <button
                 key={item}
                 type="button"
                 onClick={() => setActiveNav(item)}
                 className={[
-                  'flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-colors duration-150 ease-out',
+                  'flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-medium transition duration-150 ease-out active:scale-[0.98]',
                   active
                     ? 'bg-brand-50 text-brand-800 ring-1 ring-brand-100'
                     : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
@@ -2571,7 +2573,15 @@ export function AppShell({ initialData }: { initialData: InitialData }) {
           </div>
         </header>
 
-        <main className="space-y-6 p-6">
+        {/* While another screen loads, the one on show fades back and a bar
+            runs along the top, so a click is seen to have landed. */}
+        <div className={['h-0.5 overflow-hidden', loadingNav ? 'bg-brand-100' : 'bg-transparent'].join(' ')}>
+          {loadingNav ? <div className="h-full w-1/3 animate-navProgress bg-brand-700" /> : null}
+        </div>
+        <main
+          className={['space-y-6 p-6 transition-opacity duration-150 ease-out', loadingNav ? 'pointer-events-none opacity-50' : 'opacity-100'].join(' ')}
+          aria-busy={loadingNav ? true : undefined}
+        >
           {/* Shown on every screen, to anyone who may see a contact detail:
               a blank telephone number means the key is missing, not that
               nobody has one. */}

@@ -43,10 +43,15 @@ const config: Config = {
           '0%, 100%': { transform: 'scale(1)', opacity: '1' },
           '50%': { transform: 'scale(1.02)', opacity: '0.96' },
         },
+        navProgress: {
+          '0%': { transform: 'translateX(-100%)' },
+          '100%': { transform: 'translateX(300%)' },
+        },
       },
       animation: {
         fadeIn: 'fadeIn 150ms ease-out',
         pulseSuccess: 'pulseSuccess 180ms ease-out',
+        navProgress: 'navProgress 1s ease-in-out infinite',
       },
     },
   },
