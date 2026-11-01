@@ -8,7 +8,7 @@
  */
 
 /** Where support requests go. SUPPORT_EMAIL on the server overrides it. */
-export const defaultSupportAddress = 'rambuilygh@gmail.com';
+export const defaultSupportAddress = 'support.sproutedgroup@gmail.com';
 
 export function supportAddress(): string {
   return process.env.SUPPORT_EMAIL?.trim() || defaultSupportAddress;
